@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-  "start": "node index.js",
-  "prisma:migrate": "prisma migrate deploy && prisma generate"
-}
+    "start": "node index.js",
+    "prisma:migrate": "prisma migrate deploy && prisma generate"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",
