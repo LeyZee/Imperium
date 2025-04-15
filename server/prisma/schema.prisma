@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        Int       @id @default(autoincrement())
+  email     String    @unique
+  password  String
+  pseudo    String
+  role      String
+  userPercent Float   // Pourcentage de part du chatteur (ex: 0.5 pour 50%)
+  shifts    Shift[]   // Un user a plusieurs shifts
+  payments  Payment[] // Un user a plusieurs paiements
+}
+
+model Shift {
+  id              Int       @id @default(autoincrement())
+  startTime       DateTime
+  plannedEndTime  DateTime
+  realEndTime     DateTime?
+  amount          Float
+  clientUsernames String[]  // Liste des pseudos clients
+  comment         String?
+  validated       Boolean
+  paid            Boolean
+  user            User      @relation(fields: [userId], references: [id])
+  userId          Int
+  model           Model     @relation(fields: [modelId], references: [id])
+  modelId         Int
+  platform        Platform  @relation(fields: [platformId], references: [id])
+  platformId      Int
+}
+
+model Model {
+  id     Int     @id @default(autoincrement())
+  name   String
+  shifts Shift[]
+}
+
+model Payment {
+  id      Int      @id @default(autoincrement())
+  amount  Float
+  date    DateTime @default(now())
+  user    User     @relation(fields: [userId], references: [id])
+  userId  Int
+}
+
+model Platform {
+  id     Int     @id @default(autoincrement())
+  name   String  // OF, Reveal, etc.
+  commissionRate Float // Commission de la plateforme (ex: 0.2 pour 20%)
+  shifts Shift[]
+}
