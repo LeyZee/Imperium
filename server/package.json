@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "prisma:migrate": "prisma migrate deploy && prisma generate"
+    "postinstall": "prisma generate"
   },
   "keywords": [],
   "author": "",
