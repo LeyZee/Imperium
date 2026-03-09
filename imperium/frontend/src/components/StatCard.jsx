@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function StatCard({ title, value, subtitle, icon: Icon, color = '#c9a84c' }) {
+export default function StatCard({ title, value, subtitle, icon: Icon, color = '#1b2e4b' }) {
   const [hovered, setHovered] = useState(false);
 
   return (
@@ -9,7 +9,7 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        borderColor: hovered ? color : 'rgba(255,255,255,0.06)',
+        borderColor: hovered ? color : 'rgba(0,0,0,0.08)',
         transform: hovered ? 'scale(1.02) translateY(-2px)' : 'scale(1) translateY(0)',
         transition: 'all 200ms ease',
         cursor: 'default',
@@ -38,7 +38,7 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
             style={{
               fontSize: '0.75rem',
               fontWeight: 500,
-              color: '#9aa5b4',
+              color: '#64748b',
               textTransform: 'uppercase',
               letterSpacing: '0.06em',
               marginBottom: '0.375rem',
@@ -50,7 +50,7 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
             style={{
               fontSize: '1.75rem',
               fontWeight: 700,
-              color: hovered ? color : '#f5f0eb',
+              color: hovered ? color : '#1a1f2e',
               lineHeight: 1.1,
               transition: 'color 200ms ease',
               wordBreak: 'break-word',
@@ -62,7 +62,7 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
             <p
               style={{
                 fontSize: '0.75rem',
-                color: '#6b7280',
+                color: '#94a3b8',
                 marginTop: '0.375rem',
               }}
             >
@@ -77,16 +77,16 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
               width: '44px',
               height: '44px',
               borderRadius: '10px',
-              background: `${color}15`,
-              border: `1px solid ${color}30`,
+              background: `${color}12`,
+              border: `1px solid ${color}25`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               flexShrink: 0,
               transition: 'all 200ms ease',
               ...(hovered && {
-                background: `${color}25`,
-                border: `1px solid ${color}60`,
+                background: `${color}20`,
+                border: `1px solid ${color}50`,
               }),
             }}
           >

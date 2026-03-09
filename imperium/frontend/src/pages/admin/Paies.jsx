@@ -116,14 +116,14 @@ export default function Paies() {
 
       {error && <div className="error-box" style={{ marginBottom: '1rem' }}>{error}</div>}
       {success && (
-        <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '10px', padding: '0.75rem 1rem', color: '#10b981', marginBottom: '1rem', fontSize: '0.875rem' }}>
+        <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '12px', padding: '0.75rem 1rem', color: '#10b981', marginBottom: '1rem', fontSize: '0.875rem' }}>
           {success}
         </div>
       )}
 
       <div className="card" style={{ padding: 0 }}>
-        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <FileText size={16} color="#c9a84c" />
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <FileText size={16} color="#1b2e4b" />
           <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Paies — {selectedLabel}</span>
         </div>
 
@@ -150,7 +150,7 @@ export default function Paies() {
               <tbody>
                 {paies.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', color: '#9aa5b4', padding: '2rem' }}>
+                    <td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
                       Aucune paie pour cette période.
                     </td>
                   </tr>
@@ -158,17 +158,17 @@ export default function Paies() {
                   paies.map((p) => (
                     <tr key={p.id}>
                       <td style={{ fontWeight: 600 }}>{p.nom}</td>
-                      <td><span className="badge badge-gold">{p.plateforme}</span></td>
-                      <td style={{ textAlign: 'right', color: '#9aa5b4' }}>{(p.ventes_brutes || 0).toLocaleString('fr-FR')} €</td>
+                      <td><span className="badge badge-navy">{p.plateforme}</span></td>
+                      <td style={{ textAlign: 'right', color: '#64748b' }}>{(p.ventes_brutes || 0).toLocaleString('fr-FR')} €</td>
                       <td style={{ textAlign: 'right' }}>{(p.net_ht || 0).toLocaleString('fr-FR')} €</td>
                       <td style={{ textAlign: 'right', color: '#ef4444' }}>-{(p.commission || 0).toLocaleString('fr-FR')} €</td>
-                      <td style={{ textAlign: 'right', color: p.malus > 0 ? '#ef4444' : '#6b7280' }}>
+                      <td style={{ textAlign: 'right', color: p.malus > 0 ? '#ef4444' : '#94a3b8' }}>
                         {p.malus > 0 ? `-${(p.malus).toLocaleString('fr-FR')} €` : '—'}
                       </td>
-                      <td style={{ textAlign: 'right', color: p.prime > 0 ? '#10b981' : '#6b7280' }}>
+                      <td style={{ textAlign: 'right', color: p.prime > 0 ? '#10b981' : '#94a3b8' }}>
                         {p.prime > 0 ? `+${(p.prime).toLocaleString('fr-FR')} €` : '—'}
                       </td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#c9a84c', fontSize: '1rem' }}>
+                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731', fontSize: '1rem' }}>
                         {(p.total || 0).toLocaleString('fr-FR')} €
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -179,10 +179,10 @@ export default function Paies() {
                             title="Télécharger la facture"
                             style={{ padding: '0.35rem 0.5rem' }}
                           >
-                            <Download size={15} color="#c9a84c" />
+                            <Download size={15} color="#1b2e4b" />
                           </button>
                         ) : (
-                          <span style={{ color: '#6b7280', fontSize: '0.75rem' }}>—</span>
+                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>—</span>
                         )}
                       </td>
                     </tr>
@@ -194,7 +194,7 @@ export default function Paies() {
         )}
 
         {/* Footer action */}
-        <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'flex-end' }}>
           <button
             className="btn-primary"
             onClick={handleValidate}

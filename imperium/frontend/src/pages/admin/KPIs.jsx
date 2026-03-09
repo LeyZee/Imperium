@@ -37,9 +37,9 @@ export default function KPIs() {
   }
 
   return (
-    <div className="p-6">
+    <div className="fade-in p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-or">KPIs Chatteurs</h1>
+        <h1 className="text-2xl font-bold text-navy">KPIs Chatteurs</h1>
         <select className="input-field w-64" value={selectedPeriode} onChange={e => setSelectedPeriode(parseInt(e.target.value))}>
           {periodes.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
         </select>
@@ -47,23 +47,23 @@ export default function KPIs() {
 
       {/* Top 3 cards */}
       {!loading && paies.length > 0 && (
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-3 gap-4 mb-6 stagger-children">
           {paies.slice(0, 3).map((p, i) => (
-            <div key={p.chatteur_id} className="card border border-or/30 text-center">
+            <div key={p.chatteur_id} className="card text-center" style={{ borderColor: i === 0 ? '#f5b731' : 'rgba(0,0,0,0.08)' }}>
               <div className="text-4xl mb-2">{medals[i]}</div>
               <div className="font-bold text-lg">{p.prenom} {p.nom}</div>
-              <div className="text-or text-2xl font-bold mt-1">{p.total_chatteur?.toFixed(2)} €</div>
-              <div className="text-gray-400 text-sm mt-1">Net brut: {p.net_ht_eur?.toFixed(2)} €</div>
+              <div className="text-2xl font-bold mt-1" style={{ color: '#f5b731' }}>{p.total_chatteur?.toFixed(2)} €</div>
+              <div className="text-slate-500 text-sm mt-1">Net brut: {p.net_ht_eur?.toFixed(2)} €</div>
             </div>
           ))}
         </div>
       )}
 
-      {loading ? <div className="text-center text-gray-400 py-12">Chargement...</div> : (
-        <div className="card overflow-x-auto">
+      {loading ? <div className="text-center text-slate-400 py-12">Chargement...</div> : (
+        <div className="card overflow-x-auto" style={{ padding: 0 }}>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-gray-400">
+              <tr>
                 <th className="text-left py-3 px-4">Rang</th>
                 <th className="text-left py-3 px-4">Chatteur</th>
                 <th className="text-right py-3 px-4">Ventes brutes</th>
@@ -71,23 +71,23 @@ export default function KPIs() {
                 <th className="text-right py-3 px-4">Commission</th>
                 <th className="text-right py-3 px-4">Malus</th>
                 <th className="text-right py-3 px-4">Prime</th>
-                <th className="text-right py-3 px-4 text-or">TOTAL</th>
+                <th className="text-right py-3 px-4" style={{ color: '#f5b731' }}>TOTAL</th>
               </tr>
             </thead>
             <tbody>
               {paies.map((p, i) => (
-                <tr key={p.chatteur_id} className={i % 2 === 0 ? 'bg-white/5' : ''}>
+                <tr key={p.chatteur_id}>
                   <td className="py-3 px-4">{medals[i] || `#${i+1}`}</td>
                   <td className="py-3 px-4 font-medium">{p.prenom} {p.nom}</td>
                   <td className="py-3 px-4 text-right">{p.ventes_ttc_eur?.toFixed(2)} €</td>
                   <td className="py-3 px-4 text-right">{p.net_ht_eur?.toFixed(2)} €</td>
                   <td className="py-3 px-4 text-right">{p.commission_chatteur?.toFixed(2)} €</td>
-                  <td className="py-3 px-4 text-right text-red-400">{p.malus_total > 0 ? `-${p.malus_total?.toFixed(2)} €` : '—'}</td>
-                  <td className="py-3 px-4 text-right text-green-400">{p.prime > 0 ? `+${p.prime?.toFixed(2)} €` : '—'}</td>
-                  <td className="py-3 px-4 text-right font-bold text-or">{p.total_chatteur?.toFixed(2)} €</td>
+                  <td className="py-3 px-4 text-right text-red-500">{p.malus_total > 0 ? `-${p.malus_total?.toFixed(2)} €` : '—'}</td>
+                  <td className="py-3 px-4 text-right text-green-500">{p.prime > 0 ? `+${p.prime?.toFixed(2)} €` : '—'}</td>
+                  <td className="py-3 px-4 text-right font-bold" style={{ color: '#f5b731' }}>{p.total_chatteur?.toFixed(2)} €</td>
                 </tr>
               ))}
-              {paies.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-gray-500">Aucune donnée pour cette période</td></tr>}
+              {paies.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">Aucune donnée pour cette période</td></tr>}
             </tbody>
           </table>
         </div>

@@ -42,7 +42,7 @@ export default function Login() {
     <div
       style={{
         minHeight: '100vh',
-        background: '#0f1523',
+        background: '#f5f3ef',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -51,15 +51,15 @@ export default function Login() {
         overflow: 'hidden',
       }}
     >
-      {/* Background marble texture */}
+      {/* Background decorative elements */}
       <div
         style={{
           position: 'absolute',
           inset: 0,
           background: `
-            radial-gradient(ellipse at 20% 50%, rgba(201, 168, 76, 0.04) 0%, transparent 60%),
-            radial-gradient(ellipse at 80% 20%, rgba(26, 39, 68, 0.8) 0%, transparent 50%),
-            radial-gradient(ellipse at 50% 80%, rgba(15, 21, 35, 0.9) 0%, transparent 70%)
+            radial-gradient(ellipse at 20% 50%, rgba(27, 46, 75, 0.03) 0%, transparent 60%),
+            radial-gradient(ellipse at 80% 20%, rgba(245, 183, 49, 0.04) 0%, transparent 50%),
+            radial-gradient(ellipse at 50% 80%, rgba(27, 46, 75, 0.02) 0%, transparent 70%)
           `,
           pointerEvents: 'none',
         }}
@@ -69,22 +69,22 @@ export default function Login() {
       <div
         style={{
           position: 'absolute',
-          top: '10%',
-          left: '5%',
-          width: '200px',
+          top: '15%',
+          left: '8%',
+          width: '180px',
           height: '1px',
-          background: 'linear-gradient(90deg, transparent, rgba(201,168,76,0.2), transparent)',
+          background: 'linear-gradient(90deg, transparent, rgba(27,46,75,0.12), transparent)',
           transform: 'rotate(-15deg)',
         }}
       />
       <div
         style={{
           position: 'absolute',
-          bottom: '15%',
-          right: '5%',
-          width: '150px',
+          bottom: '20%',
+          right: '8%',
+          width: '140px',
           height: '1px',
-          background: 'linear-gradient(90deg, transparent, rgba(201,168,76,0.15), transparent)',
+          background: 'linear-gradient(90deg, transparent, rgba(245,183,49,0.2), transparent)',
           transform: 'rotate(15deg)',
         }}
       />
@@ -93,9 +93,9 @@ export default function Login() {
       <div
         style={{
           width: '100%',
-          maxWidth: '400px',
+          maxWidth: '420px',
           position: 'relative',
-          animation: 'fadeIn 0.4s ease',
+          animation: 'fadeIn 0.5s ease',
         }}
       >
         {/* Logo section */}
@@ -108,19 +108,19 @@ export default function Login() {
               width: '72px',
               height: '72px',
               borderRadius: '50%',
-              background: 'rgba(201, 168, 76, 0.08)',
-              border: '1px solid rgba(201, 168, 76, 0.25)',
+              background: 'rgba(27, 46, 75, 0.06)',
+              border: '2px solid rgba(27, 46, 75, 0.12)',
               marginBottom: '1.25rem',
             }}
           >
-            <span style={{ fontFamily: 'Cinzel, serif', fontSize: '1.5rem', color: '#c9a84c' }}>I</span>
+            <span style={{ fontFamily: 'Cinzel, serif', fontSize: '1.5rem', color: '#1b2e4b', fontWeight: 700 }}>I</span>
           </div>
           <h1
             style={{
               fontFamily: 'Cinzel, serif',
               fontSize: '2.5rem',
               fontWeight: 700,
-              background: 'linear-gradient(135deg, #c9a84c 0%, #e8cc7a 50%, #c9a84c 100%)',
+              background: 'linear-gradient(135deg, #1b2e4b 0%, #243a5e 50%, #1b2e4b 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
               backgroundClip: 'text',
@@ -133,7 +133,7 @@ export default function Login() {
           <p
             style={{
               fontSize: '0.8rem',
-              color: '#9aa5b4',
+              color: '#64748b',
               letterSpacing: '0.12em',
               textTransform: 'uppercase',
             }}
@@ -145,11 +145,11 @@ export default function Login() {
         {/* Form Card */}
         <div
           style={{
-            background: '#1a2744',
-            border: '1px solid rgba(201, 168, 76, 0.15)',
-            borderRadius: '14px',
+            background: '#ffffff',
+            border: '1px solid rgba(0, 0, 0, 0.08)',
+            borderRadius: '16px',
             padding: '2rem',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)',
           }}
         >
           {error && (
@@ -199,7 +199,7 @@ export default function Login() {
                     background: 'none',
                     border: 'none',
                     cursor: 'pointer',
-                    color: '#6b7280',
+                    color: '#94a3b8',
                     padding: '0.25rem',
                     display: 'flex',
                   }}
@@ -227,8 +227,8 @@ export default function Login() {
           </form>
         </div>
 
-        <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.7rem', color: '#6b7280' }}>
-          IMPERIUM © 2026 — Accès restreint
+        <p style={{ textAlign: 'center', marginTop: '1.5rem', fontSize: '0.7rem', color: '#94a3b8' }}>
+          IMPERIUM &copy; 2026 &mdash; Acc&egrave;s restreint
         </p>
       </div>
 

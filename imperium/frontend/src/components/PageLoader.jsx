@@ -7,7 +7,7 @@ export default function PageLoader() {
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        background: '#0f1523',
+        background: '#f5f3ef',
         gap: '1rem',
       }}
     >
@@ -15,8 +15,8 @@ export default function PageLoader() {
         style={{
           width: '48px',
           height: '48px',
-          border: '3px solid rgba(201, 168, 76, 0.15)',
-          borderTop: '3px solid #c9a84c',
+          border: '3px solid rgba(27, 46, 75, 0.1)',
+          borderTop: '3px solid #f5b731',
           borderRadius: '50%',
           animation: 'spin 0.8s linear infinite',
         }}
@@ -26,8 +26,9 @@ export default function PageLoader() {
           fontFamily: 'Cinzel, serif',
           fontSize: '0.85rem',
           letterSpacing: '0.2em',
-          color: 'rgba(201, 168, 76, 0.6)',
+          color: '#1b2e4b',
           textTransform: 'uppercase',
+          opacity: 0.6,
         }}
       >
         IMPERIUM

@@ -1,15 +1,15 @@
 import { useAuth } from '../context/AuthContext.jsx';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, Menu } from 'lucide-react';
 
-export default function Navbar() {
+export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth();
 
   return (
     <header
       style={{
         height: '64px',
-        background: '#1a2744',
-        borderBottom: '1px solid rgba(201, 168, 76, 0.15)',
+        background: '#ffffff',
+        borderBottom: '1px solid rgba(0, 0, 0, 0.08)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-between',
@@ -20,19 +20,26 @@ export default function Navbar() {
         top: 0,
       }}
     >
-      {/* Logo */}
-      <span
+      {/* Left side - mobile menu button */}
+      <button
+        onClick={onMenuClick}
+        className="mobile-menu-btn"
         style={{
-          fontFamily: 'Cinzel, serif',
-          fontSize: '1.25rem',
-          fontWeight: 700,
-          color: '#c9a84c',
-          letterSpacing: '0.15em',
-          textDecoration: 'none',
+          background: 'transparent',
+          border: 'none',
+          cursor: 'pointer',
+          color: '#1b2e4b',
+          padding: '0.4rem',
+          borderRadius: '8px',
+          display: 'none',
+          alignItems: 'center',
         }}
       >
-        IMPERIUM
-      </span>
+        <Menu size={22} />
+      </button>
+
+      {/* Spacer for desktop */}
+      <div className="desktop-spacer" />
 
       {/* Right side */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -46,24 +53,24 @@ export default function Navbar() {
           >
             <div
               style={{
-                width: '32px',
-                height: '32px',
+                width: '34px',
+                height: '34px',
                 borderRadius: '50%',
-                background: 'rgba(201, 168, 76, 0.15)',
-                border: '1px solid rgba(201, 168, 76, 0.3)',
+                background: 'rgba(245, 183, 49, 0.12)',
+                border: '2px solid rgba(245, 183, 49, 0.25)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <User size={15} color="#c9a84c" />
+              <User size={15} color="#f5b731" />
             </div>
-            <div>
+            <div className="user-info-text">
               <p
                 style={{
                   fontSize: '0.8rem',
                   fontWeight: 600,
-                  color: '#f5f0eb',
+                  color: '#1a1f2e',
                   lineHeight: 1.2,
                 }}
               >
@@ -72,7 +79,7 @@ export default function Navbar() {
               <p
                 style={{
                   fontSize: '0.65rem',
-                  color: '#9aa5b4',
+                  color: '#64748b',
                   textTransform: 'capitalize',
                 }}
               >
@@ -89,9 +96,19 @@ export default function Navbar() {
           style={{ padding: '0.4rem 0.6rem' }}
         >
           <LogOut size={16} />
-          <span style={{ fontSize: '0.8rem' }}>Déconnexion</span>
+          <span className="logout-text" style={{ fontSize: '0.8rem' }}>Déconnexion</span>
         </button>
       </div>
+
+      <style>{`
+        .desktop-spacer { display: block; }
+        @media (max-width: 768px) {
+          .mobile-menu-btn { display: flex !important; }
+          .desktop-spacer { display: none; }
+          .logout-text { display: none; }
+          .user-info-text { display: none; }
+        }
+      `}</style>
     </header>
   );
 }

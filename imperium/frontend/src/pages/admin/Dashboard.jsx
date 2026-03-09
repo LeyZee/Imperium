@@ -18,14 +18,6 @@ function getCurrentPeriodLabel() {
   return `Période: 15 ${cap} - 1 ${capNext} ${next.getFullYear()}`;
 }
 
-const DEMO_VENTES = [
-  { id: 1, date: '09/03/2026', chatteur: 'Lucas M.', modele: 'Jade', plateforme: 'OnlyFans', montant: '1 240 €' },
-  { id: 2, date: '09/03/2026', chatteur: 'Emma R.', modele: 'Lysa', plateforme: 'Fansly', montant: '870 €' },
-  { id: 3, date: '08/03/2026', chatteur: 'Nathan B.', modele: 'Chloe', plateforme: 'OnlyFans', montant: '2 100 €' },
-  { id: 4, date: '08/03/2026', chatteur: 'Lucas M.', modele: 'Jade', plateforme: 'OnlyFans', montant: '660 €' },
-  { id: 5, date: '07/03/2026', chatteur: 'Sofia K.', modele: 'Nina', plateforme: 'Fansly', montant: '1 450 €' },
-];
-
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -52,7 +44,7 @@ export default function AdminDashboard() {
           value: `${(data.total_ventes || 0).toLocaleString('fr-FR')} €`,
           subtitle: 'Période en cours',
           icon: Euro,
-          color: '#c9a84c',
+          color: '#f5b731',
         },
         {
           title: 'Net Agence',
@@ -66,7 +58,7 @@ export default function AdminDashboard() {
           value: data.nb_chatteurs_actifs ?? '—',
           subtitle: 'Sur la période',
           icon: Users,
-          color: '#6366f1',
+          color: '#1b2e4b',
         },
         {
           title: 'Top Chatteur',
@@ -86,7 +78,7 @@ export default function AdminDashboard() {
           <h2 className="page-title">Dashboard</h2>
           <p className="page-subtitle">Vue d'ensemble de l'agence</p>
         </div>
-        <span className="badge badge-gold" style={{ fontSize: '0.75rem', padding: '0.375rem 0.875rem' }}>
+        <span className="badge badge-navy" style={{ fontSize: '0.75rem', padding: '0.375rem 0.875rem' }}>
           {getCurrentPeriodLabel()}
         </span>
       </div>
@@ -106,7 +98,7 @@ export default function AdminDashboard() {
           ))}
         </div>
       ) : stats ? (
-        <div className="stats-grid">
+        <div className="stats-grid stagger-children">
           {stats.map((s) => (
             <StatCard key={s.title} {...s} />
           ))}
@@ -115,9 +107,9 @@ export default function AdminDashboard() {
 
       {/* Recent sales table */}
       <div className="card" style={{ padding: 0 }}>
-        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Dernières ventes</h3>
-          <span style={{ fontSize: '0.75rem', color: '#9aa5b4' }}>5 dernières entrées</span>
+          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>5 dernières entrées</span>
         </div>
         <div className="table-wrapper" style={{ borderRadius: 0, border: 'none' }}>
           <table>
@@ -131,19 +123,26 @@ export default function AdminDashboard() {
               </tr>
             </thead>
             <tbody>
-              {(data?.dernieres_ventes || DEMO_VENTES).map((v) => (
+              {(data?.dernieres_ventes || []).map((v) => (
                 <tr key={v.id}>
-                  <td style={{ color: '#9aa5b4', fontSize: '0.8rem' }}>{v.date}</td>
+                  <td style={{ color: '#64748b', fontSize: '0.8rem' }}>{v.date}</td>
                   <td style={{ fontWeight: 500 }}>{v.chatteur}</td>
-                  <td style={{ color: '#9aa5b4' }}>{v.modele}</td>
+                  <td style={{ color: '#64748b' }}>{v.modele}</td>
                   <td>
-                    <span className="badge badge-gold">{v.plateforme}</span>
+                    <span className="badge badge-navy">{v.plateforme}</span>
                   </td>
-                  <td style={{ textAlign: 'right', color: '#c9a84c', fontWeight: 700 }}>
+                  <td style={{ textAlign: 'right', color: '#f5b731', fontWeight: 700 }}>
                     {v.montant}
                   </td>
                 </tr>
               ))}
+              {(!data?.dernieres_ventes || data.dernieres_ventes.length === 0) && (
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
+                    Aucune vente récente
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -151,8 +150,8 @@ export default function AdminDashboard() {
 
       <style>{`
         @keyframes pulse {
-          0%, 100% { opacity: 0.5; }
-          50% { opacity: 0.8; }
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 0.6; }
         }
       `}</style>
     </div>

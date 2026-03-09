@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
@@ -20,11 +21,12 @@ import MonPlanning from './pages/chatteur/MonPlanning.jsx';
 import MesFactures from './pages/chatteur/MesFactures.jsx';
 
 function AdminLayout() {
+  const [mobileOpen, setMobileOpen] = useState(false);
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#0f1523' }}>
-      <Sidebar role="admin" />
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f3ef' }}>
+      <Sidebar role="admin" mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <Navbar />
+        <Navbar onMenuClick={() => setMobileOpen(true)} />
         <main style={{ flex: 1, padding: '1.5rem', overflowY: 'auto' }}>
           <Routes>
             <Route path="dashboard" element={<AdminDashboard />} />
@@ -44,11 +46,12 @@ function AdminLayout() {
 }
 
 function ChatteurLayout() {
+  const [mobileOpen, setMobileOpen] = useState(false);
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#0f1523' }}>
-      <Sidebar role="chatteur" />
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f3ef' }}>
+      <Sidebar role="chatteur" mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <Navbar />
+        <Navbar onMenuClick={() => setMobileOpen(true)} />
         <main style={{ flex: 1, padding: '1.5rem', overflowY: 'auto' }}>
           <Routes>
             <Route path="dashboard" element={<ChatteurDashboard />} />

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   CreditCard,
@@ -32,36 +32,43 @@ const chatteurItems = [
   { to: '/chatteur/factures', icon: FileText, label: 'Mes Factures' },
 ];
 
-export default function Sidebar({ role }) {
+export default function Sidebar({ role, mobileOpen, onMobileClose }) {
   const [collapsed, setCollapsed] = useState(false);
   const items = role === 'admin' ? adminItems : chatteurItems;
+  const location = useLocation();
+
+  // Close mobile sidebar on navigation
+  useEffect(() => {
+    if (mobileOpen) onMobileClose?.();
+  }, [location.pathname]);
 
   return (
     <>
       {/* Mobile overlay */}
-      {!collapsed && (
+      {mobileOpen && (
         <div
-          className="sidebar-mobile-overlay"
-          onClick={() => setCollapsed(true)}
+          onClick={onMobileClose}
           style={{
-            display: 'none',
             position: 'fixed',
             inset: 0,
-            background: 'rgba(0,0,0,0.5)',
+            background: 'rgba(0,0,0,0.4)',
+            backdropFilter: 'blur(4px)',
             zIndex: 199,
           }}
         />
       )}
 
       <aside
+        className="sidebar"
         style={{
-          width: collapsed ? '64px' : '256px',
-          minWidth: collapsed ? '64px' : '256px',
-          background: '#1a2744',
+          '--sidebar-w': collapsed ? '64px' : '256px',
+          width: 'var(--sidebar-w)',
+          minWidth: 'var(--sidebar-w)',
+          background: '#1b2e4b',
           borderRight: '1px solid rgba(255,255,255,0.06)',
           display: 'flex',
           flexDirection: 'column',
-          transition: 'width 200ms ease, min-width 200ms ease',
+          transition: 'width 200ms ease, min-width 200ms ease, transform 250ms ease',
           overflow: 'hidden',
           position: 'sticky',
           top: 0,
@@ -77,7 +84,7 @@ export default function Sidebar({ role }) {
             alignItems: 'center',
             justifyContent: collapsed ? 'center' : 'space-between',
             padding: collapsed ? '0' : '0 1rem 0 1.25rem',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
+            borderBottom: '1px solid rgba(255,255,255,0.08)',
             flexShrink: 0,
           }}
         >
@@ -87,7 +94,7 @@ export default function Sidebar({ role }) {
                 fontFamily: 'Cinzel, serif',
                 fontSize: '1rem',
                 fontWeight: 700,
-                color: '#c9a84c',
+                color: '#f5b731',
                 letterSpacing: '0.12em',
                 whiteSpace: 'nowrap',
               }}
@@ -97,19 +104,20 @@ export default function Sidebar({ role }) {
           )}
           <button
             onClick={() => setCollapsed((c) => !c)}
+            className="sidebar-collapse-btn"
             style={{
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              color: '#9aa5b4',
+              color: 'rgba(255,255,255,0.5)',
               padding: '0.4rem',
               borderRadius: '6px',
               display: 'flex',
               alignItems: 'center',
               transition: 'color 200ms',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#c9a84c')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = '#9aa5b4')}
+            onMouseEnter={(e) => (e.currentTarget.style.color = '#f5b731')}
+            onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.5)')}
           >
             {collapsed ? <Menu size={18} /> : <X size={18} />}
           </button>
@@ -132,31 +140,33 @@ export default function Sidebar({ role }) {
                 textDecoration: 'none',
                 fontSize: '0.875rem',
                 fontWeight: isActive ? 600 : 400,
-                color: isActive ? '#c9a84c' : '#9aa5b4',
-                background: isActive ? 'rgba(201, 168, 76, 0.1)' : 'transparent',
-                borderLeft: isActive ? '2px solid #c9a84c' : '2px solid transparent',
+                color: isActive ? '#f5b731' : 'rgba(255,255,255,0.6)',
+                background: isActive ? 'rgba(245, 183, 49, 0.12)' : 'transparent',
+                borderLeft: isActive ? '2px solid #f5b731' : '2px solid transparent',
                 transition: 'all 200ms ease',
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
               })}
               onMouseEnter={(e) => {
                 const link = e.currentTarget;
-                if (!link.style.color.includes('201')) {
-                  link.style.color = '#c9a84c';
-                  link.style.background = 'rgba(201, 168, 76, 0.06)';
+                if (!link.classList.contains('active')) {
+                  link.style.color = '#f5b731';
+                  link.style.background = 'rgba(245, 183, 49, 0.06)';
                 }
               }}
               onMouseLeave={(e) => {
                 const link = e.currentTarget;
-                // NavLink manages active state via className/style above
-                // re-render handles it
+                if (!link.classList.contains('active')) {
+                  link.style.color = 'rgba(255,255,255,0.6)';
+                  link.style.background = 'transparent';
+                }
               }}
             >
               {({ isActive }) => (
                 <>
                   <Icon
                     size={18}
-                    color={isActive ? '#c9a84c' : '#9aa5b4'}
+                    color={isActive ? '#f5b731' : 'rgba(255,255,255,0.5)'}
                     strokeWidth={isActive ? 2 : 1.5}
                     style={{ flexShrink: 0 }}
                   />
@@ -172,16 +182,32 @@ export default function Sidebar({ role }) {
           <div
             style={{
               padding: '1rem 1.25rem',
-              borderTop: '1px solid rgba(255,255,255,0.06)',
+              borderTop: '1px solid rgba(255,255,255,0.08)',
               fontSize: '0.7rem',
-              color: '#6b7280',
+              color: 'rgba(255,255,255,0.3)',
               textAlign: 'center',
             }}
           >
-            IMPERIUM © 2026
+            IMPERIUM &copy; 2026
           </div>
         )}
       </aside>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .sidebar {
+            position: fixed !important;
+            left: 0;
+            top: 0;
+            width: 280px !important;
+            min-width: 280px !important;
+            transform: translateX(${mobileOpen ? '0' : '-100%'});
+          }
+          .sidebar-collapse-btn {
+            display: none !important;
+          }
+        }
+      `}</style>
     </>
   );
 }

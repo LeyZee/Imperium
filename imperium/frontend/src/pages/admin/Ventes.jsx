@@ -54,13 +54,13 @@ export default function Ventes() {
   const getPlatformeName = id => { const p = plateformes.find(p => p.id == id); return p ? p.nom : '—'; };
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold text-or mb-6">Ventes</h1>
+    <div className="fade-in p-6">
+      <h1 className="text-2xl font-bold text-navy mb-6">Ventes</h1>
 
       {/* Formulaire ajout */}
       <div className="card mb-6">
-        <h2 className="text-sm font-semibold text-gray-400 mb-3">AJOUTER UNE VENTE</h2>
-        {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
+        <h2 className="text-sm font-semibold text-slate-500 mb-3">AJOUTER UNE VENTE</h2>
+        {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
         <form onSubmit={handleAdd} className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <select className="input-field" value={form.chatteur_id} onChange={e => setForm({...form, chatteur_id: e.target.value})} required>
             <option value="">Chatteur...</option>
@@ -93,11 +93,11 @@ export default function Ventes() {
         </div>
       </div>
 
-      {loading ? <div className="text-center text-gray-400 py-12">Chargement...</div> : (
-        <div className="card overflow-x-auto">
+      {loading ? <div className="text-center text-slate-400 py-12">Chargement...</div> : (
+        <div className="card overflow-x-auto" style={{ padding: 0 }}>
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-white/10 text-gray-400">
+              <tr>
                 <th className="text-left py-3 px-4">Date</th>
                 <th className="text-left py-3 px-4">Chatteur</th>
                 <th className="text-left py-3 px-4">Modèle</th>
@@ -107,17 +107,17 @@ export default function Ventes() {
               </tr>
             </thead>
             <tbody>
-              {ventes.map((v, i) => (
-                <tr key={v.id} className={i % 2 === 0 ? 'bg-white/5' : ''}>
-                  <td className="py-3 px-4 text-gray-400">{new Date(v.created_at).toLocaleDateString('fr-FR')}</td>
+              {ventes.map((v) => (
+                <tr key={v.id}>
+                  <td className="py-3 px-4 text-slate-500">{new Date(v.created_at).toLocaleDateString('fr-FR')}</td>
                   <td className="py-3 px-4">{getChatteurName(v.chatteur_id)}</td>
-                  <td className="py-3 px-4 text-gray-400">{getModeleName(v.modele_id)}</td>
-                  <td className="py-3 px-4"><span className="badge">{getPlatformeName(v.plateforme_id)}</span></td>
-                  <td className="py-3 px-4 text-right font-bold text-or">{v.montant_brut.toFixed(2)}</td>
-                  <td className="py-3 px-4"><button onClick={() => handleDelete(v.id)} className="text-red-400 hover:text-red-300"><Trash2 size={16} /></button></td>
+                  <td className="py-3 px-4 text-slate-500">{getModeleName(v.modele_id)}</td>
+                  <td className="py-3 px-4"><span className="badge badge-navy">{getPlatformeName(v.plateforme_id)}</span></td>
+                  <td className="py-3 px-4 text-right font-bold" style={{ color: '#f5b731' }}>{v.montant_brut.toFixed(2)}</td>
+                  <td className="py-3 px-4"><button onClick={() => handleDelete(v.id)} className="text-red-400 hover:text-red-500"><Trash2 size={16} /></button></td>
                 </tr>
               ))}
-              {ventes.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-gray-500">Aucune vente</td></tr>}
+              {ventes.length === 0 && <tr><td colSpan={6} className="text-center py-8 text-slate-400">Aucune vente</td></tr>}
             </tbody>
           </table>
         </div>
