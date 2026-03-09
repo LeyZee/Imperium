@@ -9,8 +9,8 @@
     },
     {
       "name": "imperium-frontend",
-      "runtimeExecutable": "npx.cmd",
-      "runtimeArgs": ["vite", "--host"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["frontend/node_modules/vite/bin/vite.js", "frontend", "--host"],
       "port": 5173
     }
   ]
