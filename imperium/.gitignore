@@ -1,0 +1,26 @@
+# Dépendances
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# Base de données (NE JAMAIS COMMITER)
+backend/imperium.db
+backend/imperium.db.lock
+backend/*.db
+backend/*.db-lock
+
+# Variables d'environnement
+.env
+backend/.env
+frontend/.env
+
+# Build frontend
+frontend/dist/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
