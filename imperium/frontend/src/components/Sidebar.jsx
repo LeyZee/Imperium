@@ -13,6 +13,7 @@ import {
   FileText,
   Menu,
   X,
+  MessageSquare,
 } from 'lucide-react';
 
 const adminItems = [
@@ -24,6 +25,7 @@ const adminItems = [
   { to: '/admin/shifts', icon: Calendar, label: 'Shifts' },
   { to: '/admin/ventes', icon: TrendingUp, label: 'Ventes' },
   { to: '/admin/kpis', icon: BarChart2, label: 'KPIs' },
+  { to: '/admin/telegram', icon: MessageSquare, label: 'Telegram Bot' },
 ];
 
 const chatteurItems = [

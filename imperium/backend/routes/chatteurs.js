@@ -12,7 +12,7 @@ router.get('/', authMiddleware, (req, res) => {
     FROM chatteurs c
     LEFT JOIN users u ON u.id = c.user_id
     WHERE c.actif = 1
-    ORDER BY c.nom, c.prenom
+    ORDER BY c.prenom
   `).all();
   res.json(chatteurs);
 });
@@ -39,12 +39,12 @@ router.get('/:id', authMiddleware, (req, res) => {
 // POST /api/chatteurs
 router.post('/', authMiddleware, adminOnly, (req, res) => {
   const {
-    nom, prenom, email, adresse, code_postal, ville, pays,
-    iban, taux_commission, is_nouveau,
+    prenom, email, adresse, code_postal, ville, pays,
+    iban, taux_commission, is_nouveau, role, taux_net_equipe, couleur,
     username, password // optional: create associated user account
   } = req.body;
 
-  if (!nom || !prenom) return res.status(400).json({ error: 'Nom et prénom requis' });
+  if (!prenom) return res.status(400).json({ error: 'Prénom requis' });
 
   let user_id = null;
 
@@ -61,23 +61,24 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
   }
 
   const result = db.prepare(`
-    INSERT INTO chatteurs (nom, prenom, email, adresse, code_postal, ville, pays, iban, taux_commission, is_nouveau, user_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chatteurs (prenom, email, adresse, code_postal, ville, pays, iban, taux_commission, is_nouveau, role, taux_net_equipe, couleur, user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
-    nom, prenom, email || null, adresse || null, code_postal || null,
+    prenom, email || null, adresse || null, code_postal || null,
     ville || null, pays || 'France', iban || null,
-    taux_commission ?? 0.15, is_nouveau ? 1 : 0, user_id
+    taux_commission ?? 0.15, is_nouveau ? 1 : 0,
+    role || 'chatteur', taux_net_equipe ?? 0, couleur ?? 0, user_id
   );
 
-  res.status(201).json({ id: result.lastInsertRowid, nom, prenom });
+  res.status(201).json({ id: result.lastInsertRowid, prenom });
 });
 
 // PUT /api/chatteurs/:id
 router.put('/:id', authMiddleware, adminOnly, (req, res) => {
   const { id } = req.params;
   const {
-    nom, prenom, email, adresse, code_postal, ville, pays,
-    iban, taux_commission, is_nouveau, actif
+    prenom, email, adresse, code_postal, ville, pays,
+    iban, taux_commission, is_nouveau, actif, role, taux_net_equipe, couleur
   } = req.body;
 
   const existing = db.prepare('SELECT id FROM chatteurs WHERE id = ?').get(id);
@@ -85,7 +86,6 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
 
   db.prepare(`
     UPDATE chatteurs SET
-      nom = COALESCE(?, nom),
       prenom = COALESCE(?, prenom),
       email = COALESCE(?, email),
       adresse = COALESCE(?, adresse),
@@ -95,12 +95,19 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
       iban = COALESCE(?, iban),
       taux_commission = COALESCE(?, taux_commission),
       is_nouveau = COALESCE(?, is_nouveau),
-      actif = COALESCE(?, actif)
+      actif = COALESCE(?, actif),
+      role = COALESCE(?, role),
+      taux_net_equipe = COALESCE(?, taux_net_equipe),
+      couleur = COALESCE(?, couleur)
     WHERE id = ?
   `).run(
-    nom, prenom, email, adresse, code_postal, ville, pays,
-    iban, taux_commission, is_nouveau !== undefined ? (is_nouveau ? 1 : 0) : null,
+    prenom ?? null, email ?? null, adresse ?? null,
+    code_postal ?? null, ville ?? null, pays ?? null,
+    iban ?? null, taux_commission ?? null,
+    is_nouveau !== undefined ? (is_nouveau ? 1 : 0) : null,
     actif !== undefined ? (actif ? 1 : 0) : null,
+    role ?? null, taux_net_equipe ?? null,
+    couleur ?? null,
     id
   );
 
@@ -163,13 +170,6 @@ router.get('/:id/kpis', authMiddleware, (req, res) => {
   const rang = classement.findIndex(r => r.chatteur_id == id) + 1;
 
   // Malus
-  const malusQuery = db.prepare(`
-    SELECT SUM(montant) as total FROM malus WHERE chatteur_id = ? ${periode_debut ? 'AND periode >= ?' : ''}
-    ${periode_fin ? 'AND periode <= ?' : ''}
-  `);
-  const malusParams = [id];
-  if (periode_debut) malusParams.push(periode_debut);
-  if (periode_fin) malusParams.push(periode_fin);
   const malusTotal = db.prepare(`
     SELECT COALESCE(SUM(montant), 0) as total FROM malus WHERE chatteur_id = ?
     ${periode_debut && periode_fin ? 'AND periode >= ? AND periode <= ?' : ''}

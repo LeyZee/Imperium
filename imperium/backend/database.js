@@ -22,7 +22,6 @@ function initDB() {
     CREATE TABLE IF NOT EXISTS chatteurs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      nom TEXT NOT NULL,
       prenom TEXT NOT NULL,
       email TEXT,
       adresse TEXT,
@@ -31,6 +30,9 @@ function initDB() {
       pays TEXT DEFAULT 'France',
       iban TEXT,
       taux_commission REAL NOT NULL DEFAULT 0.15,
+      role TEXT NOT NULL DEFAULT 'chatteur' CHECK(role IN ('chatteur', 'manager', 'va')),
+      taux_net_equipe REAL NOT NULL DEFAULT 0,
+      couleur INTEGER NOT NULL DEFAULT 0,
       is_nouveau INTEGER NOT NULL DEFAULT 0,
       actif INTEGER NOT NULL DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -48,8 +50,7 @@ function initDB() {
 
     CREATE TABLE IF NOT EXISTS modeles (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nom TEXT NOT NULL,
-      prenom TEXT NOT NULL,
+      pseudo TEXT NOT NULL,
       part_percent REAL NOT NULL DEFAULT 0.35,
       actif INTEGER NOT NULL DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -90,6 +91,7 @@ function initDB() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chatteur_id INTEGER NOT NULL REFERENCES chatteurs(id) ON DELETE CASCADE,
       modele_id INTEGER REFERENCES modeles(id) ON DELETE SET NULL,
+      plateforme_id INTEGER REFERENCES plateformes(id) ON DELETE SET NULL,
       date DATE NOT NULL,
       creneau INTEGER NOT NULL CHECK(creneau IN (1, 2, 3, 4)),
       fuseau_horaire TEXT NOT NULL DEFAULT 'Europe/Paris',
@@ -97,12 +99,34 @@ function initDB() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS modeles_plateformes (
+      modele_id INTEGER NOT NULL REFERENCES modeles(id) ON DELETE CASCADE,
+      plateforme_id INTEGER NOT NULL REFERENCES plateformes(id) ON DELETE CASCADE,
+      PRIMARY KEY (modele_id, plateforme_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS shift_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chatteur_id INTEGER NOT NULL REFERENCES chatteurs(id) ON DELETE CASCADE,
+      modele_id INTEGER REFERENCES modeles(id) ON DELETE SET NULL,
+      plateforme_id INTEGER REFERENCES plateformes(id) ON DELETE SET NULL,
+      day_of_week INTEGER NOT NULL CHECK(day_of_week BETWEEN 1 AND 7),
+      creneau INTEGER NOT NULL CHECK(creneau IN (1, 2, 3, 4)),
+      fuseau_horaire TEXT NOT NULL DEFAULT 'Europe/Paris'
+    );
+
+    CREATE TABLE IF NOT EXISTS telegram_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS paies (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chatteur_id INTEGER NOT NULL REFERENCES chatteurs(id) ON DELETE CASCADE,
+      plateforme_id INTEGER REFERENCES plateformes(id) ON DELETE SET NULL,
       periode_debut DATE NOT NULL,
       periode_fin DATE NOT NULL,
-      ventes_brutes_usd REAL NOT NULL DEFAULT 0,
+      ventes_brutes REAL NOT NULL DEFAULT 0,
       taux_change REAL NOT NULL DEFAULT 1,
       ventes_ttc_eur REAL NOT NULL DEFAULT 0,
       ventes_ht_eur REAL NOT NULL DEFAULT 0,
@@ -113,7 +137,7 @@ function initDB() {
       total_chatteur REAL NOT NULL DEFAULT 0,
       statut TEXT NOT NULL DEFAULT 'calculé' CHECK(statut IN ('calculé', 'validé', 'payé')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(chatteur_id, periode_debut, periode_fin)
+      UNIQUE(chatteur_id, plateforme_id, periode_debut, periode_fin)
     );
   `);
 
@@ -142,6 +166,32 @@ function seedDefaults() {
     );
   }
 
+  // Default modeles_plateformes mapping
+  const mpCount = db.prepare('SELECT COUNT(*) as c FROM modeles_plateformes').get([]);
+  if (!mpCount || mpCount.c === 0) {
+    const modeles = db.prepare('SELECT id, pseudo FROM modeles').all([]);
+    const plateformes = db.prepare('SELECT id, nom FROM plateformes').all([]);
+    const of = plateformes.find(p => p.nom === 'OnlyFans');
+    const rev = plateformes.find(p => p.nom === 'Reveal');
+    if (of && rev && modeles.length > 0) {
+      const mapping = {
+        'MESSALINA': [of.id, rev.id],
+        'ANGEL': [of.id, rev.id],
+        'EMMY': [of.id],
+        'SOUKI': [of.id],
+        'LILY': [rev.id],
+      };
+      for (const m of modeles) {
+        const pids = mapping[m.pseudo] || [];
+        for (const pid of pids) {
+          try {
+            db.prepare('INSERT OR IGNORE INTO modeles_plateformes (modele_id, plateforme_id) VALUES (?, ?)').run([m.id, pid]);
+          } catch (e) { /* ignore */ }
+        }
+      }
+    }
+  }
+
   // Default exchange rate USD→EUR
   const tauxExists = db.prepare('SELECT id FROM taux_change WHERE devise_base = ? AND devise_cible = ?').get(['USD', 'EUR']);
   if (!tauxExists) {
@@ -153,6 +203,62 @@ function seedDefaults() {
 }
 
 initDB();
+
+// Migration: add plateforme_id to shifts if missing (existing DBs)
+try {
+  db.exec("ALTER TABLE shifts ADD COLUMN plateforme_id INTEGER REFERENCES plateformes(id) ON DELETE SET NULL");
+} catch (e) { /* already exists */ }
+
+// Migration: chatteurs — add role, taux_net_equipe (for old DBs with is_manager/nom)
+try {
+  db.exec("ALTER TABLE chatteurs ADD COLUMN role TEXT NOT NULL DEFAULT 'chatteur'");
+} catch (e) { /* already exists */ }
+try {
+  db.exec("ALTER TABLE chatteurs ADD COLUMN taux_net_equipe REAL NOT NULL DEFAULT 0");
+} catch (e) { /* already exists */ }
+
+// Migration: modeles — recreate with pseudo if old schema (nom+prenom)
+try {
+  const modelSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='modeles'").get([]);
+  if (modelSql && modelSql.sql && modelSql.sql.includes('prenom') && !modelSql.sql.includes('pseudo')) {
+    db.exec("ALTER TABLE modeles ADD COLUMN pseudo TEXT");
+    db.exec("UPDATE modeles SET pseudo = prenom WHERE pseudo IS NULL");
+  }
+} catch (e) { /* ignore */ }
+
+// Migration: add couleur column to chatteurs
+try {
+  db.exec("ALTER TABLE chatteurs ADD COLUMN couleur INTEGER NOT NULL DEFAULT 0");
+} catch (e) { /* already exists */ }
+
+// Migration: recreate paies table with plateforme_id in UNIQUE constraint
+try {
+  const hasCol = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='paies'").get([]);
+  if (hasCol && hasCol.sql && !hasCol.sql.includes('plateforme_id')) {
+    db.exec("DROP TABLE IF EXISTS paies");
+    db.exec(`
+      CREATE TABLE paies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chatteur_id INTEGER NOT NULL REFERENCES chatteurs(id) ON DELETE CASCADE,
+        plateforme_id INTEGER REFERENCES plateformes(id) ON DELETE SET NULL,
+        periode_debut DATE NOT NULL,
+        periode_fin DATE NOT NULL,
+        ventes_brutes REAL NOT NULL DEFAULT 0,
+        taux_change REAL NOT NULL DEFAULT 1,
+        ventes_ttc_eur REAL NOT NULL DEFAULT 0,
+        ventes_ht_eur REAL NOT NULL DEFAULT 0,
+        net_ht_eur REAL NOT NULL DEFAULT 0,
+        commission_chatteur REAL NOT NULL DEFAULT 0,
+        malus_total REAL NOT NULL DEFAULT 0,
+        prime REAL NOT NULL DEFAULT 0,
+        total_chatteur REAL NOT NULL DEFAULT 0,
+        statut TEXT NOT NULL DEFAULT 'calculé' CHECK(statut IN ('calculé', 'validé', 'payé')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(chatteur_id, plateforme_id, periode_debut, periode_fin)
+      )
+    `);
+  }
+} catch (e) { /* ignore */ }
 
 // Compatibility wrapper: makes node-sqlite3-wasm behave like better-sqlite3
 // (accepts spread args instead of requiring an array)

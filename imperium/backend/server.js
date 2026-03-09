@@ -55,4 +55,14 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`🏛️  Imperium API démarrée sur http://localhost:${PORT}`);
+
+  // Start Telegram polling bot
+  const telegramPoller = require('./services/telegram-poller');
+  telegramPoller.start().catch(() => {});
+});
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  try { require('./services/telegram-poller').stop(); } catch {}
+  process.exit(0);
 });

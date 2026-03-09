@@ -1,15 +1,21 @@
-import { useState, useEffect } from 'react';
-import { Download, CheckCircle, FileText } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../../api/index.js';
+import StatCard from '../../components/StatCard.jsx';
+import {
+  Euro, TrendingUp, Building2, ArrowLeftRight,
+  Trophy, RefreshCw, ChevronDown, Crown, Users,
+  CheckCircle, Clock, AlertCircle,
+} from 'lucide-react';
 
+/* ─── Period generator ─── */
 function generatePeriods() {
   const periods = [];
   const now = new Date();
   let year = now.getFullYear();
-  let month = now.getMonth(); // 0-indexed
+  let month = now.getMonth();
   let isFirstHalf = now.getDate() < 15;
 
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 12; i++) {
     const m = String(month + 1).padStart(2, '0');
     const monthName = new Date(year, month, 1).toLocaleDateString('fr-FR', { month: 'long' });
     const cap = monthName.charAt(0).toUpperCase() + monthName.slice(1);
@@ -18,7 +24,7 @@ function generatePeriods() {
       periods.push({
         debut: `${year}-${m}-01`,
         fin: `${year}-${m}-15`,
-        label: `1-15 ${cap} ${year}`
+        label: `1 – 15 ${cap} ${year}`,
       });
       isFirstHalf = false;
       month--;
@@ -32,183 +38,569 @@ function generatePeriods() {
       periods.push({
         debut: `${year}-${m}-15`,
         fin: `${ny}-${nm}-01`,
-        label: `15 ${cap} - 1 ${capNext} ${ny}`
+        label: `15 ${cap} – 1 ${capNext} ${ny}`,
       });
       isFirstHalf = true;
     }
   }
-
   return periods;
 }
 
+function fmtEur(n) {
+  if (n == null) return '—';
+  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+}
+
+function fmtUsd(n) {
+  if (n == null) return '—';
+  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' $';
+}
+
+function fmtPercent(n) {
+  return (n * 100).toFixed(0) + '%';
+}
+
+function getInitials(prenom) {
+  return (prenom?.[0] || '?').toUpperCase();
+}
+
+const AVATAR_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+function avatarColor(id) {
+  return AVATAR_COLORS[(id || 0) % AVATAR_COLORS.length];
+}
+
+const STATUT_STYLES = {
+  'calculé': { bg: 'rgba(100,116,139,0.1)', color: '#64748b', border: '1px solid rgba(100,116,139,0.2)' },
+  'validé': { bg: 'rgba(99,102,241,0.1)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.2)' },
+  'payé': { bg: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' },
+};
+
+const PODIUM_ICONS = [
+  { emoji: '🥇', color: '#f5b731', bg: 'rgba(245,183,49,0.12)' },
+  { emoji: '🥈', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
+  { emoji: '🥉', color: '#cd7f32', bg: 'rgba(205,127,50,0.12)' },
+];
+
+/* ═══════════════════════════════════════════ */
 export default function Paies() {
   const periods = generatePeriods();
-  const [selectedPeriod, setSelectedPeriod] = useState(periods[0]?.debut || '');
-  const [paies, setPaies] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [validating, setValidating] = useState(false);
+  const [selectedIdx, setSelectedIdx] = useState(0);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [recalculating, setRecalculating] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
+  const dropdownRef = useRef(null);
 
-  useEffect(() => {
-    if (!selectedPeriod) return;
-    fetchPaies();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedPeriod]);
+  const period = periods[selectedIdx];
 
-  const fetchPaies = async () => {
+  async function fetchPaies() {
+    if (!period) return;
     setLoading(true);
     setError('');
     try {
-      const period = periods.find(p => p.debut === selectedPeriod);
-      if (!period) return;
-      const res = await api.get(`/api/paies?periode_debut=${period.debut}&periode_fin=${period.fin}`);
-      setPaies(res.data);
+      const { data: d } = await api.get(`/api/paies?debut=${period.debut}&fin=${period.fin}`);
+      setData(d);
     } catch {
-      setError('Impossible de charger les paies pour cette période.');
-      setPaies([]);
+      setError('Impossible de charger les paies.');
+      setData(null);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleValidate = async () => {
-    if (!window.confirm('Valider et générer les factures pour cette période ?')) return;
-    setValidating(true);
-    setError('');
-    setSuccess('');
-    try {
-      const period = periods.find(p => p.debut === selectedPeriod);
-      await api.post('/api/paies/calculer', { periode_debut: period.debut, periode_fin: period.fin });
-      setSuccess('Factures générées avec succès !');
-      fetchPaies();
-    } catch {
-      setError('Erreur lors de la validation des paies.');
-    } finally {
-      setValidating(false);
+  useEffect(() => {
+    fetchPaies();
+  }, [selectedIdx]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClick(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowPeriodDropdown(false);
+      }
     }
-  };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
 
-  const handleDownloadPDF = (paieId) => {
-    window.open(`/api/paies/${paieId}/facture`, '_blank');
-  };
+  async function handleRecalculate() {
+    setRecalculating(true);
+    setError('');
+    try {
+      await api.post('/api/paies/recalculer', { debut: period.debut, fin: period.fin });
+      setSuccess('Paies recalculées');
+      setTimeout(() => setSuccess(''), 3000);
+      await fetchPaies();
+    } catch {
+      setError('Erreur lors du recalcul.');
+    } finally {
+      setRecalculating(false);
+    }
+  }
 
-  const selectedLabel = periods.find((p) => p.debut === selectedPeriod)?.label || '';
+  async function handleStatutChange(paieId, newStatut) {
+    try {
+      await api.put(`/api/paies/${paieId}/statut`, { statut: newStatut });
+      await fetchPaies();
+    } catch {
+      setError('Erreur changement de statut.');
+    }
+  }
+
+  const paies = data?.paies || [];
+  const managers = data?.managers || [];
+  const resume = data?.resume || {};
+  const top = resume.top_chatteurs || [];
 
   return (
     <div className="fade-in">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div>
-          <h2 className="page-title">Paies</h2>
-          <p className="page-subtitle">Calcul et validation des rémunérations</p>
-        </div>
-        <select
-          className="input-field"
-          value={selectedPeriod}
-          onChange={(e) => setSelectedPeriod(e.target.value)}
-          style={{ width: 'auto', minWidth: '220px' }}
-        >
-          {periods.map((p) => (
-            <option key={p.debut} value={p.debut}>{p.label}</option>
-          ))}
-        </select>
-      </div>
-
-      {error && <div className="error-box" style={{ marginBottom: '1rem' }}>{error}</div>}
+      {/* Toast */}
       {success && (
-        <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '12px', padding: '0.75rem 1rem', color: '#10b981', marginBottom: '1rem', fontSize: '0.875rem' }}>
-          {success}
-        </div>
+        <div className="toast-success" style={{
+          position: 'fixed', top: '1rem', right: '1rem', zIndex: 100,
+          animation: 'slideUp 0.3s ease',
+        }}>{success}</div>
       )}
 
-      <div className="card" style={{ padding: 0 }}>
-        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <FileText size={16} color="#1b2e4b" />
-          <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Paies — {selectedLabel}</span>
+      {/* Header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+        <div>
+          <h1 style={{ fontWeight: 700, margin: 0 }}>Paies</h1>
+          <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Calcul automatique et suivi des rémunérations</p>
         </div>
 
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
-            <div className="spinner" />
-          </div>
-        ) : (
-          <div className="table-wrapper" style={{ borderRadius: 0, border: 'none' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Nom</th>
-                  <th>Plateforme</th>
-                  <th style={{ textAlign: 'right' }}>Ventes brutes</th>
-                  <th style={{ textAlign: 'right' }}>Net HT</th>
-                  <th style={{ textAlign: 'right' }}>Commission</th>
-                  <th style={{ textAlign: 'right' }}>Malus</th>
-                  <th style={{ textAlign: 'right' }}>Prime</th>
-                  <th style={{ textAlign: 'right' }}>TOTAL</th>
-                  <th style={{ textAlign: 'center' }}>PDF</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paies.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
-                      Aucune paie pour cette période.
-                    </td>
-                  </tr>
-                ) : (
-                  paies.map((p) => (
-                    <tr key={p.id}>
-                      <td style={{ fontWeight: 600 }}>{p.nom}</td>
-                      <td><span className="badge badge-navy">{p.plateforme}</span></td>
-                      <td style={{ textAlign: 'right', color: '#64748b' }}>{(p.ventes_brutes || 0).toLocaleString('fr-FR')} €</td>
-                      <td style={{ textAlign: 'right' }}>{(p.net_ht || 0).toLocaleString('fr-FR')} €</td>
-                      <td style={{ textAlign: 'right', color: '#ef4444' }}>-{(p.commission || 0).toLocaleString('fr-FR')} €</td>
-                      <td style={{ textAlign: 'right', color: p.malus > 0 ? '#ef4444' : '#94a3b8' }}>
-                        {p.malus > 0 ? `-${(p.malus).toLocaleString('fr-FR')} €` : '—'}
-                      </td>
-                      <td style={{ textAlign: 'right', color: p.prime > 0 ? '#10b981' : '#94a3b8' }}>
-                        {p.prime > 0 ? `+${(p.prime).toLocaleString('fr-FR')} €` : '—'}
-                      </td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731', fontSize: '1rem' }}>
-                        {(p.total || 0).toLocaleString('fr-FR')} €
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {p.facture_generee ? (
-                          <button
-                            className="btn-ghost"
-                            onClick={() => handleDownloadPDF(p.id)}
-                            title="Télécharger la facture"
-                            style={{ padding: '0.35rem 0.5rem' }}
-                          >
-                            <Download size={15} color="#1b2e4b" />
-                          </button>
-                        ) : (
-                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Footer action */}
-        <div style={{ padding: '1.25rem 1.5rem', borderTop: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Recalculate button */}
           <button
-            className="btn-primary"
-            onClick={handleValidate}
-            disabled={validating || loading || paies.length === 0}
+            className="btn-secondary"
+            onClick={handleRecalculate}
+            disabled={recalculating || loading}
+            title="Recalculer les paies"
+            style={{ padding: '0.5rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
           >
-            {validating ? (
-              <div className="spinner" style={{ width: '16px', height: '16px', borderWidth: '2px' }} />
-            ) : (
-              <CheckCircle size={16} />
-            )}
-            Valider et générer factures
+            <RefreshCw size={15} style={{ animation: recalculating ? 'spin 1s linear infinite' : 'none' }} />
+            {recalculating ? 'Recalcul...' : 'Recalculer'}
           </button>
+
+          {/* Period selector */}
+          <div ref={dropdownRef} style={{ position: 'relative' }}>
+            <button
+              className="btn-primary"
+              onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: '200px', justifyContent: 'space-between' }}
+            >
+              <span style={{ fontSize: '0.85rem' }}>{period?.label}</span>
+              <ChevronDown size={15} style={{
+                transform: showPeriodDropdown ? 'rotate(180deg)' : 'rotate(0)',
+                transition: 'transform 200ms ease',
+              }} />
+            </button>
+            {showPeriodDropdown && (
+              <div style={{
+                position: 'absolute', top: '100%', right: 0, marginTop: '0.35rem',
+                background: '#fff', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.08)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50,
+                minWidth: '240px', maxHeight: '320px', overflowY: 'auto',
+                animation: 'slideUp 0.2s ease',
+              }}>
+                {periods.map((p, i) => (
+                  <button
+                    key={p.debut}
+                    onClick={() => { setSelectedIdx(i); setShowPeriodDropdown(false); }}
+                    style={{
+                      display: 'block', width: '100%', textAlign: 'left',
+                      padding: '0.6rem 1rem', border: 'none', cursor: 'pointer',
+                      fontSize: '0.85rem', transition: 'all 150ms',
+                      background: i === selectedIdx ? 'rgba(245,183,49,0.1)' : 'transparent',
+                      color: i === selectedIdx ? '#f5b731' : '#1a1f2e',
+                      fontWeight: i === selectedIdx ? 600 : 400,
+                      borderLeft: i === selectedIdx ? '3px solid #f5b731' : '3px solid transparent',
+                    }}
+                    onMouseEnter={e => { if (i !== selectedIdx) { e.currentTarget.style.background = 'rgba(0,0,0,0.03)'; } }}
+                    onMouseLeave={e => { if (i !== selectedIdx) { e.currentTarget.style.background = 'transparent'; } }}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Loading skeleton */}
+      {loading ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+          {[...Array(4)].map((_, i) => (
+            <div key={i} className="card" style={{ height: '100px', animation: 'pulse-soft 1.5s ease infinite', opacity: 0.5 }} />
+          ))}
+        </div>
+      ) : data ? (
+        <>
+          {/* Stat Cards */}
+          <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+            <StatCard
+              title="Net HT Équipe"
+              value={fmtEur(resume.total_net_ht_equipe)}
+              icon={Euro}
+              color="#6366f1"
+            />
+            <StatCard
+              title="Total Payé"
+              value={fmtEur(resume.total_paye_equipe)}
+              icon={Users}
+              color="#f5b731"
+            />
+            <StatCard
+              title="Trésorerie Agence"
+              value={fmtEur(resume.tresorerie_agence)}
+              icon={Building2}
+              color="#10b981"
+            />
+            <StatCard
+              title="Taux de Change"
+              value={resume.taux_change ? `1 $ = ${resume.taux_change.toFixed(4)} €` : '—'}
+              icon={ArrowLeftRight}
+              color="#64748b"
+            />
+          </div>
+
+          {/* Top 3 Podium */}
+          {top.length > 0 && (
+            <div className="card" style={{ marginBottom: '1rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
+                <Trophy size={18} color="#f5b731" />
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Top Chatteurs</h3>
+              </div>
+              <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(top.length, 3)}, 1fr)`, gap: '0.75rem' }}>
+                {top.map((t, i) => (
+                  <div
+                    key={t.chatteur_id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: '0.75rem',
+                      padding: '0.85rem 1rem', borderRadius: '10px',
+                      background: PODIUM_ICONS[i].bg,
+                      border: `1px solid ${PODIUM_ICONS[i].color}25`,
+                      transition: 'transform 200ms ease, box-shadow 200ms ease',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
+                  >
+                    <span style={{ fontSize: '1.5rem' }}>{PODIUM_ICONS[i].emoji}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontWeight: 600, fontSize: '0.85rem', color: '#1a1f2e', margin: 0 }}>{t.nom}</p>
+                      <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0.15rem 0 0' }}>
+                        Net HT: {fmtEur(t.net_ht)}
+                      </p>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <p style={{ fontWeight: 700, fontSize: '0.9rem', color: PODIUM_ICONS[i].color, margin: 0 }}>
+                        +{fmtEur(t.prime)}
+                      </p>
+                      <p style={{ fontSize: '0.65rem', color: '#94a3b8', margin: '0.1rem 0 0' }}>
+                        prime
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Main Table — Chatteurs */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: '1rem' }}>
+            <div style={{
+              padding: '1rem 1.25rem',
+              borderBottom: '1px solid rgba(0,0,0,0.06)',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Détail par chatteur</h3>
+              {paies.length > 0 && (
+                <span className="badge badge-navy" style={{ fontSize: '0.7rem' }}>
+                  {paies.length} ligne{paies.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Chatteur</th>
+                    <th>Plateforme</th>
+                    <th style={{ textAlign: 'right' }}>Brut</th>
+                    <th style={{ textAlign: 'right' }}>TTC €</th>
+                    <th style={{ textAlign: 'right' }}>HT €</th>
+                    <th style={{ textAlign: 'right' }}>Net HT</th>
+                    <th style={{ textAlign: 'right' }}>Commission</th>
+                    <th style={{ textAlign: 'right' }}>Malus</th>
+                    <th style={{ textAlign: 'right' }}>Prime</th>
+                    <th style={{ textAlign: 'right' }}>TOTAL</th>
+                    <th style={{ textAlign: 'center' }}>Statut</th>
+                  </tr>
+                </thead>
+                <tbody className="stagger-children">
+                  {paies.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
+                        <div style={{
+                          width: 48, height: 48, borderRadius: '50%', margin: '0 auto 0.75rem',
+                          background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }}>
+                          <Euro size={22} color="#6366f1" strokeWidth={1.5} />
+                        </div>
+                        <p style={{ fontWeight: 500, color: '#64748b' }}>Aucune paie pour cette période</p>
+                        <p style={{ fontSize: '0.8rem' }}>Les paies se calculent automatiquement à chaque vente ajoutée.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    paies.map(p => {
+                      const isUSD = p.devise === 'USD';
+                      const statutStyle = STATUT_STYLES[p.statut] || STATUT_STYLES['calculé'];
+                      const totalColor = p.total_chatteur > 0 ? '#f5b731' : '#ef4444';
+
+                      return (
+                        <tr
+                          key={p.id}
+                          style={{ transition: 'all 200ms ease', cursor: 'default' }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.transform = 'translateY(-1px)';
+                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
+                            e.currentTarget.style.borderLeft = '3px solid #f5b731';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = 'none';
+                            e.currentTarget.style.borderLeft = '3px solid transparent';
+                          }}
+                        >
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{
+                                width: 32, height: 32, borderRadius: '50%',
+                                background: avatarColor(p.chatteur_id),
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '0.7rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+                              }}>
+                                {getInitials(p.chatteur_prenom)}
+                              </div>
+                              <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
+                                {p.chatteur_prenom}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={isUSD ? 'badge badge-gold' : 'badge badge-navy'}>
+                              {p.plateforme_nom || '—'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {isUSD ? fmtUsd(p.ventes_brutes) : fmtEur(p.ventes_brutes)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {fmtEur(p.ventes_ttc_eur)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {fmtEur(p.ventes_ht_eur)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: 600 }}>
+                            {fmtEur(p.net_ht_eur)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {fmtEur(p.commission_chatteur)}
+                            <span style={{ fontSize: '0.65rem', color: '#94a3b8', marginLeft: '0.25rem' }}>
+                              ({fmtPercent(p.taux_commission)})
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: p.malus_total > 0 ? '#ef4444' : '#94a3b8' }}>
+                            {p.malus_total > 0 ? `-${fmtEur(p.malus_total)}` : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: p.prime > 0 ? '#10b981' : '#94a3b8' }}>
+                            {p.prime > 0 ? `+${fmtEur(p.prime)}` : '—'}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: totalColor }}>
+                            {fmtEur(p.total_chatteur)}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <select
+                              value={p.statut}
+                              onChange={e => handleStatutChange(p.id, e.target.value)}
+                              style={{
+                                background: statutStyle.bg,
+                                color: statutStyle.color,
+                                border: statutStyle.border,
+                                borderRadius: '20px',
+                                padding: '0.2rem 0.5rem',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                outline: 'none',
+                                appearance: 'none',
+                                WebkitAppearance: 'none',
+                                textAlign: 'center',
+                                minWidth: '75px',
+                              }}
+                            >
+                              <option value="calculé">Calculé</option>
+                              <option value="validé">Validé</option>
+                              <option value="payé">Payé</option>
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Manager Section */}
+          {managers.length > 0 && (
+            <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: '1rem' }}>
+              <div style={{
+                padding: '1rem 1.25rem',
+                borderBottom: '1px solid rgba(0,0,0,0.06)',
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+              }}>
+                <Crown size={16} color="#f5b731" />
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Manager</h3>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nom</th>
+                      <th style={{ textAlign: 'right' }}>% du Net HT Équipe</th>
+                      <th style={{ textAlign: 'right' }}>Base (Net HT Équipe)</th>
+                      <th style={{ textAlign: 'right' }}>TOTAL</th>
+                      <th style={{ textAlign: 'center' }}>Statut</th>
+                    </tr>
+                  </thead>
+                  <tbody className="stagger-children">
+                    {managers.map(m => {
+                      const statutStyle = STATUT_STYLES[m.statut] || STATUT_STYLES['calculé'];
+                      return (
+                        <tr
+                          key={m.id}
+                          style={{ transition: 'all 200ms ease' }}
+                          onMouseEnter={e => {
+                            e.currentTarget.style.transform = 'translateY(-1px)';
+                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
+                            e.currentTarget.style.borderLeft = '3px solid #f5b731';
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.transform = 'translateY(0)';
+                            e.currentTarget.style.boxShadow = 'none';
+                            e.currentTarget.style.borderLeft = '3px solid transparent';
+                          }}
+                        >
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{
+                                width: 32, height: 32, borderRadius: '50%',
+                                background: '#f5b731',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '0.7rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+                              }}>
+                                <Crown size={16} />
+                              </div>
+                              <span style={{ fontWeight: 500 }}>
+                                {m.chatteur_prenom}
+                              </span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: '#6366f1' }}>
+                            {fmtPercent(m.taux_net_equipe)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {fmtEur(resume.total_net_ht_equipe)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: '#f5b731' }}>
+                            {fmtEur(m.total_chatteur)}
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <select
+                              value={m.statut}
+                              onChange={e => handleStatutChange(m.id, e.target.value)}
+                              style={{
+                                background: statutStyle.bg,
+                                color: statutStyle.color,
+                                border: statutStyle.border,
+                                borderRadius: '20px',
+                                padding: '0.2rem 0.5rem',
+                                fontSize: '0.72rem',
+                                fontWeight: 600,
+                                cursor: 'pointer',
+                                outline: 'none',
+                                appearance: 'none',
+                                WebkitAppearance: 'none',
+                                textAlign: 'center',
+                                minWidth: '75px',
+                              }}
+                            >
+                              <option value="calculé">Calculé</option>
+                              <option value="validé">Validé</option>
+                              <option value="payé">Payé</option>
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Résumé Financier */}
+          {paies.length > 0 && (
+            <div className="card">
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Building2 size={16} /> Résumé Financier
+              </h3>
+              <div className="stagger-children" style={{
+                display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                gap: '0.75rem',
+              }}>
+                {[
+                  { label: 'Net HT Équipe', value: fmtEur(resume.total_net_ht_equipe), color: '#6366f1' },
+                  { label: 'Part Modèles (Total Payé)', value: fmtEur(resume.total_paye_equipe), color: '#f5b731' },
+                  { label: 'Trésorerie Agence', value: fmtEur(resume.tresorerie_agence), color: '#10b981' },
+                ].map(item => (
+                  <div key={item.label} style={{
+                    padding: '0.85rem 1rem', borderRadius: '10px',
+                    background: `${item.color}08`, border: `1px solid ${item.color}20`,
+                    transition: 'transform 200ms',
+                  }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                  >
+                    <p style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.3rem' }}>{item.label}</p>
+                    <p style={{ fontWeight: 700, fontSize: '1.1rem', color: item.color, margin: 0 }}>{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      ) : null}
+
+      {/* Error toast */}
+      {error && !loading && (
+        <div className="toast-error" style={{
+          position: 'fixed', bottom: '1rem', right: '1rem', zIndex: 100,
+          animation: 'slideUp 0.3s ease',
+        }}>{error}</div>
+      )}
+
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 }

@@ -21,8 +21,8 @@ export default function MesFactures() {
   }, [user]);
 
   return (
-    <div className="fade-in p-6">
-      <h1 className="text-2xl font-bold text-navy mb-6">Mes Factures</h1>
+    <div className="fade-in">
+      <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '1rem' }}>Mes Factures</h1>
 
       {loading ? <div className="text-center text-slate-400 py-12">Chargement...</div> : (
         <div className="card overflow-x-auto" style={{ padding: 0 }}>

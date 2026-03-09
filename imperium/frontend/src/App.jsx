@@ -16,6 +16,7 @@ import Modeles from './pages/admin/Modeles.jsx';
 import Shifts from './pages/admin/Shifts.jsx';
 import Ventes from './pages/admin/Ventes.jsx';
 import KPIs from './pages/admin/KPIs.jsx';
+import TelegramBot from './pages/admin/TelegramBot.jsx';
 import ChatteurDashboard from './pages/chatteur/Dashboard.jsx';
 import MonPlanning from './pages/chatteur/MonPlanning.jsx';
 import MesFactures from './pages/chatteur/MesFactures.jsx';
@@ -27,7 +28,7 @@ function AdminLayout() {
       <Sidebar role="admin" mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Navbar onMenuClick={() => setMobileOpen(true)} />
-        <main style={{ flex: 1, padding: '1.5rem', overflowY: 'auto' }}>
+        <main className="main-content" style={{ flex: 1, overflowY: 'auto' }}>
           <Routes>
             <Route path="dashboard" element={<AdminDashboard />} />
             <Route path="paies" element={<Paies />} />
@@ -37,6 +38,7 @@ function AdminLayout() {
             <Route path="shifts" element={<Shifts />} />
             <Route path="ventes" element={<Ventes />} />
             <Route path="kpis" element={<KPIs />} />
+            <Route path="telegram" element={<TelegramBot />} />
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Routes>
         </main>
@@ -52,7 +54,7 @@ function ChatteurLayout() {
       <Sidebar role="chatteur" mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Navbar onMenuClick={() => setMobileOpen(true)} />
-        <main style={{ flex: 1, padding: '1.5rem', overflowY: 'auto' }}>
+        <main className="main-content" style={{ flex: 1, overflowY: 'auto' }}>
           <Routes>
             <Route path="dashboard" element={<ChatteurDashboard />} />
             <Route path="planning" element={<MonPlanning />} />

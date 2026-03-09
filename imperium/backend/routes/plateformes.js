@@ -5,7 +5,7 @@ const { authMiddleware, adminOnly } = require('../middleware/auth');
 const router = express.Router();
 
 router.get('/', authMiddleware, (req, res) => {
-  const plateformes = db.prepare('SELECT * FROM plateformes ORDER BY nom').all();
+  const plateformes = db.prepare('SELECT * FROM plateformes WHERE actif = 1 ORDER BY nom').all();
   res.json(plateformes);
 });
 

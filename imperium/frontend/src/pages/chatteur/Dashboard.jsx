@@ -45,9 +45,9 @@ export default function ChatteurDashboard() {
   const msg = getMessage(rang);
 
   return (
-    <div className="fade-in p-6 space-y-6">
+    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div>
-        <h1 className="text-2xl font-bold text-navy">Bonjour {user?.prenom || 'toi'} 👋</h1>
+        <h1 className="text-navy" style={{ fontWeight: 700 }}>Bonjour {user?.prenom || 'toi'} 👋</h1>
         <p className="text-slate-500 text-sm mt-1">Période : {periode.debut} → {periode.fin}</p>
       </div>
 
@@ -79,7 +79,7 @@ export default function ChatteurDashboard() {
                 <div key={v.id} className="flex justify-between items-center py-3" style={{ borderBottom: '1px solid #f1f5f9' }}>
                   <div>
                     <span className="text-sm">{new Date(v.created_at).toLocaleDateString('fr-FR')}</span>
-                    {v.modele_id && <span className="text-slate-400 text-xs ml-2">· {v.modele_prenom || ''}</span>}
+                    {v.modele_id && <span className="text-slate-400 text-xs ml-2">· {v.modele_pseudo || ''}</span>}
                   </div>
                   <span className="font-bold" style={{ color: '#f5b731' }}>{v.montant_brut.toFixed(2)} $</span>
                 </div>

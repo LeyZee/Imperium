@@ -8,7 +8,7 @@ const router = express.Router();
 router.get('/', authMiddleware, (req, res) => {
   const { chatteur_id } = req.query;
   let query = `
-    SELECT m.*, c.nom as chatteur_nom, c.prenom as chatteur_prenom
+    SELECT m.*, c.prenom as chatteur_prenom
     FROM malus m
     JOIN chatteurs c ON c.id = m.chatteur_id
   `;

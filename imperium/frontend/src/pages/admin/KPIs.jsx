@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/index';
-import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 function getPeriodes() {
   const periods = [];
@@ -16,7 +15,7 @@ function getPeriodes() {
   return periods;
 }
 
-const medals = ['🥇', '🥈', '🥉'];
+const medals = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
 
 export default function KPIs() {
   const periodes = getPeriodes();
@@ -37,57 +36,56 @@ export default function KPIs() {
   }
 
   return (
-    <div className="fade-in p-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-navy">KPIs Chatteurs</h1>
-        <select className="input-field w-64" value={selectedPeriode} onChange={e => setSelectedPeriode(parseInt(e.target.value))}>
+    <div className="fade-in">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1rem' }}>
+        <h1 style={{ fontWeight: 700 }}>KPIs Chatteurs</h1>
+        <select className="input-field" value={selectedPeriode} onChange={e => setSelectedPeriode(parseInt(e.target.value))}>
           {periodes.map((p, i) => <option key={i} value={i}>{p.label}</option>)}
         </select>
       </div>
 
       {/* Top 3 cards */}
       {!loading && paies.length > 0 && (
-        <div className="grid grid-cols-3 gap-4 mb-6 stagger-children">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.5rem', marginBottom: '1rem' }} className="stagger-children">
           {paies.slice(0, 3).map((p, i) => (
-            <div key={p.chatteur_id} className="card text-center" style={{ borderColor: i === 0 ? '#f5b731' : 'rgba(0,0,0,0.08)' }}>
-              <div className="text-4xl mb-2">{medals[i]}</div>
-              <div className="font-bold text-lg">{p.prenom} {p.nom}</div>
-              <div className="text-2xl font-bold mt-1" style={{ color: '#f5b731' }}>{p.total_chatteur?.toFixed(2)} €</div>
-              <div className="text-slate-500 text-sm mt-1">Net brut: {p.net_ht_eur?.toFixed(2)} €</div>
+            <div key={p.chatteur_id} className="card hover-lift" style={{ textAlign: 'center', borderColor: i === 0 ? '#f5b731' : 'rgba(0,0,0,0.08)', padding: '0.75rem 0.5rem' }}>
+              <div style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>{medals[i]}</div>
+              <div style={{ fontWeight: 700, fontSize: '0.8rem' }}>{p.prenom}</div>
+              <div style={{ fontWeight: 700, fontSize: '1rem', color: '#f5b731', marginTop: '0.25rem' }}>{p.total_chatteur?.toFixed(0)} &euro;</div>
             </div>
           ))}
         </div>
       )}
 
-      {loading ? <div className="text-center text-slate-400 py-12">Chargement...</div> : (
-        <div className="card overflow-x-auto" style={{ padding: 0 }}>
-          <table className="w-full text-sm">
+      {loading ? <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>Chargement...</div> : (
+        <div className="card" style={{ padding: 0, overflow: 'auto' }}>
+          <table>
             <thead>
               <tr>
-                <th className="text-left py-3 px-4">Rang</th>
-                <th className="text-left py-3 px-4">Chatteur</th>
-                <th className="text-right py-3 px-4">Ventes brutes</th>
-                <th className="text-right py-3 px-4">Net HT</th>
-                <th className="text-right py-3 px-4">Commission</th>
-                <th className="text-right py-3 px-4">Malus</th>
-                <th className="text-right py-3 px-4">Prime</th>
-                <th className="text-right py-3 px-4" style={{ color: '#f5b731' }}>TOTAL</th>
+                <th>Rang</th>
+                <th>Chatteur</th>
+                <th style={{ textAlign: 'right' }}>Ventes brutes</th>
+                <th style={{ textAlign: 'right' }}>Net HT</th>
+                <th style={{ textAlign: 'right' }}>Commission</th>
+                <th style={{ textAlign: 'right' }}>Malus</th>
+                <th style={{ textAlign: 'right' }}>Prime</th>
+                <th style={{ textAlign: 'right', color: '#f5b731' }}>TOTAL</th>
               </tr>
             </thead>
             <tbody>
               {paies.map((p, i) => (
                 <tr key={p.chatteur_id}>
-                  <td className="py-3 px-4">{medals[i] || `#${i+1}`}</td>
-                  <td className="py-3 px-4 font-medium">{p.prenom} {p.nom}</td>
-                  <td className="py-3 px-4 text-right">{p.ventes_ttc_eur?.toFixed(2)} €</td>
-                  <td className="py-3 px-4 text-right">{p.net_ht_eur?.toFixed(2)} €</td>
-                  <td className="py-3 px-4 text-right">{p.commission_chatteur?.toFixed(2)} €</td>
-                  <td className="py-3 px-4 text-right text-red-500">{p.malus_total > 0 ? `-${p.malus_total?.toFixed(2)} €` : '—'}</td>
-                  <td className="py-3 px-4 text-right text-green-500">{p.prime > 0 ? `+${p.prime?.toFixed(2)} €` : '—'}</td>
-                  <td className="py-3 px-4 text-right font-bold" style={{ color: '#f5b731' }}>{p.total_chatteur?.toFixed(2)} €</td>
+                  <td>{medals[i] || `#${i+1}`}</td>
+                  <td style={{ fontWeight: 500 }}>{p.prenom} {p.nom}</td>
+                  <td style={{ textAlign: 'right' }}>{p.ventes_ttc_eur?.toFixed(2)} &euro;</td>
+                  <td style={{ textAlign: 'right' }}>{p.net_ht_eur?.toFixed(2)} &euro;</td>
+                  <td style={{ textAlign: 'right' }}>{p.commission_chatteur?.toFixed(2)} &euro;</td>
+                  <td style={{ textAlign: 'right', color: '#ef4444' }}>{p.malus_total > 0 ? `-${p.malus_total?.toFixed(2)} \u20AC` : '\u2014'}</td>
+                  <td style={{ textAlign: 'right', color: '#10b981' }}>{p.prime > 0 ? `+${p.prime?.toFixed(2)} \u20AC` : '\u2014'}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731' }}>{p.total_chatteur?.toFixed(2)} &euro;</td>
                 </tr>
               ))}
-              {paies.length === 0 && <tr><td colSpan={8} className="text-center py-8 text-slate-400">Aucune donnée pour cette période</td></tr>}
+              {paies.length === 0 && <tr><td colSpan={8} style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>Aucune donn&eacute;e pour cette p&eacute;riode</td></tr>}
             </tbody>
           </table>
         </div>

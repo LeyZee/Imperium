@@ -5,7 +5,7 @@ const { authMiddleware, adminOnly } = require('../middleware/auth');
 const router = express.Router();
 
 router.get('/', authMiddleware, (req, res) => {
-  const modeles = db.prepare('SELECT * FROM modeles WHERE actif = 1 ORDER BY nom, prenom').all();
+  const modeles = db.prepare('SELECT * FROM modeles WHERE actif = 1 ORDER BY pseudo').all();
   res.json(modeles);
 });
 
@@ -16,8 +16,8 @@ router.get('/:id', authMiddleware, (req, res) => {
 });
 
 router.post('/', authMiddleware, adminOnly, (req, res) => {
-  const { nom, prenom, part_percent } = req.body;
-  if (!nom || !prenom) return res.status(400).json({ error: 'Nom et prénom requis' });
+  const { pseudo, part_percent } = req.body;
+  if (!pseudo) return res.status(400).json({ error: 'Pseudo requis' });
 
   const part = part_percent ?? 0.35;
   if (part < 0.35 || part > 0.40) {
@@ -25,14 +25,14 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
   }
 
   const result = db.prepare(
-    'INSERT INTO modeles (nom, prenom, part_percent) VALUES (?, ?, ?)'
-  ).run(nom, prenom, part);
+    'INSERT INTO modeles (pseudo, part_percent) VALUES (?, ?)'
+  ).run(pseudo, part);
 
-  res.status(201).json({ id: result.lastInsertRowid, nom, prenom, part_percent: part });
+  res.status(201).json({ id: result.lastInsertRowid, pseudo, part_percent: part });
 });
 
 router.put('/:id', authMiddleware, adminOnly, (req, res) => {
-  const { nom, prenom, part_percent, actif } = req.body;
+  const { pseudo, part_percent, actif } = req.body;
   const existing = db.prepare('SELECT id FROM modeles WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Modèle introuvable' });
 
@@ -42,12 +42,11 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
 
   db.prepare(`
     UPDATE modeles SET
-      nom = COALESCE(?, nom),
-      prenom = COALESCE(?, prenom),
+      pseudo = COALESCE(?, pseudo),
       part_percent = COALESCE(?, part_percent),
       actif = COALESCE(?, actif)
     WHERE id = ?
-  `).run(nom, prenom, part_percent, actif !== undefined ? (actif ? 1 : 0) : null, req.params.id);
+  `).run(pseudo ?? null, part_percent ?? null, actif !== undefined ? (actif ? 1 : 0) : null, req.params.id);
 
   res.json({ message: 'Modèle mis à jour' });
 });
@@ -55,6 +54,31 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
 router.delete('/:id', authMiddleware, adminOnly, (req, res) => {
   db.prepare('UPDATE modeles SET actif = 0 WHERE id = ?').run(req.params.id);
   res.json({ message: 'Modèle désactivé' });
+});
+
+// --- Model-Platform associations ---
+
+router.get('/:id/plateformes', authMiddleware, (req, res) => {
+  const rows = db.prepare(
+    'SELECT p.* FROM plateformes p JOIN modeles_plateformes mp ON mp.plateforme_id = p.id WHERE mp.modele_id = ? ORDER BY p.id'
+  ).all(req.params.id);
+  res.json(rows);
+});
+
+router.post('/:id/plateformes', authMiddleware, adminOnly, (req, res) => {
+  const { plateforme_id } = req.body;
+  if (!plateforme_id) return res.status(400).json({ error: 'plateforme_id requis' });
+  try {
+    db.prepare('INSERT OR IGNORE INTO modeles_plateformes (modele_id, plateforme_id) VALUES (?, ?)').run(req.params.id, plateforme_id);
+    res.status(201).json({ message: 'Association créée' });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/:id/plateformes/:pid', authMiddleware, adminOnly, (req, res) => {
+  db.prepare('DELETE FROM modeles_plateformes WHERE modele_id = ? AND plateforme_id = ?').run(req.params.id, req.params.pid);
+  res.json({ message: 'Association supprimée' });
 });
 
 module.exports = router;
