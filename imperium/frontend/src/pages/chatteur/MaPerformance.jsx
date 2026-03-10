@@ -299,7 +299,10 @@ export default function MaPerformance() {
   const periode = useMemo(() => getPeriodeCourante(), []);
 
   useEffect(() => {
-    if (!user?.chatteur_id) return;
+    if (!user?.chatteur_id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     Promise.all([
       api.get(`/api/chatteurs/${user.chatteur_id}/historique`),
