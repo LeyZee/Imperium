@@ -12,21 +12,29 @@ const PORT = process.env.PORT || 3001;
 // Security headers
 app.use(helmet());
 
-// CORS
+// CORS (configurable via env for production)
 app.use(cors({
-  origin: 'http://localhost:5173',
+  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   credentials: true
 }));
 
-// Body parsing
+// Body parsing with size limit (base64 photos up to 3MB)
 app.use((req, res, next) => {
-  express.json()(req, res, (err) => {
-    if (err) return res.status(400).json({ error: 'JSON invalide' });
+  express.json({ limit: '3mb' })(req, res, (err) => {
+    if (err) return res.status(400).json({ error: 'JSON invalide ou payload trop volumineux' });
     next();
   });
 });
 
-// Rate limit on login
+// Global rate limiter (100 req/min per IP)
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: { error: 'Trop de requêtes, réessayez dans 1 minute.' }
+});
+app.use('/api', globalLimiter);
+
+// Stricter rate limit on login
 const loginLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 10,
@@ -47,10 +55,18 @@ app.use('/api/taux', require('./routes/taux'));
 app.use('/api/malus', require('./routes/malus'));
 app.use('/api/telegram', require('./routes/telegram'));
 
-// Global error handler
+// Global error handler (catches errors passed via next(err))
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ error: 'Erreur interne du serveur' });
+  console.error('Route error:', err.message);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'Erreur interne du serveur' });
+  }
+});
+
+// Safety net for uncaught sync exceptions in route handlers (node-sqlite3-wasm)
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err.message);
+  // Don't exit — keep serving. Log for monitoring.
 });
 
 app.listen(PORT, () => {
@@ -58,7 +74,9 @@ app.listen(PORT, () => {
 
   // Start Telegram polling bot
   const telegramPoller = require('./services/telegram-poller');
-  telegramPoller.start().catch(() => {});
+  telegramPoller.start().catch(err => {
+    console.error('❌ Telegram bot failed to start:', err.message);
+  });
 });
 
 // Graceful shutdown

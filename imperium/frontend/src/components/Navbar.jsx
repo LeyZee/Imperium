@@ -1,8 +1,10 @@
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LogOut, User, Menu } from 'lucide-react';
 
 export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <header
@@ -42,30 +44,47 @@ export default function Navbar({ onMenuClick }) {
       <div className="desktop-spacer" />
 
       {/* Right side */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         {user && (
-          <div
+          <button
+            onClick={() => navigate(user.role === 'admin' ? '/admin/settings' : '/chatteur/dashboard')}
+            title="Paramètres"
             style={{
               display: 'flex',
               alignItems: 'center',
               gap: '0.625rem',
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '0.25rem',
+              borderRadius: '24px',
+              transition: 'background 200ms',
             }}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(245,183,49,0.08)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'none'}
           >
-            <div
-              style={{
-                width: '34px',
-                height: '34px',
-                borderRadius: '50%',
-                background: 'rgba(245, 183, 49, 0.12)',
-                border: '2px solid rgba(245, 183, 49, 0.25)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <User size={15} color="#f5b731" />
-            </div>
-            <div className="user-info-text">
+            {user.photo ? (
+              <img src={user.photo} alt="" style={{
+                width: 36, height: 36, borderRadius: '50%', objectFit: 'cover',
+                border: '2px solid rgba(245, 183, 49, 0.3)',
+              }} />
+            ) : (
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  background: 'rgba(245, 183, 49, 0.12)',
+                  border: '2px solid rgba(245, 183, 49, 0.25)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <User size={16} color="#f5b731" />
+              </div>
+            )}
+            <div className="user-info-text" style={{ textAlign: 'left' }}>
               <p
                 style={{
                   fontSize: '0.8rem',
@@ -74,8 +93,7 @@ export default function Navbar({ onMenuClick }) {
                   lineHeight: 1.2,
                 }}
               >
-                {user.prenom || user.username}
-              </p>
+                {user.prenom || user.email}</p>
               <p
                 style={{
                   fontSize: '0.65rem',
@@ -86,7 +104,7 @@ export default function Navbar({ onMenuClick }) {
                 {user.role}
               </p>
             </div>
-          </div>
+          </button>
         )}
 
         <button

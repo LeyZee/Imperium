@@ -9,7 +9,8 @@ function getPeriodes() {
     const y = d.getFullYear(), m = d.getMonth();
     const label1 = `1-15 ${d.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}`;
     const label2 = `15-fin ${d.toLocaleString('fr-FR', { month: 'long', year: 'numeric' })}`;
-    periods.push({ label: label2, debut: `${y}-${String(m+1).padStart(2,'0')}-15`, fin: `${y}-${String(m+1).padStart(2,'0')}-${new Date(y, m+1, 0).getDate()}` });
+    const nextMonth = new Date(y, m + 1, 1);
+    periods.push({ label: label2, debut: `${y}-${String(m+1).padStart(2,'0')}-15`, fin: `${nextMonth.getFullYear()}-${String(nextMonth.getMonth()+1).padStart(2,'0')}-01` });
     periods.push({ label: label1, debut: `${y}-${String(m+1).padStart(2,'0')}-01`, fin: `${y}-${String(m+1).padStart(2,'0')}-15` });
   }
   return periods;
@@ -29,8 +30,8 @@ export default function KPIs() {
     setLoading(true);
     const p = periodes[selectedPeriode];
     try {
-      const { data } = await api.get(`/api/paies?periode_debut=${p.debut}&periode_fin=${p.fin}`);
-      const sorted = [...data].sort((a, b) => b.total_chatteur - a.total_chatteur);
+      const { data } = await api.get(`/api/paies?debut=${p.debut}&fin=${p.fin}`);
+      const sorted = [...(data.paies || data)].sort((a, b) => b.total_chatteur - a.total_chatteur);
       setPaies(sorted);
     } finally { setLoading(false); }
   }
@@ -50,7 +51,7 @@ export default function KPIs() {
           {paies.slice(0, 3).map((p, i) => (
             <div key={p.chatteur_id} className="card hover-lift" style={{ textAlign: 'center', borderColor: i === 0 ? '#f5b731' : 'rgba(0,0,0,0.08)', padding: '0.75rem 0.5rem' }}>
               <div style={{ fontSize: '1.75rem', marginBottom: '0.25rem' }}>{medals[i]}</div>
-              <div style={{ fontWeight: 700, fontSize: '0.8rem' }}>{p.prenom}</div>
+              <div style={{ fontWeight: 700, fontSize: '0.8rem' }}>{p.chatteur_prenom}</div>
               <div style={{ fontWeight: 700, fontSize: '1rem', color: '#f5b731', marginTop: '0.25rem' }}>{p.total_chatteur?.toFixed(0)} &euro;</div>
             </div>
           ))}
@@ -76,7 +77,7 @@ export default function KPIs() {
               {paies.map((p, i) => (
                 <tr key={p.chatteur_id}>
                   <td>{medals[i] || `#${i+1}`}</td>
-                  <td style={{ fontWeight: 500 }}>{p.prenom} {p.nom}</td>
+                  <td style={{ fontWeight: 500 }}>{p.chatteur_prenom}</td>
                   <td style={{ textAlign: 'right' }}>{p.ventes_ttc_eur?.toFixed(2)} &euro;</td>
                   <td style={{ textAlign: 'right' }}>{p.net_ht_eur?.toFixed(2)} &euro;</td>
                   <td style={{ textAlign: 'right' }}>{p.commission_chatteur?.toFixed(2)} &euro;</td>

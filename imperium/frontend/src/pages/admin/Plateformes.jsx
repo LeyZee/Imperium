@@ -1,17 +1,22 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/index';
 import { Plus, Edit, Trash2, X } from 'lucide-react';
+import { useToast } from '../../components/Toast.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
+import { TableSkeleton } from '../../components/Skeleton.jsx';
 
-const emptyForm = { nom: '', tva_rate: 0, commission_rate: 0.20, devise: 'USD' };
+const DEVISE_SYMBOLS = { 'USD': '$', 'EUR': '€', 'GBP': '£' };
+const emptyForm = { nom: '', tva_rate: 0, commission_rate: 20, devise: 'USD', couleur_fond: '#1b2e4b', couleur_texte: '#ffffff' };
 
 export default function Plateformes() {
+  const toast = useToast();
   const [plateformes, setPlateformes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [confirmDel, setConfirmDel] = useState(null);
 
   useEffect(() => { fetchPlateformes(); }, []);
 
@@ -21,7 +26,16 @@ export default function Plateformes() {
   }
 
   function openAdd() { setForm(emptyForm); setEditId(null); setModal(true); setError(''); }
-  function openEdit(p) { setForm({ ...p, tva_rate: p.tva_rate * 100, commission_rate: p.commission_rate * 100 }); setEditId(p.id); setModal(true); setError(''); }
+  function openEdit(p) {
+    setForm({
+      ...p,
+      tva_rate: p.tva_rate * 100,
+      commission_rate: p.commission_rate * 100,
+      couleur_fond: p.couleur_fond || '#1b2e4b',
+      couleur_texte: p.couleur_texte || '#ffffff',
+    });
+    setEditId(p.id); setModal(true); setError('');
+  }
 
   async function handleSubmit(e) {
     e.preventDefault(); setError('');
@@ -30,23 +44,18 @@ export default function Plateformes() {
       if (editId) await api.put(`/api/plateformes/${editId}`, payload);
       else await api.post('/api/plateformes', payload);
       setModal(false);
-      setSuccess(editId ? 'Plateforme modifiée avec succès' : 'Plateforme créée avec succès');
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success(editId ? 'Plateforme modifiée' : 'Plateforme créée');
       fetchPlateformes();
     } catch (err) { setError(err.response?.data?.error || 'Erreur'); }
   }
 
   async function handleDeactivate(id) {
-    if (!confirm('Désactiver cette plateforme ?')) return;
     try {
       await api.delete(`/api/plateformes/${id}`);
-      setSuccess('Plateforme désactivée');
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success('Plateforme désactivée');
       fetchPlateformes();
-    } catch (err) {
-      setError(err.response?.data?.error || 'Erreur');
-      setTimeout(() => setError(''), 3000);
-    }
+    } catch (err) { toast.error(err.response?.data?.error || 'Erreur'); }
+    setConfirmDel(null);
   }
 
   return (
@@ -56,9 +65,7 @@ export default function Plateformes() {
         <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
       </div>
 
-      {success && <div className="toast-success" style={{ marginBottom: '0.75rem' }}>{success}</div>}
-
-      {loading ? <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>Chargement...</div> : (
+      {loading ? <TableSkeleton rows={3} cols={6} /> : (
         <div className="card" style={{ padding: 0, overflow: 'auto' }}>
           <table>
             <thead>
@@ -67,6 +74,7 @@ export default function Plateformes() {
                 <th>TVA</th>
                 <th>Commission</th>
                 <th>Devise</th>
+                <th>Couleur</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -76,11 +84,21 @@ export default function Plateformes() {
                   <td style={{ fontWeight: 500 }}>{p.nom}</td>
                   <td>{(p.tva_rate * 100).toFixed(0)}%</td>
                   <td>{(p.commission_rate * 100).toFixed(0)}%</td>
-                  <td><span className="badge badge-navy">{p.devise}</span></td>
+                  <td><span className="badge badge-navy">{p.devise} ({DEVISE_SYMBOLS[p.devise] || p.devise})</span></td>
+                  <td>
+                    <span style={{
+                      background: p.couleur_fond || '#1b2e4b',
+                      color: p.couleur_texte || '#ffffff',
+                      padding: '0.2rem 0.6rem',
+                      borderRadius: '20px',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                    }}>{p.nom}</span>
+                  </td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button onClick={() => openEdit(p)} className="btn-ghost"><Edit size={16} /></button>
-                      <button onClick={() => handleDeactivate(p.id)} className="btn-ghost" style={{ color: '#ef4444' }}><Trash2 size={16} /></button>
+                      <button onClick={() => setConfirmDel({ id: p.id, nom: p.nom })} className="btn-ghost" style={{ color: '#ef4444' }}><Trash2 size={16} /></button>
                     </div>
                   </td>
                 </tr>
@@ -105,11 +123,11 @@ export default function Plateformes() {
               </div>
               <div className="form-group">
                 <label className="label">TVA (%)</label>
-                <input className="input-field" type="number" min="0" max="100" step="0.1" value={form.tva_rate} onChange={e => setForm({...form, tva_rate: parseFloat(e.target.value)})} />
+                <input className="input-field" type="number" min="0" max="100" step="0.1" value={form.tva_rate} onChange={e => setForm({...form, tva_rate: parseFloat(e.target.value) || 0})} />
               </div>
               <div className="form-group">
                 <label className="label">Commission plateforme (%)</label>
-                <input className="input-field" type="number" min="0" max="100" step="0.1" value={form.commission_rate} onChange={e => setForm({...form, commission_rate: parseFloat(e.target.value)})} />
+                <input className="input-field" type="number" min="0" max="100" step="0.1" value={form.commission_rate} onChange={e => setForm({...form, commission_rate: parseFloat(e.target.value) || 0})} />
               </div>
               <div className="form-group">
                 <label className="label">Devise</label>
@@ -118,11 +136,47 @@ export default function Plateformes() {
                   <option value="EUR">EUR (€)</option>
                 </select>
               </div>
+              <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '0.75rem' }}>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="label">Couleur de fond</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input type="color" value={form.couleur_fond} onChange={e => setForm({...form, couleur_fond: e.target.value})}
+                      style={{ width: '40px', height: '36px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', padding: '2px' }} />
+                    <input className="input-field" value={form.couleur_fond} onChange={e => setForm({...form, couleur_fond: e.target.value})}
+                      style={{ flex: 1, fontSize: '0.8rem' }} />
+                  </div>
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="label">Couleur du texte</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input type="color" value={form.couleur_texte} onChange={e => setForm({...form, couleur_texte: e.target.value})}
+                      style={{ width: '40px', height: '36px', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', padding: '2px' }} />
+                    <input className="input-field" value={form.couleur_texte} onChange={e => setForm({...form, couleur_texte: e.target.value})}
+                      style={{ flex: 1, fontSize: '0.8rem' }} />
+                  </div>
+                </div>
+              </div>
+              <div style={{ marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span className="label" style={{ fontSize: '0.7rem', margin: 0 }}>Aperçu :</span>
+                <span style={{
+                  background: form.couleur_fond, color: form.couleur_texte,
+                  padding: '0.25rem 0.75rem', borderRadius: '20px', fontWeight: 600, fontSize: '0.8rem',
+                }}>{form.nom || 'Plateforme'}</span>
+              </div>
               <button type="submit" className="btn-primary" style={{ width: '100%', justifyContent: 'center', marginTop: '0.5rem' }}>{editId ? 'Enregistrer' : 'Créer'}</button>
             </form>
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={!!confirmDel}
+        title="Désactiver cette plateforme ?"
+        message={`${confirmDel?.nom || ''} sera marquée comme inactive. Cette action est réversible.`}
+        onConfirm={() => handleDeactivate(confirmDel.id)}
+        onCancel={() => setConfirmDel(null)}
+        danger
+      />
     </div>
   );
 }

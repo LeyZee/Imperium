@@ -231,6 +231,19 @@ try {
   db.exec("ALTER TABLE chatteurs ADD COLUMN couleur INTEGER NOT NULL DEFAULT 0");
 } catch (e) { /* already exists */ }
 
+// Migration: add statut column to chatteurs and modeles
+try {
+  db.exec("ALTER TABLE chatteurs ADD COLUMN statut TEXT NOT NULL DEFAULT 'actif'");
+} catch (e) { /* already exists */ }
+try {
+  db.exec("ALTER TABLE modeles ADD COLUMN statut TEXT NOT NULL DEFAULT 'actif'");
+} catch (e) { /* already exists */ }
+// Migrate existing actif=0 rows to statut='inactif'
+try {
+  db.exec("UPDATE chatteurs SET statut = 'inactif' WHERE actif = 0 AND statut = 'actif'");
+  db.exec("UPDATE modeles SET statut = 'inactif' WHERE actif = 0 AND statut = 'actif'");
+} catch (e) { /* ignore */ }
+
 // Migration: recreate paies table with plateforme_id in UNIQUE constraint
 try {
   const hasCol = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='paies'").get([]);
@@ -259,6 +272,38 @@ try {
     `);
   }
 } catch (e) { /* ignore */ }
+
+// Migration: add couleur_fond and couleur_texte to plateformes
+try { db.exec("ALTER TABLE plateformes ADD COLUMN couleur_fond TEXT NOT NULL DEFAULT '#1b2e4b'"); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE plateformes ADD COLUMN couleur_texte TEXT NOT NULL DEFAULT '#ffffff'"); } catch (e) { /* already exists */ }
+// Seed platform colors
+try {
+  db.exec("UPDATE plateformes SET couleur_fond = '#00AFF0', couleur_texte = '#ffffff' WHERE nom = 'OnlyFans' AND couleur_fond = '#1b2e4b'");
+  db.exec("UPDATE plateformes SET couleur_fond = '#000000', couleur_texte = '#ffffff' WHERE nom = 'Reveal' AND couleur_fond = '#1b2e4b'");
+} catch (e) { /* ignore */ }
+
+// Migration: add photo to users, chatteurs, modeles + prenom to users
+try { db.exec("ALTER TABLE users ADD COLUMN photo TEXT"); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE users ADD COLUMN prenom TEXT"); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE chatteurs ADD COLUMN photo TEXT"); } catch (e) { /* already exists */ }
+try { db.exec("ALTER TABLE modeles ADD COLUMN photo TEXT"); } catch (e) { /* already exists */ }
+
+// Migration: add taux_horaire for VA chatteurs
+try { db.exec("ALTER TABLE chatteurs ADD COLUMN taux_horaire REAL NOT NULL DEFAULT 0"); } catch (e) { /* already exists */ }
+
+// Migration: email unique index + backfill null emails
+try { db.exec("UPDATE users SET email = username WHERE email IS NULL"); } catch (e) { /* ignore */ }
+try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL"); } catch (e) { /* already exists */ }
+
+// Performance indexes
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_chatteur_periode ON ventes(chatteur_id, periode_debut, periode_fin)"); } catch (e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_plateforme ON ventes(plateforme_id)"); } catch (e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_shifts_date_creneau ON shifts(date, creneau)"); } catch (e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_shifts_modele_plateforme ON shifts(modele_id, plateforme_id, date, creneau)"); } catch (e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_shifts_chatteur ON shifts(chatteur_id)"); } catch (e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_malus_chatteur_periode ON malus(chatteur_id, periode)"); } catch (e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_paies_periode ON paies(periode_debut, periode_fin)"); } catch (e) {}
+try { db.exec("CREATE INDEX IF NOT EXISTS idx_chatteurs_actif ON chatteurs(actif, statut)"); } catch (e) {}
 
 // Compatibility wrapper: makes node-sqlite3-wasm behave like better-sqlite3
 // (accepts spread args instead of requiring an array)

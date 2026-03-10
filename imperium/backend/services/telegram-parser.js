@@ -117,7 +117,7 @@ function processMessage({ group_id, sender_name, message }) {
   return {
     success: true,
     vente_id: result.lastInsertRowid,
-    chatteur: `${chatteur.prenom} ${chatteur.nom}`,
+    chatteur: chatteur.prenom,
     plateforme_id,
     montant_brut: parsed.montant_brut,
     periode: `${periode_debut} → ${periode_fin}`,

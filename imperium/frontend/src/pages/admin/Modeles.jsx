@@ -1,10 +1,14 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/index';
-import { Plus, Edit, Trash2, X } from 'lucide-react';
+import { Plus, Edit, Trash2, X, Camera, User } from 'lucide-react';
+import { useToast } from '../../components/Toast.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
+import { TableSkeleton } from '../../components/Skeleton.jsx';
 
-const emptyForm = { pseudo: '', part_percent: 0.35 };
+const emptyForm = { pseudo: '', part_percent: 0.35, photo: null };
 
 export default function Modeles() {
+  const toast = useToast();
   const [modeles, setModeles] = useState([]);
   const [plateformes, setPlateformes] = useState([]);
   const [modelPlatforms, setModelPlatforms] = useState({});
@@ -13,8 +17,9 @@ export default function Modeles() {
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
   const [selectedPlatforms, setSelectedPlatforms] = useState([]);
+  const [photoPreview, setPhotoPreview] = useState(null);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [confirmDel, setConfirmDel] = useState(null);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -40,6 +45,7 @@ export default function Modeles() {
     setForm(emptyForm);
     setEditId(null);
     setSelectedPlatforms([]);
+    setPhotoPreview(null);
     setModal(true);
     setError('');
   }
@@ -48,6 +54,7 @@ export default function Modeles() {
     setForm({ ...m });
     setEditId(m.id);
     setSelectedPlatforms(modelPlatforms[m.id] || []);
+    setPhotoPreview(m.photo || null);
     setModal(true);
     setError('');
   }
@@ -56,6 +63,18 @@ export default function Modeles() {
     setSelectedPlatforms(prev =>
       prev.includes(pfId) ? prev.filter(id => id !== pfId) : [...prev, pfId]
     );
+  }
+
+  function handlePhotoChange(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { setError('Photo trop volumineuse (max 2 Mo)'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setForm(f => ({ ...f, photo: ev.target.result }));
+      setPhotoPreview(ev.target.result);
+    };
+    reader.readAsDataURL(file);
   }
 
   async function handleSubmit(e) {
@@ -78,27 +97,23 @@ export default function Modeles() {
       ]);
 
       setModal(false);
-      setSuccess(editId ? 'Modèle mis à jour' : 'Modèle créé');
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success(editId ? 'Modèle mis à jour' : 'Modèle créé');
       fetchAll();
     } catch (err) { setError(err.response?.data?.error || 'Erreur'); }
   }
 
   async function handleDeactivate(id) {
-    if (!confirm('Désactiver ce modèle ?')) return;
-    await api.delete(`/api/modeles/${id}`);
-    setSuccess('Modèle désactivé');
-    setTimeout(() => setSuccess(''), 3000);
-    fetchAll();
+    try {
+      await api.delete(`/api/modeles/${id}`);
+      toast.success('Modèle désactivé');
+      fetchAll();
+    } catch (err) { toast.error(err.response?.data?.error || 'Erreur'); }
+    setConfirmDel(null);
   }
 
-  const PLATFORM_COLORS = {
-    'OnlyFans': { bg: '#dbeafe', text: '#1e40af', border: '#93c5fd' },
-    'Reveal': { bg: '#fce7f3', text: '#9d174d', border: '#f9a8d4' },
-  };
-
-  function getPfColor(name) {
-    return PLATFORM_COLORS[name] || { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
+  function getPfColor(pf) {
+    if (pf.couleur_fond) return { bg: pf.couleur_fond, text: pf.couleur_texte || '#ffffff', border: pf.couleur_fond + '80' };
+    return { bg: '#f1f5f9', text: '#475569', border: '#cbd5e1' };
   }
 
   return (
@@ -108,9 +123,7 @@ export default function Modeles() {
         <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
       </div>
 
-      {success && <div className="toast-success" style={{ marginBottom: '0.75rem' }}>{success}</div>}
-
-      {loading ? <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>Chargement...</div> : (
+      {loading ? <TableSkeleton rows={5} cols={4} /> : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -119,7 +132,6 @@ export default function Modeles() {
                   <th>Pseudo</th>
                   <th>Plateformes</th>
                   <th>Part (%)</th>
-                  <th>Statut</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -130,11 +142,26 @@ export default function Modeles() {
                     .filter(Boolean);
                   return (
                     <tr key={m.id}>
-                      <td style={{ fontWeight: 500 }}>{m.pseudo}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{
+                            width: '30px', height: '30px', borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
+                            background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: '1px solid #e2e8f0',
+                          }}>
+                            {m.photo ? (
+                              <img src={m.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            ) : (
+                              <User size={14} color="#94a3b8" />
+                            )}
+                          </div>
+                          <span style={{ fontWeight: 500 }}>{m.pseudo}</span>
+                        </div>
+                      </td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
                           {mPlatforms.length > 0 ? mPlatforms.map(p => {
-                            const c = getPfColor(p.nom);
+                            const c = getPfColor(p);
                             return (
                               <span key={p.id} style={{
                                 fontSize: '0.65rem', fontWeight: 600,
@@ -151,14 +178,9 @@ export default function Modeles() {
                       </td>
                       <td style={{ fontWeight: 700, color: '#f5b731' }}>{(m.part_percent * 100).toFixed(0)}%</td>
                       <td>
-                        <span className={`badge ${m.actif ? 'badge-success' : 'badge-danger'}`}>
-                          {m.actif ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button onClick={() => openEdit(m)} className="btn-ghost"><Edit size={16} /></button>
-                          {m.actif && <button onClick={() => handleDeactivate(m.id)} className="btn-ghost" style={{ color: '#ef4444' }}><Trash2 size={16} /></button>}
+                          <button onClick={() => setConfirmDel({ id: m.id, pseudo: m.pseudo })} className="btn-ghost" style={{ color: '#ef4444' }}><Trash2 size={16} /></button>
                         </div>
                       </td>
                     </tr>
@@ -179,6 +201,32 @@ export default function Modeles() {
             </div>
             {error && <div className="toast-error" style={{ marginBottom: '0.75rem' }}>{error}</div>}
             <form onSubmit={handleSubmit}>
+              {/* Photo */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+                <label style={{ cursor: 'pointer', position: 'relative' }}>
+                  <div style={{
+                    width: '72px', height: '72px', borderRadius: '50%', overflow: 'hidden',
+                    background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '2px solid #e2e8f0',
+                  }}>
+                    {photoPreview ? (
+                      <img src={photoPreview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <User size={28} color="#94a3b8" />
+                    )}
+                  </div>
+                  <div style={{
+                    position: 'absolute', bottom: -2, right: -2,
+                    width: '24px', height: '24px', borderRadius: '50%',
+                    background: '#f5b731', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    border: '2px solid white',
+                  }}>
+                    <Camera size={12} color="white" />
+                  </div>
+                  <input type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
+                </label>
+              </div>
+
               <div className="form-group">
                 <label className="label">Pseudo *</label>
                 <input className="input-field" value={form.pseudo} onChange={e => setForm({...form, pseudo: e.target.value})} required />
@@ -198,7 +246,7 @@ export default function Modeles() {
                 <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
                   {plateformes.map(p => {
                     const active = selectedPlatforms.includes(p.id);
-                    const c = getPfColor(p.nom);
+                    const c = getPfColor(p);
                     return (
                       <button
                         key={p.id}
@@ -207,7 +255,7 @@ export default function Modeles() {
                         style={{
                           padding: '0.4rem 0.85rem',
                           borderRadius: '20px',
-                          border: `2px solid ${active ? c.border : '#e2e8f0'}`,
+                          border: active ? `2px solid ${c.bg}` : '2px solid #e2e8f0',
                           background: active ? c.bg : '#fafafa',
                           color: active ? c.text : '#94a3b8',
                           fontWeight: active ? 700 : 500,
@@ -228,6 +276,15 @@ export default function Modeles() {
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={!!confirmDel}
+        title="Désactiver ce modèle ?"
+        message={`${confirmDel?.pseudo || ''} sera marqué comme inactif. Cette action est réversible.`}
+        onConfirm={() => handleDeactivate(confirmDel.id)}
+        onCancel={() => setConfirmDel(null)}
+        danger
+      />
     </div>
   );
 }

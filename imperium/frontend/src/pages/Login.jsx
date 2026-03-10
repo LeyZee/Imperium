@@ -7,7 +7,7 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -17,14 +17,14 @@ export default function Login() {
     e.preventDefault();
     setError('');
 
-    if (!username.trim() || !password.trim()) {
+    if (!email.trim() || !password.trim()) {
       setError('Veuillez remplir tous les champs.');
       return;
     }
 
     setLoading(true);
     try {
-      const user = await login(username.trim(), password);
+      const user = await login(email.trim(), password);
       if (user.role === 'admin') {
         navigate('/admin/dashboard', { replace: true });
       } else {
@@ -160,15 +160,15 @@ export default function Login() {
 
           <form onSubmit={handleSubmit}>
             <div className="form-group">
-              <label className="label" htmlFor="username">Identifiant</label>
+              <label className="label" htmlFor="email">Email</label>
               <input
-                id="username"
-                type="text"
+                id="email"
+                type="email"
                 className="input-field"
-                placeholder="Votre identifiant"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
+                placeholder="Votre adresse email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
                 autoFocus
                 disabled={loading}
               />

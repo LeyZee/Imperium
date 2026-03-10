@@ -200,7 +200,7 @@ export default function Ventes() {
         montant_brut: parseFloat(form.montant_brut),
         periode_debut: periode.debut,
         periode_fin: periode.fin,
-        modele_id: Number(form.modele_id),
+        modele_id: form.modele_id ? Number(form.modele_id) : null,
         notes: form.notes || null,
       };
 

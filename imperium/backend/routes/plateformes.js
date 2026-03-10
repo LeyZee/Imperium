@@ -16,18 +16,18 @@ router.get('/:id', authMiddleware, (req, res) => {
 });
 
 router.post('/', authMiddleware, adminOnly, (req, res) => {
-  const { nom, tva_rate, commission_rate, devise } = req.body;
+  const { nom, tva_rate, commission_rate, devise, couleur_fond, couleur_texte } = req.body;
   if (!nom) return res.status(400).json({ error: 'Nom requis' });
 
   const result = db.prepare(
-    'INSERT INTO plateformes (nom, tva_rate, commission_rate, devise) VALUES (?, ?, ?, ?)'
-  ).run(nom, tva_rate ?? 0.0, commission_rate ?? 0.20, devise || 'USD');
+    'INSERT INTO plateformes (nom, tva_rate, commission_rate, devise, couleur_fond, couleur_texte) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(nom, tva_rate ?? 0.0, commission_rate ?? 0.20, devise || 'USD', couleur_fond || '#1b2e4b', couleur_texte || '#ffffff');
 
   res.status(201).json({ id: result.lastInsertRowid, nom });
 });
 
 router.put('/:id', authMiddleware, adminOnly, (req, res) => {
-  const { nom, tva_rate, commission_rate, devise, actif } = req.body;
+  const { nom, tva_rate, commission_rate, devise, actif, couleur_fond, couleur_texte } = req.body;
   const existing = db.prepare('SELECT id FROM plateformes WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Plateforme introuvable' });
 
@@ -37,9 +37,11 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
       tva_rate = COALESCE(?, tva_rate),
       commission_rate = COALESCE(?, commission_rate),
       devise = COALESCE(?, devise),
-      actif = COALESCE(?, actif)
+      actif = COALESCE(?, actif),
+      couleur_fond = COALESCE(?, couleur_fond),
+      couleur_texte = COALESCE(?, couleur_texte)
     WHERE id = ?
-  `).run(nom, tva_rate, commission_rate, devise, actif !== undefined ? (actif ? 1 : 0) : null, req.params.id);
+  `).run(nom ?? null, tva_rate ?? null, commission_rate ?? null, devise ?? null, actif !== undefined ? (actif ? 1 : 0) : null, couleur_fond ?? null, couleur_texte ?? null, req.params.id);
 
   res.json({ message: 'Plateforme mise à jour' });
 });

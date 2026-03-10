@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext.jsx';
+import { ToastProvider } from './components/Toast.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import PageLoader from './components/PageLoader.jsx';
 import Navbar from './components/Navbar.jsx';
@@ -17,9 +18,12 @@ import Shifts from './pages/admin/Shifts.jsx';
 import Ventes from './pages/admin/Ventes.jsx';
 import KPIs from './pages/admin/KPIs.jsx';
 import TelegramBot from './pages/admin/TelegramBot.jsx';
+import Settings from './pages/admin/Settings.jsx';
 import ChatteurDashboard from './pages/chatteur/Dashboard.jsx';
 import MonPlanning from './pages/chatteur/MonPlanning.jsx';
+import PlanningGeneral from './pages/chatteur/PlanningGeneral.jsx';
 import MesFactures from './pages/chatteur/MesFactures.jsx';
+import MaPerformance from './pages/chatteur/MaPerformance.jsx';
 
 function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -39,6 +43,7 @@ function AdminLayout() {
             <Route path="ventes" element={<Ventes />} />
             <Route path="kpis" element={<KPIs />} />
             <Route path="telegram" element={<TelegramBot />} />
+            <Route path="settings" element={<Settings />} />
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Routes>
         </main>
@@ -58,7 +63,9 @@ function ChatteurLayout() {
           <Routes>
             <Route path="dashboard" element={<ChatteurDashboard />} />
             <Route path="planning" element={<MonPlanning />} />
+            <Route path="planning-general" element={<PlanningGeneral />} />
             <Route path="factures" element={<MesFactures />} />
+            <Route path="performance" element={<MaPerformance />} />
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Routes>
         </main>
@@ -80,26 +87,28 @@ export default function App() {
   if (loading) return <PageLoader />;
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route
-        path="/admin/*"
-        element={
-          <ProtectedRoute role="admin">
-            <AdminLayout />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/chatteur/*"
-        element={
-          <ProtectedRoute role="chatteur">
-            <ChatteurLayout />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="/" element={<RootRedirect />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+    <ToastProvider>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route
+          path="/admin/*"
+          element={
+            <ProtectedRoute role="admin">
+              <AdminLayout />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chatteur/*"
+          element={
+            <ProtectedRoute role="chatteur">
+              <ChatteurLayout />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/" element={<RootRedirect />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </ToastProvider>
   );
 }

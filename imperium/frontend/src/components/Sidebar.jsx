@@ -18,12 +18,12 @@ import {
 
 const adminItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/paies', icon: CreditCard, label: 'Paies' },
   { to: '/admin/chatteurs', icon: Users, label: 'Chatteurs' },
   { to: '/admin/modeles', icon: Star, label: 'Modèles' },
   { to: '/admin/plateformes', icon: Globe, label: 'Plateformes' },
   { to: '/admin/shifts', icon: Calendar, label: 'Shifts' },
   { to: '/admin/ventes', icon: TrendingUp, label: 'Ventes' },
+  { to: '/admin/paies', icon: CreditCard, label: 'Paies' },
   { to: '/admin/kpis', icon: BarChart2, label: 'KPIs' },
   { to: '/admin/telegram', icon: MessageSquare, label: 'Telegram Bot' },
 ];
@@ -31,7 +31,9 @@ const adminItems = [
 const chatteurItems = [
   { to: '/chatteur/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/chatteur/planning', icon: ClipboardList, label: 'Mon Planning' },
+  { to: '/chatteur/planning-general', icon: Calendar, label: 'Planning Général' },
   { to: '/chatteur/factures', icon: FileText, label: 'Mes Factures' },
+  { to: '/chatteur/performance', icon: TrendingUp, label: 'Ma Performance' },
 ];
 
 export default function Sidebar({ role, mobileOpen, onMobileClose }) {

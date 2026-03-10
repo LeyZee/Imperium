@@ -100,7 +100,7 @@ router.get('/', authMiddleware, adminOnly, (req, res) => {
     }
 
     // Nb chatteurs actifs
-    const nbChatteurs = db.prepare("SELECT COUNT(*) as c FROM chatteurs WHERE actif=1").get([]);
+    const nbChatteurs = db.prepare("SELECT COUNT(*) as c FROM chatteurs WHERE statut = 'actif'").get([]);
 
     // Dernières ventes (5)
     const dernieresVentes = db.prepare(`

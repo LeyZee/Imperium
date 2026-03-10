@@ -92,7 +92,7 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
       periode_fin = COALESCE(?, periode_fin),
       notes = COALESCE(?, notes)
     WHERE id = ?
-  `).run(montant_brut, modele_id, plateforme_id, periode_debut, periode_fin, notes, req.params.id);
+  `).run(montant_brut ?? null, modele_id ?? null, plateforme_id ?? null, periode_debut ?? null, periode_fin ?? null, notes ?? null, req.params.id);
 
   // Auto-recalculate paies for affected periods
   try {
@@ -152,7 +152,7 @@ router.get('/summary', authMiddleware, (req, res) => {
   // Compute totals
   let totalBrut = 0, totalTTC = 0, totalHT = 0, totalNetHT = 0;
   byPlateforme.forEach(p => {
-    const ttc = p.total_brut * tauxChange;
+    const ttc = p.devise === 'USD' ? p.total_brut * tauxChange : p.total_brut;
     const ht = ttc / (1 + p.tva_rate);
     const netHT = ht * (1 - p.commission_rate);
     totalBrut += p.total_brut;

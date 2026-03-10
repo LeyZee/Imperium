@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../../api/index';
-import { UserPlus, Edit, UserX, X } from 'lucide-react';
+import { UserPlus, Edit, UserX, X, KeyRound, Camera, Search } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors';
+import { STATUTS, STATUT_MAP } from '../../constants/statuses';
+import { useToast } from '../../components/Toast.jsx';
+import ConfirmModal from '../../components/ConfirmModal.jsx';
+import { TableSkeleton } from '../../components/Skeleton.jsx';
 
 const emptyForm = {
-  prenom: '', email: '', adresse: '', code_postal: '',
-  ville: '', pays: 'Bénin', iban: '', taux_commission: 0.15,
-  role: 'chatteur', taux_net_equipe: 0, couleur: 0,
-  is_nouveau: false, username: '', password: ''
+  prenom: '', email: '', code_postal: '',
+  pays: 'Bénin', taux_commission: 0.15,
+  role: 'chatteur', taux_net_equipe: 0.05, taux_horaire: 0, couleur: 0, statut: 'actif',
+  is_nouveau: false, password: '',
+  new_password: '', confirm_password: '', photo: null,
 };
 
 const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', va: 'VA' };
@@ -19,6 +24,12 @@ const ROLE_COLORS = {
 
 const PAYS_ISO = { 'France': 'fr', 'Bénin': 'bj', 'Madagascar': 'mg' };
 
+const COMMISSION_PRESETS = [
+  { label: 'Recrue', value: 0.10, color: '#ef4444' },
+  { label: 'Confirmé', value: 0.125, color: '#f59e0b' },
+  { label: 'Qualifié', value: 0.15, color: '#22c55e' },
+];
+
 export default function Chatteurs() {
   const [chatteurs, setChatteurs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,7 +37,22 @@ export default function Chatteurs() {
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [search, setSearch] = useState('');
+  const [confirmDel, setConfirmDel] = useState(null); // { id, prenom }
+  const fileRef = useRef(null);
+  const toast = useToast();
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return chatteurs;
+    const q = search.toLowerCase();
+    return chatteurs.filter(c =>
+      c.prenom?.toLowerCase().includes(q) ||
+      c.role?.toLowerCase().includes(q) ||
+      c.pays?.toLowerCase().includes(q) ||
+      c.email?.toLowerCase().includes(q)
+    );
+  }, [chatteurs, search]);
 
   useEffect(() => { fetchChatteurs(); }, []);
 
@@ -37,21 +63,62 @@ export default function Chatteurs() {
     } finally { setLoading(false); }
   }
 
-  function openAdd() { setForm(emptyForm); setEditId(null); setModal(true); setError(''); }
+  function openAdd() { setForm(emptyForm); setEditId(null); setPhotoPreview(null); setModal(true); setError(''); }
   function openEdit(c) {
-    setForm({ ...c, password: '', username: c.username || '' });
-    setEditId(c.id); setModal(true); setError('');
+    const safe = Object.fromEntries(
+      Object.entries(c).map(([k, v]) => [k, v === null || v === undefined ? '' : v])
+    );
+    setForm({
+      ...emptyForm, ...safe,
+      password: '',
+      new_password: '', confirm_password: '',
+      original_email: c.user_email || c.email || '',
+      photo: c.photo || null,
+    });
+    setEditId(c.id); setPhotoPreview(c.photo || null); setModal(true); setError('');
+  }
+
+  function handlePhotoChange(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { setError('Photo trop lourde (max 2 Mo)'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      setPhotoPreview(reader.result);
+      setForm(prev => ({ ...prev, photo: reader.result }));
+    };
+    reader.readAsDataURL(file);
   }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+
+    if (editId && form.new_password) {
+      if (form.new_password.length < 8) return setError('Le mot de passe doit contenir au moins 8 caractères');
+      if (form.new_password !== form.confirm_password) return setError('Les mots de passe ne correspondent pas');
+    }
+
     try {
-      if (editId) await api.put(`/api/chatteurs/${editId}`, form);
-      else await api.post('/api/chatteurs', form);
+      if (editId) {
+        await api.put(`/api/chatteurs/${editId}`, form);
+
+        const accountEmail = form.user_email || form.email;
+        const hasAccountChanges = accountEmail && (
+          form.new_password || accountEmail !== form.original_email || !form.user_id
+        );
+        if (hasAccountChanges) {
+          await api.put(`/api/chatteurs/${editId}/account`, {
+            email: accountEmail,
+            new_password: form.new_password || undefined,
+            confirm_password: form.confirm_password || undefined,
+          });
+        }
+      } else {
+        await api.post('/api/chatteurs', form);
+      }
       setModal(false);
-      setSuccess(editId ? 'Chatteur mis à jour' : 'Chatteur créé');
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success(editId ? 'Chatteur mis à jour' : 'Chatteur créé');
       fetchChatteurs();
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur');
@@ -59,12 +126,17 @@ export default function Chatteurs() {
   }
 
   async function handleDeactivate(id) {
-    if (!confirm('Désactiver ce chatteur ?')) return;
-    await api.delete(`/api/chatteurs/${id}`);
-    setSuccess('Chatteur désactivé');
-    setTimeout(() => setSuccess(''), 3000);
-    fetchChatteurs();
+    try {
+      await api.delete(`/api/chatteurs/${id}`);
+      toast.success('Chatteur désactivé');
+      setConfirmDel(null);
+      fetchChatteurs();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Erreur');
+    }
   }
+
+  const commissionCustom = !COMMISSION_PRESETS.some(p => p.value === form.taux_commission);
 
   return (
     <div className="fade-in">
@@ -75,9 +147,21 @@ export default function Chatteurs() {
         </button>
       </div>
 
-      {success && <div className="toast-success" style={{ marginBottom: '0.75rem' }}>{success}</div>}
+      {/* Search bar */}
+      <div style={{ marginBottom: '1rem', position: 'relative', maxWidth: '20rem' }}>
+        <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+        <input
+          className="input-field"
+          placeholder="Rechercher un chatteur..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ paddingLeft: '2.25rem', fontSize: '0.85rem' }}
+        />
+      </div>
 
-      {loading ? <div style={{ textAlign: 'center', color: '#94a3b8', padding: '3rem 0' }}>Chargement...</div> : (
+      {loading ? (
+        <div className="card" style={{ padding: '1rem' }}><TableSkeleton rows={8} cols={6} /></div>
+      ) : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table>
@@ -86,22 +170,38 @@ export default function Chatteurs() {
                   <th>Prénom</th>
                   <th>Rôle</th>
                   <th>Pays</th>
-                  <th>Commission</th>
+                  <th style={{ textAlign: 'center' }}>Commission</th>
                   <th>Statut</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {chatteurs.map((c) => {
+                {filtered.length === 0 && (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
+                    {search ? 'Aucun résultat' : 'Aucun chatteur'}
+                  </td></tr>
+                )}
+                {filtered.map((c) => {
                   const clr = CHATTEUR_COLORS[c.couleur] || CHATTEUR_COLORS[0];
                   return (
                     <tr key={c.id}>
                       <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          <span style={{
-                            width: 12, height: 12, borderRadius: '50%', flexShrink: 0,
-                            background: clr.bg, border: `2px solid ${clr.border}`,
-                          }} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {c.photo ? (
+                            <img src={c.photo} alt="" style={{
+                              width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
+                              border: `2px solid ${clr.border}`, flexShrink: 0,
+                            }} />
+                          ) : (
+                            <span style={{
+                              width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                              background: clr.bg, border: `2px solid ${clr.border}`,
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: '0.7rem', fontWeight: 700, color: clr.text,
+                            }}>
+                              {c.prenom?.charAt(0)?.toUpperCase() || '?'}
+                            </span>
+                          )}
                           <span style={{ fontWeight: 500 }}>{c.prenom}</span>
                         </div>
                       </td>
@@ -129,16 +229,42 @@ export default function Chatteurs() {
                           </span>
                         )}
                       </td>
-                      <td><span className="badge badge-navy">{(c.taux_commission * 100).toFixed(0)}%</span></td>
+                      <td style={{ textAlign: 'center' }}>
+                        {c.role === 'va' ? (
+                          <span className="badge" style={{ background: '#f3e8ff', color: '#7c3aed' }}>
+                            {(c.taux_horaire || 0).toFixed(2)} €/h
+                          </span>
+                        ) : (
+                          <>
+                            <span className="badge badge-navy">{(c.taux_commission * 100).toFixed(1).replace('.0', '')}%</span>
+                            {c.role === 'manager' && (
+                              <span className="badge" style={{
+                                marginLeft: '0.3rem', background: '#fef3c7', color: '#b45309',
+                                fontSize: '0.65rem',
+                              }}>
+                                +{(c.taux_net_equipe * 100).toFixed(0)}% éq.
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </td>
                       <td>
-                        <span className={`badge ${c.actif ? 'badge-success' : 'badge-danger'}`}>
-                          {c.actif ? 'Actif' : 'Inactif'}
-                        </span>
+                        {(() => {
+                          const s = STATUT_MAP[c.statut] || STATUT_MAP['actif'];
+                          return (
+                            <span style={{
+                              fontSize: '0.7rem', fontWeight: 600, padding: '0.15rem 0.5rem',
+                              borderRadius: '20px', background: s.bg, color: s.color, border: `1px solid ${s.border}`,
+                            }}>
+                              {s.label}
+                            </span>
+                          );
+                        })()}
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button onClick={() => openEdit(c)} className="btn-ghost"><Edit size={16} /></button>
-                          {c.actif && <button onClick={() => handleDeactivate(c.id)} className="btn-ghost" style={{ color: '#ef4444' }}><UserX size={16} /></button>}
+                          {c.statut !== 'inactif' && <button onClick={() => setConfirmDel({ id: c.id, prenom: c.prenom })} className="btn-ghost" style={{ color: '#ef4444' }}><UserX size={16} /></button>}
                         </div>
                       </td>
                     </tr>
@@ -159,6 +285,37 @@ export default function Chatteurs() {
             </div>
             {error && <div className="toast-error" style={{ marginBottom: '0.75rem' }}>{error}</div>}
             <form onSubmit={handleSubmit}>
+
+              {/* Photo de profil */}
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+                <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => fileRef.current?.click()}>
+                  {photoPreview ? (
+                    <img src={photoPreview} alt="" style={{
+                      width: 72, height: 72, borderRadius: '50%', objectFit: 'cover',
+                      border: '3px solid var(--navy)',
+                    }} />
+                  ) : (
+                    <div style={{
+                      width: 72, height: 72, borderRadius: '50%',
+                      background: '#f1f5f9', border: '3px dashed #cbd5e1',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Camera size={24} color="#94a3b8" />
+                    </div>
+                  )}
+                  <div style={{
+                    position: 'absolute', bottom: -2, right: -2,
+                    width: 24, height: 24, borderRadius: '50%',
+                    background: 'var(--navy)', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Camera size={12} color="#fff" />
+                  </div>
+                  <input ref={fileRef} type="file" accept="image/*"
+                    style={{ display: 'none' }} onChange={handlePhotoChange} />
+                </div>
+              </div>
+
               <div className="form-group">
                 <label className="label">Prénom *</label>
                 <input className="input-field" value={form.prenom} onChange={e => setForm({...form, prenom: e.target.value})} required />
@@ -171,14 +328,151 @@ export default function Chatteurs() {
                   <option value="va">VA</option>
                 </select>
               </div>
-              {form.role === 'manager' && (
+
+              {/* Role-specific compensation */}
+              {form.role === 'va' ? (
                 <div className="form-group">
-                  <label className="label">Taux Net Équipe (%)</label>
-                  <input className="input-field" type="number" step="0.01" min="0" max="1"
-                    value={form.taux_net_equipe}
-                    onChange={e => setForm({...form, taux_net_equipe: parseFloat(e.target.value) || 0})} />
+                  <label className="label">Taux horaire (€/h)</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <input className="input-field" type="number" step="0.50" min="0"
+                      style={{ width: '7rem' }}
+                      value={form.taux_horaire || ''}
+                      placeholder="0.00"
+                      onChange={e => setForm({...form, taux_horaire: parseFloat(e.target.value) || 0})} />
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>€ par heure</span>
+                  </div>
                 </div>
+              ) : (
+                <>
+                  {/* Commission presets */}
+                  <div className="form-group">
+                    <label className="label">Commission personnelle</label>
+                    {form.role === 'manager' ? (
+                      <>
+                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
+                          <button type="button"
+                            onClick={() => setForm({...form, taux_commission: 0.10})}
+                            style={{
+                              padding: '0.3rem 0.7rem', borderRadius: '20px',
+                              border: `2px solid ${form.taux_commission === 0.10 ? '#f59e0b' : '#e2e8f0'}`,
+                              background: form.taux_commission === 0.10 ? 'rgba(245,158,11,0.1)' : '#fafafa',
+                              color: form.taux_commission === 0.10 ? '#f59e0b' : '#94a3b8',
+                              fontWeight: form.taux_commission === 0.10 ? 700 : 500,
+                              fontSize: '0.75rem', cursor: 'pointer', transition: 'all 200ms',
+                            }}>
+                            10% Manager
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.4rem' }}>
+                          <input className="input-field" type="number" step="0.5" min="0" max="100"
+                            style={{ width: '6rem', fontSize: '0.85rem' }}
+                            value={form.taux_commission !== 0.10 ? (form.taux_commission * 100) : ''}
+                            placeholder="Autre %"
+                            onChange={e => {
+                              const v = parseFloat(e.target.value);
+                              if (!isNaN(v) && v >= 0 && v <= 100) setForm({...form, taux_commission: v / 100});
+                            }}
+                            onFocus={e => {
+                              if (form.taux_commission === 0.10) e.target.value = '10';
+                            }} />
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                            Actuel : {(form.taux_commission * 100).toFixed(1).replace('.0', '')}%
+                          </span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
+                          {COMMISSION_PRESETS.map(p => {
+                            const active = form.taux_commission === p.value;
+                            return (
+                              <button
+                                key={p.value}
+                                type="button"
+                                onClick={() => setForm({...form, taux_commission: p.value})}
+                                style={{
+                                  padding: '0.3rem 0.7rem', borderRadius: '20px',
+                                  border: `2px solid ${active ? p.color : '#e2e8f0'}`,
+                                  background: active ? p.color + '18' : '#fafafa',
+                                  color: active ? p.color : '#94a3b8',
+                                  fontWeight: active ? 700 : 500,
+                                  fontSize: '0.75rem', cursor: 'pointer',
+                                  transition: 'all 200ms',
+                                }}>
+                                {(p.value * 100).toFixed(1).replace('.0', '')}% {p.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.4rem' }}>
+                          <input className="input-field" type="number" step="0.5" min="0" max="100"
+                            value={commissionCustom ? (form.taux_commission * 100) : ''}
+                            placeholder="Autre %"
+                            style={{ width: '6rem', fontSize: '0.85rem' }}
+                            onChange={e => {
+                              const v = parseFloat(e.target.value);
+                              if (!isNaN(v) && v >= 0 && v <= 100) setForm({...form, taux_commission: v / 100});
+                            }}
+                            onFocus={e => {
+                              if (!commissionCustom) e.target.value = (form.taux_commission * 100).toString();
+                            }} />
+                          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                            Actuel : {(form.taux_commission * 100).toFixed(1).replace('.0', '')}%
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Manager: team commission rate */}
+                  {form.role === 'manager' && (
+                    <div className="form-group">
+                      <label className="label">Commission équipe (%)</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input className="input-field" type="number" step="0.5" min="0" max="100"
+                          style={{ width: '6rem' }}
+                          value={(form.taux_net_equipe * 100)}
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            if (!isNaN(v) && v >= 0 && v <= 100) setForm({...form, taux_net_equipe: v / 100});
+                          }} />
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                          Sur toutes les ventes générées
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
+
+              <div className="form-group">
+                <label className="label">Statut</label>
+                <div style={{
+                  display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.3rem',
+                }}>
+                  {STATUTS.map(s => {
+                    const active = form.statut === s.value;
+                    return (
+                      <button
+                        key={s.value}
+                        type="button"
+                        onClick={() => setForm({...form, statut: s.value})}
+                        style={{
+                          padding: '0.3rem 0.7rem', borderRadius: '20px',
+                          border: `2px solid ${active ? s.border : '#e2e8f0'}`,
+                          background: active ? s.bg : '#fafafa',
+                          color: active ? s.color : '#94a3b8',
+                          fontWeight: active ? 700 : 500,
+                          fontSize: '0.75rem', cursor: 'pointer',
+                          transition: 'all 200ms',
+                        }}
+                      >
+                        {active ? '● ' : ''}{s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="form-group">
                 <label className="label">Couleur (shifts)</label>
                 <div style={{
@@ -213,29 +507,76 @@ export default function Chatteurs() {
                   })}
                 </div>
               </div>
-              <div className="form-group"><label className="label">Email</label><input className="input-field" type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
-              <div className="form-group"><label className="label">Adresse</label><input className="input-field" value={form.adresse} onChange={e => setForm({...form, adresse: e.target.value})} /></div>
               <div className="form-row" style={{ marginBottom: '0.75rem' }}>
-                <div><label className="label">Ville</label><input className="input-field" value={form.ville} onChange={e => setForm({...form, ville: e.target.value})} /></div>
-                <div><label className="label">Pays</label><input className="input-field" value={form.pays} onChange={e => setForm({...form, pays: e.target.value})} /></div>
+                <div><label className="label">Email</label><input className="input-field" type="email" value={form.email || ''} onChange={e => setForm({...form, email: e.target.value})} /></div>
+                <div><label className="label">Pays</label><input className="input-field" value={form.pays || ''} onChange={e => setForm({...form, pays: e.target.value})} /></div>
               </div>
-              <div className="form-group"><label className="label">IBAN</label><input className="input-field" value={form.iban} onChange={e => setForm({...form, iban: e.target.value})} /></div>
-              <div className="form-group">
-                <label className="label">Taux de commission</label>
-                <select className="input-field" value={form.taux_commission} onChange={e => setForm({...form, taux_commission: parseFloat(e.target.value)})}>
-                  <option value={0.15}>15% (standard)</option>
-                  <option value={0.10}>10% (nouveau)</option>
-                </select>
-              </div>
-              {!editId && <>
-                <div className="form-group"><label className="label">Username (compte login)</label><input className="input-field" value={form.username} onChange={e => setForm({...form, username: e.target.value})} /></div>
-                <div className="form-group"><label className="label">Mot de passe</label><input className="input-field" type="password" value={form.password} onChange={e => setForm({...form, password: e.target.value})} /></div>
-              </>}
+
+              {/* Account section — create mode */}
+              {!editId && (
+                <div className="form-group">
+                  <label className="label">Mot de passe (compte login)</label>
+                  <input className="input-field" type="password" value={form.password || ''} onChange={e => setForm({...form, password: e.target.value})}
+                    placeholder="Minimum 8 caractères (utilise l'email comme identifiant)" />
+                </div>
+              )}
+
+              {/* Account section — edit mode */}
+              {editId && (
+                <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #e2e8f0' }}>
+                  <div style={{
+                    fontSize: '0.8rem', fontWeight: 700, color: 'var(--navy)',
+                    textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem',
+                    display: 'flex', alignItems: 'center', gap: '0.4rem',
+                  }}>
+                    <KeyRound size={14} /> Compte utilisateur
+                  </div>
+
+                  {!form.user_id && (
+                    <div style={{
+                      background: 'rgba(245, 183, 49, 0.08)', border: '1px solid rgba(245, 183, 49, 0.2)',
+                      borderRadius: 'var(--radius)', padding: '0.6rem 0.8rem',
+                      fontSize: '0.8rem', color: '#b45309', marginBottom: '0.75rem',
+                    }}>
+                      Aucun compte utilisateur lié. Remplissez les champs ci-dessous pour en créer un.
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="label">Email (identifiant)</label>
+                    <input className="input-field" type="email"
+                      value={form.user_email || form.email || ''}
+                      onChange={e => setForm({...form, user_email: e.target.value, email: e.target.value})}
+                      placeholder={form.user_id ? '' : 'Adresse email comme identifiant'} />
+                  </div>
+                  <div className="form-group">
+                    <label className="label">{form.user_id ? 'Nouveau mot de passe (laisser vide pour ne pas changer)' : 'Mot de passe *'}</label>
+                    <input className="input-field" type="password" value={form.new_password || ''}
+                      onChange={e => setForm({...form, new_password: e.target.value})}
+                      placeholder={form.user_id ? '••••••••' : 'Minimum 8 caractères'} />
+                  </div>
+                  <div className="form-group">
+                    <label className="label">Confirmer le mot de passe</label>
+                    <input className="input-field" type="password" value={form.confirm_password || ''}
+                      onChange={e => setForm({...form, confirm_password: e.target.value})}
+                      placeholder="Retapez le mot de passe" />
+                  </div>
+                </div>
+              )}
+
               <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>{editId ? 'Enregistrer' : 'Créer'}</button>
             </form>
           </div>
         </div>
       )}
+
+      <ConfirmModal
+        open={!!confirmDel}
+        title="Désactiver ce chatteur ?"
+        message={confirmDel ? `${confirmDel.prenom} sera marqué comme inactif. Cette action est réversible.` : ''}
+        onConfirm={() => confirmDel && handleDeactivate(confirmDel.id)}
+        onCancel={() => setConfirmDel(null)}
+      />
     </div>
   );
 }

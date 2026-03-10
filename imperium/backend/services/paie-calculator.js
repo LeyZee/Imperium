@@ -18,40 +18,54 @@ function recalculatePaies(periode_debut, periode_fin) {
   ).get('USD', 'EUR');
   const tauxChange = tauxRow?.taux || 0.92;
 
-  // Get all active chatteurs (non-managers)
+  // Get all active chatteurs (managers included — they can sell too)
   const chatteurs = db.prepare('SELECT * FROM chatteurs WHERE actif = 1').all();
-  const normalChatteurs = chatteurs.filter(c => c.role !== 'manager' && c.role !== 'va');
+  const allSellers = chatteurs.filter(c => c.role !== 'va'); // chatteurs + managers
   const managers = chatteurs.filter(c => c.role === 'manager');
+  const managerIds = new Set(managers.map(m => m.id));
 
-  // For each normal chatteur, get ventes grouped by plateforme
+  // Batch fetch: all ventes grouped by chatteur + plateforme (1 query instead of N)
+  const allVentes = db.prepare(`
+    SELECT
+      v.chatteur_id,
+      v.plateforme_id,
+      p.nom as plateforme_nom,
+      p.tva_rate,
+      p.commission_rate,
+      p.devise,
+      SUM(v.montant_brut) as total_brut,
+      COUNT(*) as nb_ventes
+    FROM ventes v
+    JOIN plateformes p ON p.id = v.plateforme_id
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ?
+    GROUP BY v.chatteur_id, v.plateforme_id
+  `).all(periode_debut, periode_fin);
+
+  // Batch fetch: all malus grouped by chatteur (1 query instead of N)
+  const allMalus = db.prepare(`
+    SELECT chatteur_id, COALESCE(SUM(montant), 0) as total
+    FROM malus
+    WHERE periode >= ? AND periode <= ?
+    GROUP BY chatteur_id
+  `).all(periode_debut, periode_fin);
+  const malusByChatteur = {};
+  for (const m of allMalus) malusByChatteur[m.chatteur_id] = m.total;
+
+  // Group ventes by chatteur_id
+  const ventesByChatteur = {};
+  for (const v of allVentes) {
+    if (!ventesByChatteur[v.chatteur_id]) ventesByChatteur[v.chatteur_id] = [];
+    ventesByChatteur[v.chatteur_id].push(v);
+  }
+
   const paieRows = [];
 
-  for (const chatteur of normalChatteurs) {
-    const ventesParPlateforme = db.prepare(`
-      SELECT
-        v.plateforme_id,
-        p.nom as plateforme_nom,
-        p.tva_rate,
-        p.commission_rate,
-        p.devise,
-        SUM(v.montant_brut) as total_brut,
-        COUNT(*) as nb_ventes
-      FROM ventes v
-      JOIN plateformes p ON p.id = v.plateforme_id
-      WHERE v.chatteur_id = ?
-        AND v.periode_debut >= ? AND v.periode_fin <= ?
-      GROUP BY v.plateforme_id
-    `).all(chatteur.id, periode_debut, periode_fin);
+  for (const chatteur of allSellers) {
+    const ventesParPlateforme = ventesByChatteur[chatteur.id] || [];
 
     if (ventesParPlateforme.length === 0) continue;
 
-    // Malus total for this chatteur in this period
-    const malusRow = db.prepare(`
-      SELECT COALESCE(SUM(montant), 0) as total
-      FROM malus
-      WHERE chatteur_id = ? AND periode >= ? AND periode <= ?
-    `).get(chatteur.id, periode_debut, periode_fin);
-    const malusTotalChatteur = malusRow.total;
+    const malusTotalChatteur = malusByChatteur[chatteur.id] || 0;
 
     // Calculate per-platform
     let chatteurTotalNetHT = 0;
@@ -101,9 +115,10 @@ function recalculatePaies(periode_debut, periode_fin) {
     chatteurNetHT[row.chatteur_id] = (chatteurNetHT[row.chatteur_id] || 0) + row.net_ht_eur;
   }
 
-  // Sort chatteurs by net_ht DESC, take top 3
+  // Sort chatteurs by net_ht DESC, take top 3 (exclude managers from primes)
   const ranked = Object.entries(chatteurNetHT)
     .map(([id, netHT]) => ({ id: parseInt(id), netHT }))
+    .filter(r => !managerIds.has(r.id))
     .sort((a, b) => b.netHT - a.netHT);
 
   const primeRates = [0.005, 0.0025, 0.0012]; // 0.5%, 0.25%, 0.12%
@@ -146,15 +161,16 @@ function recalculatePaies(periode_debut, periode_fin) {
   const saveAll = db.transaction(() => {
     // Delete old paie rows for this period that no longer have ventes
     // (but keep 'payé' rows intact)
-    const existingIds = paieRows.map(r => `${r.chatteur_id}-${r.plateforme_id}`);
+    const existingIds = new Set(paieRows.map(r => `${r.chatteur_id}-${r.plateforme_id}`));
     const oldRows = db.prepare(`
       SELECT id, chatteur_id, plateforme_id FROM paies
       WHERE periode_debut = ? AND periode_fin = ? AND statut != 'payé'
+        AND plateforme_id IS NOT NULL
     `).all(periode_debut, periode_fin);
 
     for (const old of oldRows) {
       const key = `${old.chatteur_id}-${old.plateforme_id}`;
-      if (!existingIds.includes(key)) {
+      if (!existingIds.has(key)) {
         db.prepare('DELETE FROM paies WHERE id = ?').run(old.id);
       }
     }
@@ -170,21 +186,49 @@ function recalculatePaies(periode_debut, periode_fin) {
     }
 
     // Handle manager rows (plateforme_id = NULL)
+    // SQLite treats NULL != NULL in UNIQUE constraints, so ON CONFLICT won't match.
+    // Instead: update paid rows in-place, delete+reinsert non-paid rows.
     for (const mgr of managers) {
       const mgrTotal = totalNetHTEquipe * mgr.taux_net_equipe;
+      const existing = db.prepare(`
+        SELECT id, statut FROM paies
+        WHERE chatteur_id = ? AND plateforme_id IS NULL
+          AND periode_debut = ? AND periode_fin = ?
+      `).all(mgr.id, periode_debut, periode_fin);
+
       if (mgrTotal > 0) {
-        db.prepare(`
-          INSERT INTO paies (
-            chatteur_id, plateforme_id, periode_debut, periode_fin,
-            ventes_brutes, taux_change,
-            ventes_ttc_eur, ventes_ht_eur, net_ht_eur,
-            commission_chatteur, malus_total, prime, total_chatteur, statut
-          ) VALUES (?, NULL, ?, ?, 0, ?, 0, 0, 0, 0, 0, 0, ?, 'calculé')
-          ON CONFLICT(chatteur_id, plateforme_id, periode_debut, periode_fin) DO UPDATE SET
-            taux_change = excluded.taux_change,
-            total_chatteur = excluded.total_chatteur,
-            statut = CASE WHEN paies.statut = 'payé' THEN 'payé' ELSE 'calculé' END
-        `).run(mgr.id, periode_debut, periode_fin, tauxChange, mgrTotal);
+        if (existing.length > 0) {
+          // Update first matching row, preserve 'payé' status
+          const target = existing[0];
+          db.prepare(`
+            UPDATE paies SET
+              taux_change = ?, total_chatteur = ?,
+              statut = CASE WHEN statut = 'payé' THEN 'payé' ELSE 'calculé' END
+            WHERE id = ?
+          `).run(tauxChange, mgrTotal, target.id);
+          // Delete any duplicates (cleanup from previous bug)
+          for (let i = 1; i < existing.length; i++) {
+            if (existing[i].statut !== 'payé') {
+              db.prepare('DELETE FROM paies WHERE id = ?').run(existing[i].id);
+            }
+          }
+        } else {
+          db.prepare(`
+            INSERT INTO paies (
+              chatteur_id, plateforme_id, periode_debut, periode_fin,
+              ventes_brutes, taux_change,
+              ventes_ttc_eur, ventes_ht_eur, net_ht_eur,
+              commission_chatteur, malus_total, prime, total_chatteur, statut
+            ) VALUES (?, NULL, ?, ?, 0, ?, 0, 0, 0, 0, 0, 0, ?, 'calculé')
+          `).run(mgr.id, periode_debut, periode_fin, tauxChange, mgrTotal);
+        }
+      } else {
+        // No manager pay — delete non-paid rows
+        for (const row of existing) {
+          if (row.statut !== 'payé') {
+            db.prepare('DELETE FROM paies WHERE id = ?').run(row.id);
+          }
+        }
       }
     }
   });

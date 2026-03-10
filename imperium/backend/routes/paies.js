@@ -102,6 +102,32 @@ router.put('/:id/statut', authMiddleware, adminOnly, (req, res) => {
   res.json({ message: 'Statut mis à jour' });
 });
 
+// GET /api/paies/mes-paies — chatteur: get own paies with full calculation details
+router.get('/mes-paies', authMiddleware, (req, res) => {
+  if (req.user.role !== 'chatteur' || !req.user.chatteur_id) {
+    return res.status(403).json({ error: 'Accès réservé aux chatteurs' });
+  }
+
+  const chatteur = db.prepare('SELECT taux_commission, role, taux_net_equipe FROM chatteurs WHERE id = ?')
+    .get(req.user.chatteur_id);
+
+  const paies = db.prepare(`
+    SELECT p.*,
+      pl.nom as plateforme_nom, pl.devise, pl.tva_rate, pl.commission_rate
+    FROM paies p
+    LEFT JOIN plateformes pl ON pl.id = p.plateforme_id
+    WHERE p.chatteur_id = ?
+    ORDER BY p.periode_debut DESC
+    LIMIT 50
+  `).all(req.user.chatteur_id);
+
+  res.json({
+    paies,
+    taux_commission: chatteur?.taux_commission || 0,
+    role: chatteur?.role || 'chatteur',
+  });
+});
+
 // GET /api/paies/periodes — list available periods
 router.get('/periodes', authMiddleware, (req, res) => {
   const periodes = db.prepare(`

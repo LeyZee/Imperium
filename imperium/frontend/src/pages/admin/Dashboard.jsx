@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, ClipboardList, CreditCard, ChevronDown, ArrowRight } from 'lucide-react';
+import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, ClipboardList, CreditCard, ChevronDown, ArrowRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/index.js';
 import StatCard from '../../components/StatCard.jsx';
+import { CardSkeleton } from '../../components/Skeleton.jsx';
 
 function formatPeriodLabel(debut, fin) {
   const d = new Date(debut + 'T00:00:00');
@@ -121,6 +122,10 @@ export default function AdminDashboard() {
         </div>
 
         {/* Period selector */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <button onClick={() => fetchDashboard(selectedPeriod?.debut, selectedPeriod?.fin)} className="btn-ghost" title="Rafraîchir" style={{ padding: '0.5rem' }}>
+            <RefreshCw size={16} />
+          </button>
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
@@ -166,17 +171,30 @@ export default function AdminDashboard() {
           )}
         </div>
       </div>
+      </div>
 
       {/* Error */}
       {error && <div className="toast-error" style={{ marginBottom: '1rem' }}>{error}</div>}
 
+      {/* Alerts */}
+      {!loading && data && (data.totalBrutEur === 0 || data.nbChatteurs === 0) && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.75rem',
+          padding: '0.75rem 1rem', borderRadius: '10px', marginBottom: '1rem',
+          background: '#fffbeb', border: '1px solid #fde68a',
+        }}>
+          <AlertTriangle size={18} color="#d97706" style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: '0.82rem', color: '#92400e' }}>
+            {data.totalBrutEur === 0 ? 'Aucune vente pour cette période.' : ''}
+            {data.totalBrutEur === 0 && data.nbChatteurs === 0 ? ' ' : ''}
+            {data.nbChatteurs === 0 ? 'Aucun chatteur actif.' : ''}
+          </span>
+        </div>
+      )}
+
       {/* Stats */}
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-          {[...Array(4)].map((_, i) => (
-            <div key={i} className="card" style={{ height: '100px', animation: 'pulse 1.5s ease infinite', opacity: 0.5 }} />
-          ))}
-        </div>
+        <CardSkeleton count={4} />
       ) : stats ? (
         <div className="stats-grid stagger-children">
           {stats.map((s) => (

@@ -18,6 +18,8 @@ const TIMEZONES = [
   { key: 'Madagascar', label: 'Madagascar', tz: 'Indian/Antananarivo', offset: 2 },
 ];
 
+const PAYS_ISO_TZ = { 'France': 'fr', 'Bénin': 'bj', 'Madagascar': 'mg' };
+
 const COLORS = CHATTEUR_COLORS;
 
 function getMonday(date) {
@@ -234,6 +236,8 @@ export default function Shifts() {
                 last={i === plateformes.length - 1}
                 onClick={() => setActivePlatform(p.id)}
                 label={p.nom}
+                bgColor={p.couleur_fond}
+                textColor={p.couleur_texte}
               />
             );
           })}
@@ -250,6 +254,7 @@ export default function Shifts() {
               last={i === TIMEZONES.length - 1}
               onClick={() => setSelectedTZ(tz.key)}
               label={tz.label}
+              iso={PAYS_ISO_TZ[tz.key]}
             />
           ))}
         </div>
@@ -354,8 +359,10 @@ function NavButton({ onClick, children }) {
   );
 }
 
-function PlatformTab({ active, last, onClick, label }) {
+function PlatformTab({ active, last, onClick, label, bgColor, textColor }) {
   const [hovered, setHovered] = useState(false);
+  const bg = bgColor || '#1b2e4b';
+  const txt = textColor || '#ffffff';
   return (
     <button
       onClick={onClick}
@@ -364,8 +371,8 @@ function PlatformTab({ active, last, onClick, label }) {
       style={{
         flex: 1,
         padding: '0.65rem 0.5rem',
-        background: active ? '#1b2e4b' : (hovered ? '#f8fafc' : '#ffffff'),
-        color: active ? '#f5b731' : '#64748b',
+        background: active ? bg : (hovered ? '#f8fafc' : '#ffffff'),
+        color: active ? txt : '#64748b',
         border: 'none',
         borderRight: !last ? '1px solid rgba(0,0,0,0.08)' : 'none',
         fontWeight: active ? 700 : 500,
@@ -378,7 +385,7 @@ function PlatformTab({ active, last, onClick, label }) {
     >
       {active && (
         <span style={{
-          width: 6, height: 6, borderRadius: '50%', background: '#f5b731', flexShrink: 0,
+          width: 6, height: 6, borderRadius: '50%', background: txt, flexShrink: 0,
           animation: 'ripple 0.4s ease',
         }} />
       )}
@@ -387,13 +394,14 @@ function PlatformTab({ active, last, onClick, label }) {
   );
 }
 
-function TzButton({ active, last, onClick, label }) {
+function TzButton({ active, last, onClick, label, iso }) {
   const [hovered, setHovered] = useState(false);
   return (
     <button
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      title={label}
       style={{
         padding: '0.4rem 0.65rem',
         background: active ? 'rgba(245,183,49,0.15)' : (hovered ? 'rgba(245,183,49,0.06)' : '#fff'),
@@ -404,8 +412,16 @@ function TzButton({ active, last, onClick, label }) {
         fontSize: '0.7rem',
         cursor: 'pointer',
         transition: 'all 200ms ease',
+        display: 'flex', alignItems: 'center', gap: '0.3rem',
       }}
     >
+      {iso && (
+        <img
+          src={`https://flagcdn.com/w40/${iso}.png`}
+          alt={label}
+          style={{ width: 18, height: 'auto', borderRadius: 2, verticalAlign: 'middle' }}
+        />
+      )}
       {label}
     </button>
   );
@@ -451,16 +467,25 @@ function ModelCard({ model, shifts, days, tzOffset, getChatteurName, getChatteur
     >
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-        <div style={{
-          width: 28, height: 28, borderRadius: '50%',
-          background: 'rgba(245,183,49,0.12)', border: '2px solid rgba(245,183,49,0.3)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: '0.65rem', fontWeight: 700, color: '#1b2e4b', flexShrink: 0,
-          transition: 'transform 300ms ease, background 300ms ease',
-          transform: hovered ? 'scale(1.1) rotate(5deg)' : 'scale(1)',
-        }}>
-          {model.pseudo.charAt(0)}
-        </div>
+        {model.photo ? (
+          <img src={model.photo} alt="" style={{
+            width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
+            border: '2px solid rgba(245,183,49,0.3)', flexShrink: 0,
+            transition: 'transform 300ms ease',
+            transform: hovered ? 'scale(1.1)' : 'scale(1)',
+          }} />
+        ) : (
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%',
+            background: 'rgba(245,183,49,0.12)', border: '2px solid rgba(245,183,49,0.3)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.65rem', fontWeight: 700, color: '#1b2e4b', flexShrink: 0,
+            transition: 'transform 300ms ease, background 300ms ease',
+            transform: hovered ? 'scale(1.1) rotate(5deg)' : 'scale(1)',
+          }}>
+            {model.pseudo.charAt(0)}
+          </div>
+        )}
         <span style={{ fontWeight: 600, color: '#1b2e4b', fontSize: '0.85rem' }}>{model.pseudo}</span>
         <span style={{
           marginLeft: 'auto', fontSize: '0.55rem', fontWeight: 600,

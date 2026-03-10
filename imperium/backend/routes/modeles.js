@@ -5,7 +5,7 @@ const { authMiddleware, adminOnly } = require('../middleware/auth');
 const router = express.Router();
 
 router.get('/', authMiddleware, (req, res) => {
-  const modeles = db.prepare('SELECT * FROM modeles WHERE actif = 1 ORDER BY pseudo').all();
+  const modeles = db.prepare("SELECT * FROM modeles WHERE statut != 'inactif' ORDER BY pseudo").all();
   res.json(modeles);
 });
 
@@ -16,7 +16,7 @@ router.get('/:id', authMiddleware, (req, res) => {
 });
 
 router.post('/', authMiddleware, adminOnly, (req, res) => {
-  const { pseudo, part_percent } = req.body;
+  const { pseudo, part_percent, photo } = req.body;
   if (!pseudo) return res.status(400).json({ error: 'Pseudo requis' });
 
   const part = part_percent ?? 0.35;
@@ -25,14 +25,14 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
   }
 
   const result = db.prepare(
-    'INSERT INTO modeles (pseudo, part_percent) VALUES (?, ?)'
-  ).run(pseudo, part);
+    'INSERT INTO modeles (pseudo, part_percent, photo) VALUES (?, ?, ?)'
+  ).run(pseudo, part, photo ?? null);
 
   res.status(201).json({ id: result.lastInsertRowid, pseudo, part_percent: part });
 });
 
 router.put('/:id', authMiddleware, adminOnly, (req, res) => {
-  const { pseudo, part_percent, actif } = req.body;
+  const { pseudo, part_percent, actif, statut, photo } = req.body;
   const existing = db.prepare('SELECT id FROM modeles WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Modèle introuvable' });
 
@@ -40,19 +40,23 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
     return res.status(400).json({ error: 'La part doit être entre 35% et 40%' });
   }
 
+  const effectiveActif = statut ? (statut === 'actif' ? 1 : 0) : (actif !== undefined ? (actif ? 1 : 0) : null);
+
   db.prepare(`
     UPDATE modeles SET
       pseudo = COALESCE(?, pseudo),
       part_percent = COALESCE(?, part_percent),
-      actif = COALESCE(?, actif)
+      actif = COALESCE(?, actif),
+      statut = COALESCE(?, statut),
+      photo = COALESCE(?, photo)
     WHERE id = ?
-  `).run(pseudo ?? null, part_percent ?? null, actif !== undefined ? (actif ? 1 : 0) : null, req.params.id);
+  `).run(pseudo ?? null, part_percent ?? null, effectiveActif, statut ?? null, photo ?? null, req.params.id);
 
   res.json({ message: 'Modèle mis à jour' });
 });
 
 router.delete('/:id', authMiddleware, adminOnly, (req, res) => {
-  db.prepare('UPDATE modeles SET actif = 0 WHERE id = ?').run(req.params.id);
+  db.prepare("UPDATE modeles SET actif = 0, statut = 'inactif' WHERE id = ?").run(req.params.id);
   res.json({ message: 'Modèle désactivé' });
 });
 

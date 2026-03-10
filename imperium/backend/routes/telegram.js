@@ -54,7 +54,7 @@ router.post('/report', telegramLimiter, telegramAuth, (req, res) => {
 /**
  * GET /api/telegram/report — list imported ventes
  */
-router.get('/report', (req, res) => {
+router.get('/report', authMiddleware, adminOnly, (req, res) => {
   const db = require('../database');
   const ventes = db.prepare(`
     SELECT v.*, c.prenom as chatteur, p.nom as plateforme

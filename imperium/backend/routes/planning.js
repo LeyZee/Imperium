@@ -170,7 +170,7 @@ router.get('/semaine', authMiddleware, (req, res) => {
   let where = 's.date >= ? AND s.date <= ?';
   const params = [dateDebut, dateFin];
 
-  if (req.user.role === 'chatteur') {
+  if (req.user.role === 'chatteur' && req.query.general !== 'true') {
     where += ' AND s.chatteur_id = ?';
     params.push(req.user.chatteur_id);
   }
@@ -178,6 +178,7 @@ router.get('/semaine', authMiddleware, (req, res) => {
   const shifts = db.prepare(`
     SELECT s.*,
       c.prenom as chatteur_prenom,
+      c.couleur as chatteur_couleur,
       m.pseudo as modele_pseudo,
       p.nom as plateforme_nom
     FROM shifts s
@@ -203,6 +204,7 @@ router.get('/semaine', authMiddleware, (req, res) => {
   // Load templates and generate virtual shifts for empty slots
   const templates = db.prepare(`
     SELECT t.*, c.prenom as chatteur_prenom,
+      c.couleur as chatteur_couleur,
       m.pseudo as modele_pseudo, p.nom as plateforme_nom
     FROM shift_templates t
     JOIN chatteurs c ON c.id = t.chatteur_id
@@ -234,6 +236,7 @@ router.get('/semaine', authMiddleware, (req, res) => {
       creneau: t.creneau,
       fuseau_horaire: t.fuseau_horaire,
       chatteur_prenom: t.chatteur_prenom,
+      chatteur_couleur: t.chatteur_couleur,
       modele_pseudo: t.modele_pseudo,
       plateforme_nom: t.plateforme_nom,
       creneau_label: CRENEAUX[t.creneau]?.label || '',
