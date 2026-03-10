@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
-import { Trophy, TrendingUp, BarChart2, AlertTriangle, Zap, Target, Users, Flame, Award, Star } from 'lucide-react';
+import { Trophy, TrendingUp, BarChart2, AlertTriangle, Zap, Target, Users, Flame, Star } from 'lucide-react';
 import { computeMilestones, computeStreaksAndRecords, computeMicroMilestones } from '../../utils/gamification.js';
 
 const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
@@ -296,7 +296,7 @@ export default function MaPerformance() {
   const [cagnotteHistorique, setCagnotteHistorique] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const periode = getPeriodeCourante();
+  const periode = useMemo(() => getPeriodeCourante(), []);
 
   useEffect(() => {
     if (!user?.chatteur_id) return;
@@ -310,39 +310,51 @@ export default function MaPerformance() {
       setClassementData(c.data || {});
       setCagnotteHistorique(ch.data || {});
     })
-    .catch(() => setError('Impossible de charger les donn\u00e9es.'))
+    .catch((err) => {
+      console.error('MaPerformance fetch error:', err);
+      setError('Impossible de charger les donn\u00e9es.');
+    })
     .finally(() => setLoading(false));
-  }, [user]);
+  }, [user?.chatteur_id, periode.debut, periode.fin]);
 
-  const maxPaie = Math.max(...historique.map(h => h.total_paie || 0), 1);
+  // Memoize all derived computations
+  const {
+    maxPaie, classement, totalNetHTEquipe, primeRates, totalPrimePool,
+    top3Primes, myRang, myData, thirdPlaceNetHT, distanceToPodium,
+    motivation, paliers, streaksData, microJalons, totalGagne, moyennePrimePool,
+  } = useMemo(() => {
+    const classement = classementData?.classement || [];
+    const totalNetHTEquipe = classementData?.total_net_ht_equipe || 0;
+    const primeRates = classementData?.prime_rates || [0.005, 0.0025, 0.0012];
+    const maxPaie = Math.max(...historique.map(h => h.total_paie || 0), 1);
 
-  // Extract classement data
-  const classement = classementData?.classement || [];
-  const totalNetHTEquipe = classementData?.total_net_ht_equipe || 0;
-  const primeRates = classementData?.prime_rates || [0.005, 0.0025, 0.0012];
+    const totalPrimePool = totalNetHTEquipe * primeRates.reduce((s, r) => s + r, 0);
+    const top3 = classement.slice(0, 3);
+    const top3Primes = primeRates.map((rate, i) => ({
+      ...(top3[i] || {}),
+      calculatedPrime: totalNetHTEquipe * rate,
+      rate,
+      rang: i + 1,
+    }));
 
-  // Calculate prime pool and individual primes
-  const totalPrimePool = totalNetHTEquipe * primeRates.reduce((s, r) => s + r, 0);
-  const top3 = classement.slice(0, 3);
-  const top3Primes = primeRates.map((rate, i) => ({
-    ...(top3[i] || {}),
-    calculatedPrime: totalNetHTEquipe * rate,
-    rate,
-    rang: i + 1,
-  }));
+    const myRang = classement.findIndex(c => c.id === user?.chatteur_id) + 1;
+    const myData = classement.find(c => c.id === user?.chatteur_id);
+    const thirdPlaceNetHT = top3[2]?.total_net_ht || 0;
+    const distanceToPodium = myData ? Math.max(0, thirdPlaceNetHT - myData.total_net_ht) : 0;
+    const motivation = getMotivation(myRang, distanceToPodium);
 
-  // User's rank
-  const myRang = classement.findIndex(c => c.id === user?.chatteur_id) + 1;
-  const myData = classement.find(c => c.id === user?.chatteur_id);
-  const thirdPlaceNetHT = top3[2]?.total_net_ht || 0;
-  const distanceToPodium = myData ? Math.max(0, thirdPlaceNetHT - myData.total_net_ht) : 0;
-  const motivation = getMotivation(myRang, distanceToPodium);
+    const moyennePrimePool = cagnotteHistorique?.moyenne_prime_pool || 0;
+    const paliers = computeMilestones(moyennePrimePool, totalPrimePool);
+    const streaksData = computeStreaksAndRecords(historique);
+    const microJalons = computeMicroMilestones(myData?.total_net_ht || 0, thirdPlaceNetHT, myRang);
+    const totalGagne = historique.reduce((s, h) => s + (h.total_paie || 0), 0);
 
-  // Gamification computations
-  const moyennePrimePool = cagnotteHistorique?.moyenne_prime_pool || 0;
-  const paliers = computeMilestones(moyennePrimePool, totalPrimePool);
-  const streaksData = computeStreaksAndRecords(historique);
-  const microJalons = computeMicroMilestones(myData?.total_net_ht || 0, thirdPlaceNetHT, myRang);
+    return {
+      maxPaie, classement, totalNetHTEquipe, primeRates, totalPrimePool,
+      top3Primes, myRang, myData, thirdPlaceNetHT, distanceToPodium,
+      motivation, paliers, streaksData, microJalons, totalGagne, moyennePrimePool,
+    };
+  }, [historique, classementData, cagnotteHistorique, user?.chatteur_id]);
 
   return (
     <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
@@ -462,13 +474,13 @@ export default function MaPerformance() {
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: '0.65rem', color: '#64748b', letterSpacing: '0.05em' }}>{"TOTAL GAGN\u00C9"}</div>
                       <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f5b731' }}>
-                        {`${fmt(historique.reduce((s, h) => s + (h.total_paie || 0), 0))} \u20AC`}
+                        {`${fmt(totalGagne)} \u20AC`}
                       </div>
                     </div>
                     <div style={{ textAlign: 'center' }}>
                       <div style={{ fontSize: '0.65rem', color: '#64748b', letterSpacing: '0.05em' }}>MOYENNE</div>
                       <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1b2e4b' }}>
-                        {`${fmt(historique.reduce((s, h) => s + (h.total_paie || 0), 0) / (historique.length || 1))} \u20AC`}
+                        {`${fmt(totalGagne / (historique.length || 1))} \u20AC`}
                       </div>
                     </div>
                   </div>
