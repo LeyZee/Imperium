@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { ChevronLeft, ChevronRight, Clock, Users, Eye } from 'lucide-react';
@@ -100,7 +100,7 @@ export default function PlanningGeneral() {
       setShifts(data.shifts || []);
       if (data.plateformes?.length) {
         setPlateformes(data.plateformes);
-        if (!activePlatform) setActivePlatform(data.plateformes[0].id);
+        setActivePlatform(prev => prev || data.plateformes[0].id);
       }
       if (data.modeles_plateformes) {
         setModelesPlateformes(data.modeles_plateformes);
@@ -108,21 +108,24 @@ export default function PlanningGeneral() {
     }).finally(() => setLoading(false));
   }, [weekStart]);
 
-  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  const todayISO = useMemo(() => toISO(new Date()), []);
 
   // Filter shifts by active platform
-  const filteredShifts = shifts.filter(s => s.plateforme_id === activePlatform);
+  const filteredShifts = useMemo(() => shifts.filter(s => s.plateforme_id === activePlatform), [shifts, activePlatform]);
 
   // Filter models by active platform
-  const platformModelIds = modelesPlateformes
-    .filter(mp => mp.plateforme_id === activePlatform)
-    .map(mp => mp.modele_id);
-  const filteredModeles = modeles.filter(m => platformModelIds.includes(m.id));
+  const filteredModeles = useMemo(() => {
+    const platformModelIds = modelesPlateformes
+      .filter(mp => mp.plateforme_id === activePlatform)
+      .map(mp => mp.modele_id);
+    return modeles.filter(m => platformModelIds.includes(m.id));
+  }, [modeles, modelesPlateformes, activePlatform]);
 
   const tzOffset = TIMEZONES.find(t => t.key === selectedTZ)?.offset || 0;
 
   // Count unique chatteurs this week
-  const uniqueChatteurs = new Set(shifts.map(s => s.chatteur_id)).size;
+  const uniqueChatteurs = useMemo(() => new Set(shifts.map(s => s.chatteur_id)).size, [shifts]);
 
   return (
     <div className="fade-in">
@@ -239,6 +242,7 @@ export default function PlanningGeneral() {
                 days={days}
                 tzOffset={tzOffset}
                 currentUserId={user?.chatteur_id}
+                todayISO={todayISO}
               />
             );
           })}
@@ -333,9 +337,18 @@ function TzButton({ active, last, onClick, label, iso }) {
 }
 
 /* ─── Model Card with compact week grid (read-only) ─── */
-function ModelCard({ model, shifts, days, tzOffset, currentUserId }) {
+function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO }) {
   const [hovered, setHovered] = useState(false);
   const count = shifts.length;
+
+  // Pre-index shifts into a lookup map for O(1) access instead of O(n) .find()
+  const shiftMap = useMemo(() => {
+    const map = {};
+    for (const s of shifts) {
+      map[`${s.date}-${s.creneau}`] = s;
+    }
+    return map;
+  }, [shifts]);
 
   return (
     <div
@@ -382,7 +395,7 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId }) {
         {/* Day headers */}
         <div />
         {days.map((d, i) => {
-          const isToday = toISO(d) === toISO(new Date());
+          const isToday = toISO(d) === todayISO;
           return (
             <div key={i} style={{
               textAlign: 'center', padding: '2px 0', borderRadius: '4px',
@@ -403,7 +416,7 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId }) {
             creneau={cr}
             tzOffset={tzOffset}
             days={days}
-            shifts={shifts}
+            shiftMap={shiftMap}
             currentUserId={currentUserId}
           />
         ))}
@@ -413,7 +426,7 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId }) {
 }
 
 /* ─── Single creneau row ─── */
-function ShiftRow({ creneau, tzOffset, days, shifts, currentUserId }) {
+function ShiftRow({ creneau, tzOffset, days, shiftMap, currentUserId }) {
   return (
     <>
       <div style={{
@@ -423,7 +436,7 @@ function ShiftRow({ creneau, tzOffset, days, shifts, currentUserId }) {
         {getCreneauShort(creneau, tzOffset)}
       </div>
       {days.map((d, i) => {
-        const shift = shifts.find(s => s.date === toISO(d) && s.creneau === creneau.id);
+        const shift = shiftMap[`${toISO(d)}-${creneau.id}`];
         return (
           <ShiftCell
             key={i}

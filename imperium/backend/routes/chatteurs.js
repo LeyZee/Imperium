@@ -7,14 +7,24 @@ const router = express.Router();
 
 // GET /api/chatteurs
 router.get('/', authMiddleware, (req, res) => {
-  const chatteurs = db.prepare(`
-    SELECT c.*, u.username, u.email as user_email
-    FROM chatteurs c
-    LEFT JOIN users u ON u.id = c.user_id
-    WHERE c.statut != 'inactif'
-    ORDER BY c.prenom
-  `).all();
-  res.json(chatteurs);
+  try {
+    const chatteurs = db.prepare(`
+      SELECT c.*, u.username, u.email as user_email
+      FROM chatteurs c
+      LEFT JOIN users u ON u.id = c.user_id
+      WHERE c.statut != 'inactif'
+      ORDER BY c.prenom
+    `).all();
+
+    // Strip sensitive fields for non-admin users
+    if (req.user.role !== 'admin') {
+      return res.json(chatteurs.map(({ iban, adresse, code_postal, ville, taux_commission, taux_net_equipe, taux_horaire, user_id, user_email, ...safe }) => safe));
+    }
+    res.json(chatteurs);
+  } catch (err) {
+    console.error('GET /api/chatteurs error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 // GET /api/chatteurs/classement — leaderboard with prime data (accessible by chatteurs)
@@ -62,27 +72,32 @@ router.get('/classement', authMiddleware, (req, res) => {
 
 // GET /api/chatteurs/classement/historique-cagnotte — historical prime pool data for gamification
 router.get('/classement/historique-cagnotte', authMiddleware, (req, res) => {
-  const nb = parseInt(req.query.nb_periodes, 10) || 6;
+  try {
+    const nb = Math.min(Math.max(parseInt(req.query.nb_periodes, 10) || 6, 1), 52);
 
-  const periodes = db.prepare(`
-    SELECT periode_debut, periode_fin,
-      COALESCE(SUM(net_ht_eur), 0) as total_net_ht_equipe,
-      COALESCE(SUM(prime), 0) as total_prime_pool
-    FROM paies
-    WHERE plateforme_id IS NOT NULL
-    GROUP BY periode_debut, periode_fin
-    ORDER BY periode_debut DESC
-    LIMIT ?
-  `).all(nb);
+    const periodes = db.prepare(`
+      SELECT periode_debut, periode_fin,
+        COALESCE(SUM(net_ht_eur), 0) as total_net_ht_equipe,
+        COALESCE(SUM(prime), 0) as total_prime_pool
+      FROM paies
+      WHERE plateforme_id IS NOT NULL
+      GROUP BY periode_debut, periode_fin
+      ORDER BY periode_debut DESC
+      LIMIT ?
+    `).all(nb);
 
-  const moyenne_prime_pool = periodes.length > 0
-    ? periodes.reduce((s, p) => s + p.total_prime_pool, 0) / periodes.length
-    : 0;
+    const moyenne_prime_pool = periodes.length > 0
+      ? periodes.reduce((s, p) => s + p.total_prime_pool, 0) / periodes.length
+      : 0;
 
-  res.json({
-    periodes: periodes.reverse(), // chronological order
-    moyenne_prime_pool,
-  });
+    res.json({
+      periodes: periodes.reverse(), // chronological order
+      moyenne_prime_pool,
+    });
+  } catch (err) {
+    console.error('historique-cagnotte error:', err);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
 });
 
 // GET /api/chatteurs/:id
