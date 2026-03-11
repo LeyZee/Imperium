@@ -11,6 +11,7 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [shakeKey, setShakeKey] = useState(0);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e) => {
@@ -19,6 +20,7 @@ export default function Login() {
 
     if (!email.trim() || !password.trim()) {
       setError('Veuillez remplir tous les champs.');
+      setShakeKey(k => k + 1);
       return;
     }
 
@@ -33,6 +35,7 @@ export default function Login() {
     } catch (err) {
       const msg = err?.response?.data?.message || 'Identifiants incorrects.';
       setError(msg);
+      setShakeKey(k => k + 1);
     } finally {
       setLoading(false);
     }
@@ -95,7 +98,7 @@ export default function Login() {
           width: '100%',
           maxWidth: '420px',
           position: 'relative',
-          animation: 'fadeIn 0.5s ease',
+          animation: 'pageEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
         {/* Logo section */}
@@ -153,7 +156,7 @@ export default function Login() {
           }}
         >
           {error && (
-            <div className="error-box" style={{ marginBottom: '1.25rem' }}>
+            <div key={shakeKey} className="error-box shake" style={{ marginBottom: '1.25rem' }}>
               {error}
             </div>
           )}
@@ -232,12 +235,6 @@ export default function Login() {
         </p>
       </div>
 
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(16px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 }

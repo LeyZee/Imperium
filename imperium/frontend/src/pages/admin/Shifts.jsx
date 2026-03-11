@@ -193,7 +193,7 @@ export default function Shifts() {
 
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', gap: '0.5rem', flexWrap: 'wrap' }}>
         <h1 className="text-navy" style={{ fontWeight: 700 }}>Planning Shifts</h1>
         <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>

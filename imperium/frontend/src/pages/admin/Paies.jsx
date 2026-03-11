@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../../api/index.js';
 import StatCard from '../../components/StatCard.jsx';
+import { CHATTEUR_COLORS } from '../../constants/colors.js';
 import {
   Euro, TrendingUp, Building2, ArrowLeftRight,
   Trophy, RefreshCw, ChevronDown, Crown, Users,
-  CheckCircle, Clock, AlertCircle,
+  CheckCircle, Clock, AlertCircle, Download, FileText,
 } from 'lucide-react';
 
 /* ─── Period generator ─── */
@@ -64,9 +65,9 @@ function getInitials(prenom) {
   return (prenom?.[0] || '?').toUpperCase();
 }
 
-const AVATAR_COLORS = ['#6366f1', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
-function avatarColor(id) {
-  return AVATAR_COLORS[(id || 0) % AVATAR_COLORS.length];
+function getChatteurColor(couleurIndex) {
+  const c = CHATTEUR_COLORS[couleurIndex ?? 0] || CHATTEUR_COLORS[0];
+  return { bg: c.bg, text: c.text };
 }
 
 const STATUT_STYLES = {
@@ -149,13 +150,60 @@ export default function Paies() {
     }
   }
 
+  const [downloadingId, setDownloadingId] = useState(null);
+  const [batchProgress, setBatchProgress] = useState(null); // { current, total }
+
+  async function handleDownloadFacture(chatteurId, prenom) {
+    setDownloadingId(chatteurId);
+    try {
+      const resp = await api.get(`/api/paies/facture?chatteur_id=${chatteurId}&debut=${period.debut}&fin=${period.fin}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Facture_${prenom}_${period.debut}_${period.fin}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur lors de la g\u00e9n\u00e9ration de la facture');
+    } finally {
+      setDownloadingId(null);
+    }
+  }
+
+  async function handleDownloadAll() {
+    setBatchProgress({ current: 0, total: 1 });
+    try {
+      const resp = await api.get(`/api/paies/factures-zip?debut=${period.debut}&fin=${period.fin}`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/zip' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `IMPERA_Factures_${period.debut}_${period.fin}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      setSuccess('Toutes les factures t\u00e9l\u00e9charg\u00e9es (ZIP)');
+      setTimeout(() => setSuccess(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur lors du t\u00e9l\u00e9chargement ZIP');
+    } finally {
+      setBatchProgress(null);
+    }
+  }
+
   const paies = data?.paies || [];
   const managers = data?.managers || [];
   const resume = data?.resume || {};
   const top = resume.top_chatteurs || [];
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       {/* Toast */}
       {success && (
         <div className="toast-success" style={{
@@ -172,6 +220,29 @@ export default function Paies() {
         </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          {/* Download all invoices */}
+          {paies.length > 0 && (
+            <button
+              className="btn-secondary haptic"
+              onClick={handleDownloadAll}
+              disabled={downloadingId !== null || batchProgress !== null}
+              title="T\u00e9l\u00e9charger toutes les factures PDF de la p\u00e9riode"
+              style={{ padding: '0.5rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              {batchProgress ? (
+                <>
+                  <span className="spinner" style={{ width: 15, height: 15 }} />
+                  {batchProgress.current}/{batchProgress.total}
+                </>
+              ) : (
+                <>
+                  <Download size={15} />
+                  Toutes les factures
+                </>
+              )}
+            </button>
+          )}
+
           {/* Recalculate button */}
           <button
             className="btn-secondary"
@@ -339,12 +410,13 @@ export default function Paies() {
                     <th style={{ textAlign: 'right' }}>Prime</th>
                     <th style={{ textAlign: 'right' }}>TOTAL</th>
                     <th style={{ textAlign: 'center' }}>Statut</th>
+                    <th style={{ textAlign: 'center', width: '50px' }}>PDF</th>
                   </tr>
                 </thead>
-                <tbody className="stagger-children">
+                <tbody className="stagger-rows">
                   {paies.length === 0 ? (
                     <tr>
-                      <td colSpan={11} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
+                      <td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
                         <div style={{
                           width: 48, height: 48, borderRadius: '50%', margin: '0 auto 0.75rem',
                           background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -380,9 +452,9 @@ export default function Paies() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               <div style={{
                                 width: 32, height: 32, borderRadius: '50%',
-                                background: avatarColor(p.chatteur_id),
+                                background: getChatteurColor(p.chatteur_couleur).bg,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '0.7rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+                                fontSize: '0.7rem', fontWeight: 700, color: getChatteurColor(p.chatteur_couleur).text, flexShrink: 0,
                               }}>
                                 {getInitials(p.chatteur_prenom)}
                               </div>
@@ -392,7 +464,10 @@ export default function Paies() {
                             </div>
                           </td>
                           <td>
-                            <span className={isUSD ? 'badge badge-gold' : 'badge badge-navy'}>
+                            <span className="badge" style={{
+                              background: p.couleur_fond || '#1b2e4b',
+                              color: p.couleur_texte || '#ffffff',
+                            }}>
                               {p.plateforme_nom || '—'}
                             </span>
                           </td>
@@ -448,6 +523,26 @@ export default function Paies() {
                               <option value="payé">Payé</option>
                             </select>
                           </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              className="haptic"
+                              onClick={(e) => { e.stopPropagation(); handleDownloadFacture(p.chatteur_id, p.chatteur_prenom); }}
+                              disabled={downloadingId === p.chatteur_id}
+                              title={`T\u00e9l\u00e9charger la facture de ${p.chatteur_prenom}`}
+                              style={{
+                                background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)',
+                                borderRadius: '8px', padding: '0.35rem', cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'all 200ms ease',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; e.currentTarget.style.transform = 'scale(1.1)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.transform = 'scale(1)'; }}
+                            >
+                              {downloadingId === p.chatteur_id
+                                ? <span className="spinner" style={{ width: 14, height: 14 }} />
+                                : <Download size={14} color="#6366f1" />}
+                            </button>
+                          </td>
                         </tr>
                       );
                     })
@@ -477,9 +572,10 @@ export default function Paies() {
                       <th style={{ textAlign: 'right' }}>Base (Net HT Équipe)</th>
                       <th style={{ textAlign: 'right' }}>TOTAL</th>
                       <th style={{ textAlign: 'center' }}>Statut</th>
+                      <th style={{ textAlign: 'center', width: '50px' }}>PDF</th>
                     </tr>
                   </thead>
-                  <tbody className="stagger-children">
+                  <tbody className="stagger-rows">
                     {managers.map(m => {
                       const statutStyle = STATUT_STYLES[m.statut] || STATUT_STYLES['calculé'];
                       return (
@@ -501,9 +597,9 @@ export default function Paies() {
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               <div style={{
                                 width: 32, height: 32, borderRadius: '50%',
-                                background: '#f5b731',
+                                background: getChatteurColor(m.chatteur_couleur).bg,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '0.7rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+                                fontSize: '0.7rem', fontWeight: 700, color: getChatteurColor(m.chatteur_couleur).text, flexShrink: 0,
                               }}>
                                 <Crown size={16} />
                               </div>
@@ -545,6 +641,26 @@ export default function Paies() {
                               <option value="validé">Validé</option>
                               <option value="payé">Payé</option>
                             </select>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <button
+                              className="haptic"
+                              onClick={(e) => { e.stopPropagation(); handleDownloadFacture(m.chatteur_id, m.chatteur_prenom); }}
+                              disabled={downloadingId === m.chatteur_id}
+                              title={`Télécharger la facture de ${m.chatteur_prenom}`}
+                              style={{
+                                background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)',
+                                borderRadius: '8px', padding: '0.35rem', cursor: 'pointer',
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                transition: 'all 200ms ease',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; e.currentTarget.style.transform = 'scale(1.1)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.transform = 'scale(1)'; }}
+                            >
+                              {downloadingId === m.chatteur_id
+                                ? <span className="spinner" style={{ width: 14, height: 14 }} />
+                                : <Download size={14} color="#6366f1" />}
+                            </button>
                           </td>
                         </tr>
                       );

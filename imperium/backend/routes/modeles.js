@@ -6,6 +6,20 @@ const router = express.Router();
 
 router.get('/', authMiddleware, (req, res) => {
   const modeles = db.prepare("SELECT * FROM modeles WHERE statut != 'inactif' ORDER BY pseudo").all();
+
+  // Attach plateformes for each model
+  const allLinks = db.prepare(
+    'SELECT mp.modele_id, p.id, p.nom FROM modeles_plateformes mp JOIN plateformes p ON p.id = mp.plateforme_id'
+  ).all();
+  const pfMap = {};
+  for (const link of allLinks) {
+    if (!pfMap[link.modele_id]) pfMap[link.modele_id] = [];
+    pfMap[link.modele_id].push({ id: link.id, nom: link.nom });
+  }
+  for (const m of modeles) {
+    m.plateformes = pfMap[m.id] || [];
+  }
+
   res.json(modeles);
 });
 
@@ -20,8 +34,8 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
   if (!pseudo) return res.status(400).json({ error: 'Pseudo requis' });
 
   const part = part_percent ?? 0.35;
-  if (part < 0.35 || part > 0.40) {
-    return res.status(400).json({ error: 'La part doit être entre 35% et 40%' });
+  if (part < 0.20 || part > 0.50) {
+    return res.status(400).json({ error: 'La part agence doit être entre 20% et 50%' });
   }
 
   const result = db.prepare(
@@ -36,8 +50,8 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
   const existing = db.prepare('SELECT id FROM modeles WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Modèle introuvable' });
 
-  if (part_percent !== undefined && (part_percent < 0.35 || part_percent > 0.40)) {
-    return res.status(400).json({ error: 'La part doit être entre 35% et 40%' });
+  if (part_percent !== undefined && (part_percent < 0.20 || part_percent > 0.50)) {
+    return res.status(400).json({ error: 'La part agence doit être entre 20% et 50%' });
   }
 
   const effectiveActif = statut ? (statut === 'actif' ? 1 : 0) : (actif !== undefined ? (actif ? 1 : 0) : null);

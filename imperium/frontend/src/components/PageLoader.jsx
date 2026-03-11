@@ -28,16 +28,11 @@ export default function PageLoader() {
           letterSpacing: '0.2em',
           color: '#1b2e4b',
           textTransform: 'uppercase',
-          opacity: 0.6,
+          animation: 'pulse-soft 2s ease-in-out infinite',
         }}
       >
         IMPERIUM
       </span>
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 }

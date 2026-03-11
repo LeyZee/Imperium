@@ -41,7 +41,7 @@
 ## Pages admin implementees
 - Dashboard, Chatteurs (drapeaux flagcdn.com, color picker 8x3), Modeles (delete), Plateformes (delete)
 - Shifts (tabs OF/Reveal, timezone selector France/Benin/Madagascar, bulk creation, recurring templates, compact week grid, couleurs depuis DB)
-- Paies, Ventes, KPIs, Telegram Bot
+- Paies (g\u00e9n\u00e9ration factures PDF via pdfkit, endpoint `/api/paies/facture`), Ventes, Telegram Bot
 
 ## Conventions
 - Soft delete partout: `actif = 0` au lieu de suppression reelle

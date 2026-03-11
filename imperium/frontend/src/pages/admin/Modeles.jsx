@@ -117,7 +117,7 @@ export default function Modeles() {
   }
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
         <h1 className="text-navy" style={{ fontWeight: 700 }}>Modèles</h1>
         <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
@@ -131,11 +131,11 @@ export default function Modeles() {
                 <tr>
                   <th>Pseudo</th>
                   <th>Plateformes</th>
-                  <th>Part (%)</th>
+                  <th>Part agence (%)</th>
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="stagger-rows">
                 {modeles.map((m) => {
                   const mPlatforms = (modelPlatforms[m.id] || [])
                     .map(pid => plateformes.find(p => p.id === pid))
@@ -232,12 +232,12 @@ export default function Modeles() {
                 <input className="input-field" value={form.pseudo} onChange={e => setForm({...form, pseudo: e.target.value})} required />
               </div>
               <div className="form-group">
-                <label className="label">Part modèle : {(form.part_percent * 100).toFixed(0)}%</label>
-                <input type="range" min="35" max="40" step="1" value={form.part_percent * 100}
+                <label className="label">Part agence : {(form.part_percent * 100).toFixed(0)}%</label>
+                <input type="range" min="20" max="50" step="1" value={form.part_percent * 100}
                   onChange={e => setForm({...form, part_percent: parseInt(e.target.value) / 100})}
                   style={{ width: '100%', marginTop: '0.25rem', accentColor: '#f5b731' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.25rem' }}>
-                  <span>35%</span><span>40%</span>
+                  <span>20%</span><span>50%</span>
                 </div>
               </div>
 

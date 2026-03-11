@@ -8,6 +8,7 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
       <div onClick={onCancel} style={{
         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
         backdropFilter: 'blur(4px)', zIndex: 1000,
+        animation: 'overlayFade 200ms ease',
       }} />
       <div style={{
         position: 'fixed', top: '50%', left: '50%',
@@ -16,6 +17,7 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
         boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
         zIndex: 1001, width: '100%', maxWidth: '400px',
         textAlign: 'center',
+        animation: 'confirmBounce 350ms cubic-bezier(0.34, 1.56, 0.64, 1)',
       }}>
         <div style={{
           width: '48px', height: '48px', borderRadius: '50%',
@@ -46,7 +48,12 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
               border: 'none', borderRadius: '8px', cursor: 'pointer',
               color: '#fff',
               background: danger ? '#dc2626' : '#1b2e4b',
+              transition: 'all 200ms ease',
             }}
+            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.03)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = 'none'; }}
+            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
+            onMouseUp={e => e.currentTarget.style.transform = 'scale(1.03)'}
           >
             Confirmer
           </button>

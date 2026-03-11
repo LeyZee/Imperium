@@ -14,18 +14,23 @@ let toastId = 0;
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const [exiting, setExiting] = useState(new Set());
+
+  const removeToast = useCallback((id) => {
+    setExiting(prev => new Set(prev).add(id));
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+      setExiting(prev => { const next = new Set(prev); next.delete(id); return next; });
+    }, 200);
+  }, []);
 
   const addToast = useCallback((message, type = 'success', duration = 4000) => {
     const id = ++toastId;
     setToasts(prev => [...prev, { id, message, type }]);
     if (duration > 0) {
-      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+      setTimeout(() => removeToast(id), duration);
     }
-  }, []);
-
-  const removeToast = useCallback((id) => {
-    setToasts(prev => prev.filter(t => t.id !== id));
-  }, []);
+  }, [removeToast]);
 
   const toastApi = useMemo(() => Object.assign(
     (msg, type) => addToast(msg, type),
@@ -53,6 +58,7 @@ export function ToastProvider({ children }) {
       }}>
         {toasts.map(t => {
           const { Icon, color, bg, border } = ICONS[t.type] || ICONS.info;
+          const isExiting = exiting.has(t.id);
           return (
             <div
               key={t.id}
@@ -66,7 +72,7 @@ export function ToastProvider({ children }) {
                 borderRadius: '10px',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                 pointerEvents: 'auto',
-                animation: 'slideIn 250ms ease-out',
+                animation: isExiting ? 'slideOut 200ms ease forwards' : 'slideIn 250ms ease-out',
                 maxWidth: '400px',
               }}
             >
@@ -77,7 +83,10 @@ export function ToastProvider({ children }) {
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   padding: '2px', color: '#94a3b8', flexShrink: 0,
+                  transition: 'color 150ms ease',
                 }}
+                onMouseEnter={e => e.currentTarget.style.color = '#64748b'}
+                onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
               >
                 <X size={14} />
               </button>
@@ -85,12 +94,6 @@ export function ToastProvider({ children }) {
           );
         })}
       </div>
-      <style>{`
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(20px); }
-          to { opacity: 1; transform: translateX(0); }
-        }
-      `}</style>
     </ToastContext.Provider>
   );
 }

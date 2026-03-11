@@ -8,7 +8,6 @@ import {
   Globe,
   Calendar,
   TrendingUp,
-  BarChart2,
   ClipboardList,
   FileText,
   Menu,
@@ -24,7 +23,7 @@ const adminItems = [
   { to: '/admin/shifts', icon: Calendar, label: 'Shifts' },
   { to: '/admin/ventes', icon: TrendingUp, label: 'Ventes' },
   { to: '/admin/paies', icon: CreditCard, label: 'Paies' },
-  { to: '/admin/kpis', icon: BarChart2, label: 'KPIs' },
+  { to: '/admin/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
   { to: '/admin/telegram', icon: MessageSquare, label: 'Telegram Bot' },
 ];
 

@@ -47,7 +47,7 @@ export default function Navbar({ onMenuClick }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         {user && (
           <button
-            onClick={() => navigate(user.role === 'admin' ? '/admin/settings' : '/chatteur/dashboard')}
+            onClick={() => navigate(user.role === 'admin' ? '/admin/settings' : '/chatteur/profil')}
             title="Paramètres"
             style={{
               display: 'flex',

@@ -93,7 +93,7 @@ export default function MonPlanning() {
   const hasTzDiff = shifts.some(s => s.fuseau_horaire && s.fuseau_horaire !== chatteurTz);
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
         <div>
           <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Mon Planning</h1>
@@ -124,7 +124,7 @@ export default function MonPlanning() {
       }}>
         <button
           onClick={() => setWeekStart(addDays(weekStart, -7))}
-          className="btn-ghost"
+          className="btn-ghost haptic"
           style={{ padding: '0.5rem', borderRadius: '8px' }}
         >
           <ChevronLeft size={18} />
@@ -137,7 +137,7 @@ export default function MonPlanning() {
         </span>
         <button
           onClick={() => setWeekStart(addDays(weekStart, 7))}
-          className="btn-ghost"
+          className="btn-ghost haptic"
           style={{ padding: '0.5rem', borderRadius: '8px' }}
         >
           <ChevronRight size={18} />

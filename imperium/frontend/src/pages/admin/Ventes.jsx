@@ -68,6 +68,7 @@ export default function Ventes() {
   /* Filters */
   const [activePlatform, setActivePlatform] = useState(null);
   const [filterChatteur, setFilterChatteur] = useState('');
+  const [filterModele, setFilterModele] = useState('');
   const [selectedPeriod, setSelectedPeriod] = useState(null);
   const [periods, setPeriods] = useState([]);
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
@@ -86,7 +87,7 @@ export default function Ventes() {
   const [success, setSuccess] = useState('');
 
   /* ─── Data fetching ─── */
-  const fetchVentes = useCallback(async (period, platId, chattId) => {
+  const fetchVentes = useCallback(async (period, platId, chattId, modId) => {
     const params = new URLSearchParams();
     const p = period || selectedPeriod;
     if (p) {
@@ -96,14 +97,17 @@ export default function Ventes() {
     if (chattId || filterChatteur) params.append('chatteur_id', chattId || filterChatteur);
     const { data } = await api.get(`/api/ventes?${params}`);
 
-    // Client-side platform filter
+    // Client-side filters (platform + modele)
     const plat = platId !== undefined ? platId : activePlatform;
-    const filtered = plat ? data.filter(v => v.plateforme_id === plat) : data;
+    const mod = modId !== undefined ? modId : filterModele;
+    let filtered = data;
+    if (plat) filtered = filtered.filter(v => v.plateforme_id === plat);
+    if (mod) filtered = filtered.filter(v => String(v.modele_id) === String(mod));
     setVentes(filtered);
 
     // Also keep unfiltered for stats if needed
     return data;
-  }, [selectedPeriod, filterChatteur, activePlatform]);
+  }, [selectedPeriod, filterChatteur, activePlatform, filterModele]);
 
   const fetchSummary = useCallback(async (period) => {
     const p = period || selectedPeriod;
@@ -135,8 +139,8 @@ export default function Ventes() {
     })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function refresh(period, platId, chattId) {
-    await Promise.all([fetchVentes(period, platId, chattId), fetchSummary(period)]);
+  async function refresh(period, platId, chattId, modId) {
+    await Promise.all([fetchVentes(period, platId, chattId, modId), fetchSummary(period)]);
   }
 
   /* ─── Period selection ─── */
@@ -243,6 +247,8 @@ export default function Ventes() {
     return item.pseudo || item.prenom || '—';
   };
   const getPlatName = id => plateformes.find(p => p.id == id)?.nom || '—';
+  const getPlatColor = id => plateformes.find(p => p.id == id)?.couleur_fond || '#1b2e4b';
+  const getPlatTextColor = id => plateformes.find(p => p.id == id)?.couleur_texte || '#ffffff';
   const getDevise = id => plateformes.find(p => p.id == id)?.devise || 'EUR';
   const getInitial = (list, id) => {
     const item = list.find(x => x.id == id);
@@ -264,7 +270,7 @@ export default function Ventes() {
 
   /* ─── Render ─── */
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       {/* ─── Toast ─── */}
       {success && (
         <div className="toast-success" style={{
@@ -376,16 +382,30 @@ export default function Ventes() {
           ))}
         </div>
 
-        {/* Chatteur filter */}
-        <select
-          className="input-field"
-          value={filterChatteur}
-          onChange={e => changeChatteur(e.target.value)}
-          style={{ width: 'auto', minWidth: '180px', fontSize: '0.8rem' }}
-        >
-          <option value="">Tous les chatteurs</option>
-          {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
-        </select>
+        {/* Right filters */}
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          {/* Modele filter */}
+          <select
+            className="input-field"
+            value={filterModele}
+            onChange={e => { setFilterModele(e.target.value); refresh(undefined, undefined, undefined, e.target.value); }}
+            style={{ width: 'auto', minWidth: '160px', fontSize: '0.8rem' }}
+          >
+            <option value="">Tous les modèles</option>
+            {modeles.map(m => <option key={m.id} value={m.id}>{m.pseudo}</option>)}
+          </select>
+
+          {/* Chatteur filter */}
+          <select
+            className="input-field"
+            value={filterChatteur}
+            onChange={e => changeChatteur(e.target.value)}
+            style={{ width: 'auto', minWidth: '160px', fontSize: '0.8rem' }}
+          >
+            <option value="">Tous les chatteurs</option>
+            {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
+          </select>
+        </div>
       </div>
 
       {/* ─── Table ─── */}
@@ -429,13 +449,14 @@ export default function Ventes() {
               <tr>
                 <th>Période</th>
                 <th>Chatteur</th>
+                <th>Modèle</th>
                 <th>Plateforme</th>
                 <th style={{ textAlign: 'right' }}>Montant brut</th>
                 <th>Notes</th>
                 <th style={{ width: 80, textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
-            <tbody className="stagger-children">
+            <tbody className="stagger-rows">
               {ventes.map(v => {
                 const devise = getDevise(v.plateforme_id);
                 const isRemoving = deletingId === v.id;
@@ -487,7 +508,15 @@ export default function Ventes() {
                       </div>
                     </td>
                     <td>
-                      <span className={devise === 'USD' ? 'badge badge-gold' : 'badge badge-navy'}>
+                      <span style={{ fontWeight: 500, fontSize: '0.85rem', color: '#1b2e4b' }}>
+                        {v.modele_pseudo || '—'}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="badge" style={{
+                        background: getPlatColor(v.plateforme_id),
+                        color: getPlatTextColor(v.plateforme_id),
+                      }}>
                         {getPlatName(v.plateforme_id)}
                       </span>
                     </td>
@@ -551,13 +580,59 @@ export default function Ventes() {
                   </select>
                 </div>
 
-                {/* Plateforme */}
+                {/* Modèle (before Plateforme so we can filter) */}
+                <div>
+                  <label className="label">Modèle *</label>
+                  <select
+                    className="input-field"
+                    value={form.modele_id}
+                    onChange={e => {
+                      const newModeleId = e.target.value;
+                      const selectedModele = modeles.find(m => String(m.id) === newModeleId);
+                      const modelePfs = selectedModele?.plateformes || [];
+                      // Auto-select plateforme if model has only one
+                      let newPfId = form.plateforme_id;
+                      if (modelePfs.length === 1) {
+                        newPfId = String(modelePfs[0].id);
+                      } else if (newModeleId && modelePfs.length > 0 && !modelePfs.find(p => String(p.id) === form.plateforme_id)) {
+                        // Reset plateforme if current selection is not valid for this model
+                        newPfId = '';
+                      }
+                      setForm({ ...form, modele_id: newModeleId, plateforme_id: newPfId });
+                    }}
+                    required
+                  >
+                    <option value="">Sélectionner...</option>
+                    {modeles.map(m => <option key={m.id} value={m.id}>{m.pseudo}</option>)}
+                  </select>
+                </div>
+
+                {/* Plateforme (filtered by selected model) */}
                 <div>
                   <label className="label">Plateforme *</label>
-                  <select className="input-field" value={form.plateforme_id} onChange={e => setForm({ ...form, plateforme_id: e.target.value })} required>
-                    <option value="">Sélectionner...</option>
-                    {plateformes.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
-                  </select>
+                  {(() => {
+                    const selectedModele = modeles.find(m => String(m.id) === form.modele_id);
+                    const availablePfs = selectedModele?.plateformes?.length > 0
+                      ? plateformes.filter(p => selectedModele.plateformes.some(mp => mp.id === p.id))
+                      : plateformes;
+                    return (
+                      <select className="input-field" value={form.plateforme_id} onChange={e => setForm({ ...form, plateforme_id: e.target.value })} required>
+                        <option value="">Sélectionner...</option>
+                        {availablePfs.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                      </select>
+                    );
+                  })()}
+                  {form.modele_id && (() => {
+                    const selectedModele = modeles.find(m => String(m.id) === form.modele_id);
+                    if (selectedModele?.plateformes?.length === 1) {
+                      return (
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                          {selectedModele.pseudo} est uniquement sur {selectedModele.plateformes[0].nom}
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 {/* Montant + Date */}
@@ -598,15 +673,6 @@ export default function Ventes() {
                     Période : {formatPeriodLabel(periodeCalc.debut, periodeCalc.fin)}
                   </div>
                 )}
-
-                {/* Modèle */}
-                <div>
-                  <label className="label">Modèle *</label>
-                  <select className="input-field" value={form.modele_id} onChange={e => setForm({ ...form, modele_id: e.target.value })} required>
-                    <option value="">Sélectionner...</option>
-                    {modeles.map(m => <option key={m.id} value={m.id}>{m.pseudo}</option>)}
-                  </select>
-                </div>
 
                 {/* Notes (optional) */}
                 <div>

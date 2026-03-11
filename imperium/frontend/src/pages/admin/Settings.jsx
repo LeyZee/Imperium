@@ -59,7 +59,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '1.5rem' }}>Paramètres</h1>
 
       <div className="card" style={{ maxWidth: '32rem' }}>

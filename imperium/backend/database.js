@@ -139,6 +139,18 @@ function initDB() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(chatteur_id, plateforme_id, periode_debut, periode_fin)
     );
+
+    CREATE TABLE IF NOT EXISTS factures (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_num TEXT UNIQUE NOT NULL,
+      seq_num INTEGER NOT NULL,
+      chatteur_id INTEGER NOT NULL REFERENCES chatteurs(id),
+      periode_debut DATE NOT NULL,
+      periode_fin DATE NOT NULL,
+      montant_ht REAL NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(chatteur_id, periode_debut, periode_fin)
+    );
   `);
 
   // Seed default data

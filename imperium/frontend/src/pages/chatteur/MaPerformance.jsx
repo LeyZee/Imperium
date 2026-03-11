@@ -360,7 +360,7 @@ export default function MaPerformance() {
   }, [historique, classementData, cagnotteHistorique, user?.chatteur_id]);
 
   return (
-    <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+    <div className="page-enter" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       <div>
         <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Ma Performance</h1>
         <p style={{ fontSize: '0.8rem', color: '#64748b' }}>

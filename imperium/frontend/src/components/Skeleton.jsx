@@ -1,22 +1,14 @@
 export function Skeleton({ width, height = '1rem', borderRadius = '6px', style }) {
   return (
-    <>
-      <div className="skeleton-pulse" style={{
-        width: width || '100%',
-        height,
-        borderRadius,
-        background: 'linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%)',
-        backgroundSize: '200% 100%',
-        animation: 'skeletonPulse 1.5s ease-in-out infinite',
-        ...style,
-      }} />
-      <style>{`
-        @keyframes skeletonPulse {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-      `}</style>
-    </>
+    <div style={{
+      width: width || '100%',
+      height,
+      borderRadius,
+      background: 'linear-gradient(90deg, #e2e8f0 25%, #f8fafc 50%, #e2e8f0 75%)',
+      backgroundSize: '200% 100%',
+      animation: 'skeletonPulse 1.5s ease-in-out infinite',
+      ...style,
+    }} />
   );
 }
 
@@ -45,7 +37,7 @@ export function TableSkeleton({ rows = 5, cols = 6 }) {
 
 export function CardSkeleton({ count = 4 }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+    <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
       {Array.from({ length: count }).map((_, i) => (
         <div key={i} style={{
           background: '#fff', borderRadius: '12px', padding: '1.25rem',

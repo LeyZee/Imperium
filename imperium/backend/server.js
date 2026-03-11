@@ -54,6 +54,7 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/taux', require('./routes/taux'));
 app.use('/api/malus', require('./routes/malus'));
 app.use('/api/telegram', require('./routes/telegram'));
+app.use('/api/facturation-modeles', require('./routes/facturation-modeles'));
 
 // Global error handler (catches errors passed via next(err))
 app.use((err, req, res, next) => {

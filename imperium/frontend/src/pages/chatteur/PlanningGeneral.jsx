@@ -128,7 +128,7 @@ export default function PlanningGeneral() {
   const uniqueChatteurs = useMemo(() => new Set(shifts.map(s => s.chatteur_id)).size, [shifts]);
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
         <div>
           <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Planning Général</h1>

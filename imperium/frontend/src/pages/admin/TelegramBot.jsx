@@ -83,7 +83,7 @@ export default function TelegramBot() {
   const statusColor = isRunning ? '#10b981' : '#ef4444';
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       {/* Toast */}
       {success && (
         <div className="toast-success" style={{
@@ -179,7 +179,7 @@ export default function TelegramBot() {
 
               {isRunning ? (
                 <button
-                  className="btn-danger"
+                  className="btn-danger haptic"
                   onClick={handleStop}
                   disabled={actionLoading}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
@@ -192,7 +192,7 @@ export default function TelegramBot() {
                 </button>
               ) : (
                 <button
-                  className="btn-primary"
+                  className="btn-primary haptic"
                   onClick={handleStart}
                   disabled={actionLoading || !status.hasBotToken}
                   style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
@@ -271,7 +271,7 @@ export default function TelegramBot() {
                 <th>Source</th>
               </tr>
             </thead>
-            <tbody className="stagger-children">
+            <tbody className="stagger-rows">
               {(status?.recentImports || []).map(imp => (
                 <tr key={imp.id}>
                   <td style={{ fontSize: '0.8rem', color: '#64748b', whiteSpace: 'nowrap' }}>
@@ -279,7 +279,10 @@ export default function TelegramBot() {
                   </td>
                   <td style={{ fontWeight: 500 }}>{imp.chatteur_prenom}</td>
                   <td>
-                    <span className={imp.devise === 'USD' ? 'badge badge-gold' : 'badge badge-navy'}>
+                    <span className="badge" style={{
+                      background: imp.couleur_fond || '#1b2e4b',
+                      color: imp.couleur_texte || '#ffffff',
+                    }}>
                       {imp.plateforme_nom}
                     </span>
                   </td>

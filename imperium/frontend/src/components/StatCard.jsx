@@ -1,7 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 export default function StatCard({ title, value, subtitle, icon: Icon, color = '#1b2e4b' }) {
   const [hovered, setHovered] = useState(false);
+  const [popping, setPopping] = useState(false);
+  const prevValueRef = useRef(value);
+
+  useEffect(() => {
+    if (prevValueRef.current !== value && value !== undefined && prevValueRef.current !== undefined) {
+      setPopping(true);
+      const timer = setTimeout(() => setPopping(false), 300);
+      prevValueRef.current = value;
+      return () => clearTimeout(timer);
+    }
+    prevValueRef.current = value;
+  }, [value]);
 
   return (
     <div
@@ -47,6 +59,7 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
             {title}
           </p>
           <p
+            className={popping ? 'count-pop' : ''}
             style={{
               fontSize: '1.75rem',
               fontWeight: 700,

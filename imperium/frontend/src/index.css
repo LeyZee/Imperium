@@ -188,7 +188,7 @@ h2, h3, h4, h5, h6 {
   color: var(--text-primary);
   font-size: 0.875rem;
   font-family: 'Inter', sans-serif;
-  transition: border-color var(--transition), box-shadow var(--transition);
+  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
   outline: none;
 }
 .input-field::placeholder {
@@ -197,6 +197,7 @@ h2, h3, h4, h5, h6 {
 .input-field:focus {
   border-color: var(--yellow);
   box-shadow: 0 0 0 3px rgba(245, 183, 49, 0.12);
+  transform: translateY(-1px);
 }
 .input-field:disabled {
   opacity: 0.5;
@@ -298,7 +299,8 @@ thead th {
 
 tbody tr {
   border-bottom: 1px solid #f1f5f9;
-  transition: background var(--transition);
+  border-left: 3px solid transparent;
+  transition: background var(--transition), border-color 150ms ease, transform 150ms ease;
 }
 
 tbody tr:nth-child(even) {
@@ -307,6 +309,8 @@ tbody tr:nth-child(even) {
 
 tbody tr:hover {
   background: rgba(245, 183, 49, 0.04);
+  border-left-color: var(--yellow);
+  transform: translateX(2px);
 }
 
 tbody tr:last-child {
@@ -575,6 +579,173 @@ tbody td {
   animation: fadeIn 0.3s ease;
 }
 
+/* ===== NEW KEYFRAMES ===== */
+
+/* Page enter — smoother than fadeIn, used as main page transition */
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Toast exit */
+@keyframes slideOut {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(80px) scale(0.95); }
+}
+
+/* Toast enter (moved from inline Toast.jsx) */
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+/* Haptic press — brief scale bounce on tap/click */
+@keyframes hapticPress {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.92); }
+  100% { transform: scale(1); }
+}
+
+/* Form validation shake */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-6px); }
+  40%      { transform: translateX(6px); }
+  60%      { transform: translateX(-4px); }
+  80%      { transform: translateX(4px); }
+}
+
+/* Number value pop on change */
+@keyframes countPop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+/* Accordion expand */
+@keyframes expandIn {
+  from { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+  to   { opacity: 1; max-height: 500px; padding-top: inherit; padding-bottom: inherit; }
+}
+
+/* ConfirmModal entrance */
+@keyframes confirmBounce {
+  0%   { opacity: 0; transform: scale(0.85); }
+  60%  { opacity: 1; transform: scale(1.03); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Overlay fade */
+@keyframes overlayFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Skeleton shimmer */
+@keyframes skeletonPulse {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ===== PAGE TRANSITION ===== */
+.page-enter {
+  animation: pageEnter 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ===== HAPTIC FEEDBACK ===== */
+.haptic {
+  cursor: pointer;
+}
+.haptic:active {
+  animation: hapticPress 200ms ease;
+}
+
+/* ===== FORM SHAKE ===== */
+.shake {
+  animation: shake 400ms ease;
+}
+
+/* ===== COUNT POP ===== */
+.count-pop {
+  animation: countPop 300ms ease;
+}
+
+/* ===== ACCORDION EXPAND ===== */
+.expand-enter {
+  animation: expandIn 300ms ease forwards;
+  overflow: hidden;
+}
+
+/* ===== STAGGER EXTENDED (7-12) ===== */
+.stagger-children > *:nth-child(7)  { animation-delay: 360ms; }
+.stagger-children > *:nth-child(8)  { animation-delay: 420ms; }
+.stagger-children > *:nth-child(9)  { animation-delay: 480ms; }
+.stagger-children > *:nth-child(10) { animation-delay: 540ms; }
+.stagger-children > *:nth-child(11) { animation-delay: 600ms; }
+.stagger-children > *:nth-child(12) { animation-delay: 660ms; }
+
+/* ===== TABLE ROW STAGGER ===== */
+.stagger-rows > tr {
+  animation: staggerIn 0.3s ease both;
+}
+.stagger-rows > tr:nth-child(1)  { animation-delay: 0ms; }
+.stagger-rows > tr:nth-child(2)  { animation-delay: 30ms; }
+.stagger-rows > tr:nth-child(3)  { animation-delay: 60ms; }
+.stagger-rows > tr:nth-child(4)  { animation-delay: 90ms; }
+.stagger-rows > tr:nth-child(5)  { animation-delay: 120ms; }
+.stagger-rows > tr:nth-child(6)  { animation-delay: 150ms; }
+.stagger-rows > tr:nth-child(7)  { animation-delay: 180ms; }
+.stagger-rows > tr:nth-child(8)  { animation-delay: 210ms; }
+.stagger-rows > tr:nth-child(9)  { animation-delay: 240ms; }
+.stagger-rows > tr:nth-child(10) { animation-delay: 270ms; }
+
+/* ===== ENHANCED BUTTON ACTIVE STATES ===== */
+.btn-secondary:active {
+  transform: scale(0.96);
+  transition: transform 100ms ease;
+}
+.btn-danger:active {
+  transform: scale(0.96);
+  transition: transform 100ms ease;
+}
+.btn-ghost:active {
+  transform: scale(0.96);
+  transition: transform 100ms ease;
+}
+
+/* ===== ENHANCED CARD ACTIVE ===== */
+.card:active {
+  transform: scale(0.998);
+  transition: transform 100ms ease;
+}
+
+/* ===== ENHANCED CLOSE BUTTON ===== */
+.close-btn:active {
+  transform: rotate(90deg) scale(0.85);
+}
+
+/* ===== BADGE HOVER ===== */
+.badge {
+  transition: transform 150ms ease;
+}
+.badge:hover {
+  transform: scale(1.05);
+}
+
+/* ===== ACCESSIBILITY ===== */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .stagger-children > *,
+  .stagger-rows > tr {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}
+
 /* ===== RESPONSIVE ===== */
 @media (max-width: 768px) {
   .form-row {
@@ -643,6 +814,23 @@ tbody td {
   .card.overflow-x-auto,
   .table-wrapper {
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* All tables inside cards must scroll horizontally on mobile */
+  .card {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Let tables grow beyond container width — triggers horizontal scroll */
+  table {
+    width: auto;
+    min-width: 100%;
+  }
+
+  /* Prevent table cell content from wrapping — enables natural horizontal scroll */
+  tbody td {
+    white-space: nowrap;
   }
 }
 

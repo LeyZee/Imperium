@@ -59,7 +59,7 @@ export default function Plateformes() {
   }
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
         <h1 style={{ fontWeight: 700 }}>Plateformes</h1>
         <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
@@ -78,7 +78,7 @@ export default function Plateformes() {
                 <th>Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stagger-rows">
               {plateformes.map((p) => (
                 <tr key={p.id}>
                   <td style={{ fontWeight: 500 }}>{p.nom}</td>

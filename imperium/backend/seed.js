@@ -80,7 +80,7 @@ async function main() {
   const modelesData = [
     { pseudo: 'MESSALINA', part_percent: 0.35 },
     { pseudo: 'ANGEL', part_percent: 0.35 },
-    { pseudo: 'EMMY', part_percent: 0.35 },
+    { pseudo: 'EMMY', part_percent: 0.25 },
     { pseudo: 'SOUKI', part_percent: 0.35 },
     { pseudo: 'LILY', part_percent: 0.35 },
   ];

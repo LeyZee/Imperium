@@ -85,7 +85,7 @@ router.get('/status', authMiddleware, adminOnly, (req, res) => {
   const recentImports = db.prepare(`
     SELECT v.id, v.montant_brut, v.notes, v.created_at,
       c.prenom AS chatteur_prenom,
-      p.nom AS plateforme_nom, p.devise
+      p.nom AS plateforme_nom, p.devise, p.couleur_fond, p.couleur_texte
     FROM ventes v
     JOIN chatteurs c ON c.id = v.chatteur_id
     JOIN plateformes p ON p.id = v.plateforme_id

@@ -139,7 +139,7 @@ export default function Chatteurs() {
   const commissionCustom = !COMMISSION_PRESETS.some(p => p.value === form.taux_commission);
 
   return (
-    <div className="fade-in">
+    <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
         <h1 className="text-navy" style={{ fontWeight: 700 }}>Chatteurs</h1>
         <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
@@ -175,7 +175,7 @@ export default function Chatteurs() {
                   <th>Actions</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="stagger-rows">
                 {filtered.length === 0 && (
                   <tr><td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
                     {search ? 'Aucun résultat' : 'Aucun chatteur'}
