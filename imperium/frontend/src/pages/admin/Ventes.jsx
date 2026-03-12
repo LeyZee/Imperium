@@ -595,14 +595,13 @@ export default function Ventes() {
                     value={form.modele_id}
                     onChange={e => {
                       const newModeleId = e.target.value;
-                      const selectedModele = modeles.find(m => String(m.id) === newModeleId);
-                      const modelePfs = selectedModele?.plateformes || [];
-                      // Auto-select plateforme if model has only one
+                      // Use chatteurModeles platforms if available, fallback to model's configured platforms
+                      const cmModel = chatteurModeles?.find(cm => String(cm.id) === newModeleId);
+                      const modelePfs = cmModel?.plateformes || modeles.find(m => String(m.id) === newModeleId)?.plateformes || [];
                       let newPfId = form.plateforme_id;
                       if (modelePfs.length === 1) {
                         newPfId = String(modelePfs[0].id);
                       } else if (newModeleId && modelePfs.length > 0 && !modelePfs.find(p => String(p.id) === form.plateforme_id)) {
-                        // Reset plateforme if current selection is not valid for this model
                         newPfId = '';
                       }
                       setForm({ ...form, modele_id: newModeleId, plateforme_id: newPfId });
@@ -627,31 +626,29 @@ export default function Ventes() {
                   )}
                 </div>
 
-                {/* Plateforme (filtered by selected model) */}
+                {/* Plateforme (filtered by chatteur's shifts for selected model) */}
                 <div>
                   <label className="label">Plateforme *</label>
                   {(() => {
-                    const selectedModele = modeles.find(m => String(m.id) === form.modele_id);
-                    const availablePfs = selectedModele?.plateformes?.length > 0
-                      ? plateformes.filter(p => selectedModele.plateformes.some(mp => mp.id === p.id))
-                      : plateformes;
+                    // If we have chatteurModeles data and a model is selected, filter platforms by what the chatteur actually works on
+                    const cmModel = chatteurModeles?.find(cm => String(cm.id) === form.modele_id);
+                    let availablePfs;
+                    if (cmModel?.plateformes?.length > 0) {
+                      // Filter to platforms this chatteur has shifts for on this model
+                      availablePfs = plateformes.filter(p => cmModel.plateformes.some(cp => cp.id === p.id));
+                    } else {
+                      // Fallback: filter by model's configured platforms
+                      const selectedModele = modeles.find(m => String(m.id) === form.modele_id);
+                      availablePfs = selectedModele?.plateformes?.length > 0
+                        ? plateformes.filter(p => selectedModele.plateformes.some(mp => mp.id === p.id))
+                        : plateformes;
+                    }
                     return (
                       <select className="input-field" value={form.plateforme_id} onChange={e => setForm({ ...form, plateforme_id: e.target.value })} required>
                         <option value="">Sélectionner...</option>
                         {availablePfs.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
                       </select>
                     );
-                  })()}
-                  {form.modele_id && (() => {
-                    const selectedModele = modeles.find(m => String(m.id) === form.modele_id);
-                    if (selectedModele?.plateformes?.length === 1) {
-                      return (
-                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                          {selectedModele.pseudo} est uniquement sur {selectedModele.plateformes[0].nom}
-                        </div>
-                      );
-                    }
-                    return null;
                   })()}
                 </div>
 

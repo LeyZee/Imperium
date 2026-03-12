@@ -89,20 +89,32 @@ router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) =>
   res.json({ message: 'Shift supprimé' });
 }));
 
-// GET /api/shifts/chatteur-modeles/:chatteurId — distinct models a chatteur has shifts for
+// GET /api/shifts/chatteur-modeles/:chatteurId — distinct models+platforms a chatteur has shifts for
 router.get('/chatteur-modeles/:chatteurId', authMiddleware, asyncHandler((req, res) => {
   const cid = req.params.chatteurId;
-  const modeles = db.prepare(`
-    SELECT DISTINCT m.id, m.pseudo
+  const combos = db.prepare(`
+    SELECT DISTINCT src.modele_id, src.plateforme_id, m.pseudo as modele_pseudo, p.nom as plateforme_nom
     FROM (
-      SELECT modele_id FROM shifts WHERE chatteur_id = ? AND modele_id IS NOT NULL
+      SELECT modele_id, plateforme_id FROM shifts WHERE chatteur_id = ? AND modele_id IS NOT NULL
       UNION
-      SELECT modele_id FROM shift_templates WHERE chatteur_id = ? AND modele_id IS NOT NULL
+      SELECT modele_id, plateforme_id FROM shift_templates WHERE chatteur_id = ? AND modele_id IS NOT NULL
     ) src
     JOIN modeles m ON m.id = src.modele_id AND m.actif = 1
-    ORDER BY m.pseudo
+    LEFT JOIN plateformes p ON p.id = src.plateforme_id AND p.actif = 1
+    ORDER BY m.pseudo, p.nom
   `).all([cid, cid]);
-  res.json(modeles);
+
+  // Group by model with platforms list
+  const modelMap = {};
+  for (const c of combos) {
+    if (!modelMap[c.modele_id]) {
+      modelMap[c.modele_id] = { id: c.modele_id, pseudo: c.modele_pseudo, plateformes: [] };
+    }
+    if (c.plateforme_id && !modelMap[c.modele_id].plateformes.find(p => p.id === c.plateforme_id)) {
+      modelMap[c.modele_id].plateformes.push({ id: c.plateforme_id, nom: c.plateforme_nom });
+    }
+  }
+  res.json(Object.values(modelMap));
 }));
 
 // --- Shift Templates (recurring weekly schedule) ---

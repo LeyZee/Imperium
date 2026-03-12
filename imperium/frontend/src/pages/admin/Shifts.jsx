@@ -122,10 +122,12 @@ export default function Shifts() {
       if (data.has_templates !== undefined) {
         setHasTemplates(data.has_templates);
       }
-      // Fetch conflict alerts for next 14 days from today
+      // Fetch conflict alerts for current + next week
       const today = new Date();
-      const in13 = addDays(today, 13);
-      api.get(`/api/shifts/conflits?date_debut=${toISO(today)}&date_fin=${toISO(in13)}`)
+      const dow = today.getDay();
+      const weekStart = addDays(today, -(dow === 0 ? 6 : dow - 1)); // Monday
+      const weekEnd = addDays(weekStart, 13); // Sunday of next week
+      api.get(`/api/shifts/conflits?date_debut=${toISO(weekStart)}&date_fin=${toISO(weekEnd)}`)
         .then(r => setConflits(r.data))
         .catch(() => setConflits(null));
     } catch (err) {
@@ -325,7 +327,7 @@ export default function Shifts() {
               <AlertTriangle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '0.1rem' }} />
               <div>
                 <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#991b1b', marginBottom: '0.25rem' }}>
-                  {conflits.non_couverts.length} créneau{conflits.non_couverts.length > 1 ? 'x' : ''} non couvert{conflits.non_couverts.length > 1 ? 's' : ''} (14 prochains jours)
+                  {conflits.non_couverts.length} créneau{conflits.non_couverts.length > 1 ? 'x' : ''} non couvert{conflits.non_couverts.length > 1 ? 's' : ''} (2 semaines)
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
                   {conflits.non_couverts.slice(0, 5).map((d, i) => (
