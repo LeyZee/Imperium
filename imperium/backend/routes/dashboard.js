@@ -4,6 +4,7 @@ const { authMiddleware, adminOrManager } = require('../middleware/auth');
 const { getPeriode } = require('../utils/period');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
+const { getExchangeRate } = require('../utils/rateCache');
 
 const router = express.Router();
 
@@ -83,9 +84,8 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     periodFin = p.fin;
   }
 
-  // Exchange rate
-  const tauxRow = db.prepare("SELECT taux FROM taux_change WHERE devise_base='USD' ORDER BY date_maj DESC").get([]);
-  const taux = tauxRow ? tauxRow.taux : 0.92;
+  // Exchange rate (cached)
+  const taux = getExchangeRate();
 
   // Current period totals
   const current = calcTotals(periodDebut, periodFin, taux);
@@ -101,20 +101,22 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   }
 
   // Nb chatteurs actifs
-  const nbChatteurs = db.prepare("SELECT COUNT(*) as c FROM chatteurs WHERE actif = 1").get([]);
+  const nbChatteurs = db.prepare("SELECT COUNT(*) as c FROM chatteurs WHERE actif = 1 AND role NOT IN ('manager', 'directeur')").get([]);
 
-  // Dernières ventes (5)
+  // Dernières ventes (5) — filtered by selected period
   const dernieresVentes = db.prepare(`
-    SELECT v.id, v.montant_brut, v.created_at, p.nom as plateforme, p.devise,
-           c.prenom as chatteur_prenom,
-           m.pseudo as modele_pseudo
+    SELECT v.id, v.montant_brut, v.created_at,
+           p.nom as plateforme, p.devise, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte,
+           c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+           m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte
     FROM ventes v
     JOIN plateformes p ON v.plateforme_id = p.id
     JOIN chatteurs c ON v.chatteur_id = c.id
     LEFT JOIN modeles m ON v.modele_id = m.id
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ?
     ORDER BY v.created_at DESC
     LIMIT 5
-  `).all([]);
+  `).all([periodDebut, periodFin]);
 
   // Top chatteur période
   const topChatteurs = db.prepare(`
@@ -139,7 +141,7 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 
   // Sales by platform for current period
   const ventesParPlateforme = db.prepare(`
-    SELECT p.nom as plateforme, SUM(v.montant_brut) as total, COUNT(*) as nb
+    SELECT p.nom as plateforme, p.couleur_fond as couleur_fond, p.couleur_texte as couleur_texte, SUM(v.montant_brut) as total, COUNT(*) as nb
     FROM ventes v
     JOIN plateformes p ON v.plateforme_id = p.id
     WHERE v.periode_debut >= ? AND v.periode_fin <= ?

@@ -85,27 +85,25 @@ export default function Plateformes() {
                 <th>TVA</th>
                 <th>Commission</th>
                 <th>Devise</th>
-                <th>Couleur</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody className="stagger-rows">
               {plateformes.map((p) => (
                 <tr key={p.id}>
-                  <td style={{ fontWeight: 500 }}>{p.nom}</td>
-                  <td>{(p.tva_rate * 100).toFixed(0)}%</td>
-                  <td>{(p.commission_rate * 100).toFixed(0)}%</td>
-                  <td><span className="badge badge-navy">{p.devise} ({DEVISE_SYMBOLS[p.devise] || p.devise})</span></td>
                   <td>
                     <span style={{
                       background: p.couleur_fond || '#1b2e4b',
                       color: p.couleur_texte || '#ffffff',
-                      padding: '0.2rem 0.6rem',
+                      padding: '0.25rem 0.7rem',
                       borderRadius: '20px',
-                      fontSize: '0.75rem',
+                      fontSize: '0.8rem',
                       fontWeight: 600,
                     }}>{p.nom}</span>
                   </td>
+                  <td>{(p.tva_rate * 100).toFixed(0)}%</td>
+                  <td>{(p.commission_rate * 100).toFixed(0)}%</td>
+                  <td><span className="badge badge-navy">{p.devise} ({DEVISE_SYMBOLS[p.devise] || p.devise})</span></td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button onClick={() => openEdit(p)} className="btn-ghost"><Edit size={16} /></button>

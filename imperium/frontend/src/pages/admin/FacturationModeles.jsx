@@ -4,7 +4,7 @@ import StatCard from '../../components/StatCard.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
 import { useToast } from '../../components/Toast.jsx';
 import {
-  Euro, Building2, Users, ChevronDown, User, TrendingUp, ChevronRight,
+  Euro, Building2, Users, ChevronDown, User, ChevronRight,
 } from 'lucide-react';
 
 /* ─── Period generator (same as Paies) ─── */
@@ -55,11 +55,6 @@ function fmtPercent(n) {
   return (n * 100).toFixed(0) + '%';
 }
 
-const PODIUM = [
-  { emoji: '🥇', gradient: 'linear-gradient(135deg, #f5b731 0%, #fcd34d 100%)', shadow: 'rgba(245,183,49,0.3)' },
-  { emoji: '🥈', gradient: 'linear-gradient(135deg, #94a3b8 0%, #cbd5e1 100%)', shadow: 'rgba(148,163,184,0.3)' },
-  { emoji: '🥉', gradient: 'linear-gradient(135deg, #cd7f32 0%, #daa06d 100%)', shadow: 'rgba(205,127,50,0.3)' },
-];
 
 export default function FacturationModeles() {
   const toast = useToast();
@@ -176,134 +171,6 @@ export default function FacturationModeles() {
         <StatCard title="Part Agence" value={fmtEur(resume.total_part_agence || 0)} icon={Building2} color="#1b2e4b" subtitle="Ce qu'on facture" />
       </div>
 
-      {/* Top Modèles podium */}
-      {!loading && modeles.length >= 2 && (() => {
-        // Podium order: [2nd, 1st, 3rd] for desktop visual
-        const top = modeles.slice(0, Math.min(3, modeles.length));
-        const podiumOrder = top.length >= 3 ? [top[1], top[0], top[2]] : top;
-        const podiumMeta = top.length >= 3
-          ? [
-              { ...PODIUM[1], rank: 2, scale: 0.92 },
-              { ...PODIUM[0], rank: 1, scale: 1 },
-              { ...PODIUM[2], rank: 3, scale: 0.88 },
-            ]
-          : top.map((_, i) => ({ ...PODIUM[i], rank: i + 1, scale: i === 0 ? 1 : 0.92 }));
-
-        return (
-          <div className="card stagger-children" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <TrendingUp size={18} color="#f5b731" />
-              <span style={{ fontWeight: 600, color: '#1b2e4b', fontSize: '0.95rem' }}>Top Modèles</span>
-            </div>
-            <div className="podium-container">
-              {podiumOrder.map((m, i) => {
-                const pod = podiumMeta[i];
-                const isFirst = pod.rank === 1;
-                return (
-                  <div
-                    key={m.modele_id}
-                    className={`haptic podium-card ${isFirst ? 'podium-first' : 'podium-other'}`}
-                    style={{
-                      position: 'relative',
-                      background: isFirst
-                        ? 'linear-gradient(135deg, rgba(245,183,49,0.06) 0%, rgba(245,183,49,0.02) 100%)'
-                        : '#fff',
-                      border: isFirst ? '1.5px solid rgba(245,183,49,0.25)' : '1px solid rgba(0,0,0,0.06)',
-                      borderRadius: '16px',
-                      padding: isFirst ? '1.25rem 1.15rem 1rem' : '1rem 0.9rem 0.8rem',
-                      cursor: 'pointer',
-                      transition: 'all 250ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                      overflow: 'hidden',
-                    }}
-                    onMouseEnter={e => {
-                      e.currentTarget.style.transform = 'translateY(-4px) scale(1.02)';
-                      e.currentTarget.style.boxShadow = `0 12px 32px ${pod.shadow}`;
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.transform = 'none';
-                      e.currentTarget.style.boxShadow = 'none';
-                    }}
-                    onClick={() => setExpandedRow(expandedRow === m.modele_id ? null : m.modele_id)}
-                  >
-                    {/* Accent top bar */}
-                    <div style={{
-                      position: 'absolute', top: 0, left: 0, right: 0,
-                      height: isFirst ? '4px' : '3px',
-                      background: pod.gradient, borderRadius: '16px 16px 0 0',
-                    }} />
-
-                    {/* Avatar + name centered */}
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', marginBottom: '0.75rem' }}>
-                      <div style={{ position: 'relative' }}>
-                        <div style={{
-                          width: isFirst ? '48px' : '38px', height: isFirst ? '48px' : '38px',
-                          borderRadius: '50%', overflow: 'hidden',
-                          background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          border: isFirst ? '2.5px solid #f5b731' : '2px solid #e2e8f0',
-                          transition: 'all 200ms ease',
-                        }}>
-                          {m.photo ? (
-                            <img src={m.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <User size={isFirst ? 20 : 15} color={isFirst ? '#f5b731' : '#94a3b8'} />
-                          )}
-                        </div>
-                        {/* Medal badge */}
-                        <span style={{
-                          position: 'absolute', bottom: '-4px', right: '-6px',
-                          fontSize: isFirst ? '1.15rem' : '0.9rem', lineHeight: 1,
-                          filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.15))',
-                        }}>{pod.emoji}</span>
-                      </div>
-                      <span style={{
-                        fontWeight: isFirst ? 800 : 700, color: '#1b2e4b',
-                        fontSize: isFirst ? '1rem' : '0.88rem',
-                        letterSpacing: isFirst ? '0.02em' : 'normal',
-                      }}>{m.pseudo}</span>
-                    </div>
-
-                    {/* Amount — centered and prominent */}
-                    <div style={{ textAlign: 'center', marginBottom: '0.5rem' }}>
-                      <div style={{
-                        fontWeight: 800, color: '#1b2e4b',
-                        fontSize: isFirst ? '1.35rem' : '1.05rem', lineHeight: 1,
-                      }}>{fmtEur(m.part_agence)}</div>
-                      <div style={{
-                        display: 'flex', justifyContent: 'center', gap: '0.4rem', alignItems: 'center',
-                        marginTop: '0.35rem',
-                      }}>
-                        <span style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-                          {m.nb_ventes} vente{m.nb_ventes > 1 ? 's' : ''}
-                        </span>
-                        <span style={{
-                          fontSize: '0.62rem', fontWeight: 600, color: '#f5b731',
-                          background: 'rgba(245,183,49,0.1)', padding: '0.1rem 0.4rem',
-                          borderRadius: '8px',
-                        }}>{fmtPercent(m.part_percent)}</span>
-                      </div>
-                    </div>
-
-                    {/* Progress bar */}
-                    <div style={{ height: isFirst ? '5px' : '3px', borderRadius: '4px', background: '#f1f5f9', overflow: 'hidden' }}>
-                      <div style={{
-                        height: '100%', borderRadius: '4px',
-                        background: pod.gradient,
-                        width: `${(m.net_ht_eur / maxNetHT) * 100}%`,
-                        transition: 'width 600ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                      }} />
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.25rem' }}>
-                      <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>Net HT</span>
-                      <span style={{ fontSize: '0.6rem', color: '#64748b', fontWeight: 600 }}>{fmtEur(m.net_ht_eur)}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
-
       {/* Table */}
       {fetchError ? (
         <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
@@ -391,15 +258,15 @@ export default function FacturationModeles() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                           <div style={{
                             width: '36px', height: '36px', borderRadius: '50%', overflow: 'hidden',
-                            background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            border: isHovered ? '2px solid #f5b731' : '2px solid #e2e8f0',
+                            background: m.modele_couleur_fond || '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: isHovered ? `2px solid ${m.modele_couleur_fond || '#f5b731'}` : `2px solid ${m.modele_couleur_fond || '#e2e8f0'}`,
                             flexShrink: 0, transition: 'all 200ms ease',
                             transform: isHovered ? 'scale(1.08)' : 'scale(1)',
                           }}>
                             {m.photo ? (
                               <img src={m.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
-                              <User size={15} color={isHovered ? '#f5b731' : '#94a3b8'} style={{ transition: 'color 200ms' }} />
+                              <User size={15} color={m.modele_couleur_texte || '#94a3b8'} style={{ transition: 'color 200ms' }} />
                             )}
                           </div>
                           <div>
@@ -510,48 +377,6 @@ export default function FacturationModeles() {
         </div>
       )}
 
-      <style>{`
-        @keyframes barGrow {
-          from { width: 0; }
-        }
-        /* ── Podium layout ── */
-        .podium-container {
-          display: grid;
-          grid-template-columns: 1fr 1.25fr 1fr;
-          gap: 0.75rem;
-          align-items: end;
-        }
-        .podium-first {
-          order: 0;
-        }
-        .podium-other {
-          order: 0;
-        }
-        /* Tablet */
-        @media (max-width: 768px) {
-          .podium-container {
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 0.5rem;
-          }
-        }
-        /* Mobile — stack vertically, 1st on top */
-        @media (max-width: 540px) {
-          .podium-container {
-            grid-template-columns: 1fr;
-            gap: 0.6rem;
-          }
-          /* Reorder: 1st place on top */
-          .podium-container > :nth-child(1) { order: 2; }  /* 2nd → bottom */
-          .podium-container > :nth-child(2) { order: 1; }  /* 1st → top */
-          .podium-container > :nth-child(3) { order: 3; }  /* 3rd → last */
-          .podium-card {
-            padding: 0.85rem !important;
-          }
-          .podium-first {
-            padding: 1rem !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

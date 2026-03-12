@@ -5,6 +5,7 @@ import {
   Plus, Euro, ShoppingBag, Trophy, BarChart3, X, Pencil, Trash2,
   ChevronDown, PackageOpen, Calendar, Download
 } from 'lucide-react';
+import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
 /* ─── Period auto-calc (mirrors backend utils/period.js) ─── */
 function getPeriode(dateStr) {
@@ -122,8 +123,8 @@ export default function Ventes() {
   useEffect(() => {
     (async () => {
       try {
-        const [, c, m, p, dash] = await Promise.all([
-          fetchVentes(),
+        // Load reference data + dashboard period in parallel
+        const [c, m, p, dash] = await Promise.all([
           api.get('/api/chatteurs'),
           api.get('/api/modeles'),
           api.get('/api/plateformes'),
@@ -132,9 +133,11 @@ export default function Ventes() {
         setChatteurs(c.data);
         setModeles(m.data);
         setPlateformes(p.data);
+        const initialPeriod = dash.data.periode || null;
         if (dash.data.periodes) setPeriods(dash.data.periodes);
-        if (dash.data.periode) setSelectedPeriod(dash.data.periode);
-        await fetchSummary();
+        if (initialPeriod) setSelectedPeriod(initialPeriod);
+        // Now fetch ventes + summary with the correct period
+        await Promise.all([fetchVentes(initialPeriod), fetchSummary(initialPeriod)]);
       } catch { /* ignore */ }
       setLoading(false);
     })();
@@ -206,6 +209,15 @@ export default function Ventes() {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+
+    // Client-side validation
+    if (!form.chatteur_id) { setError('Chatteur requis'); return; }
+    if (!form.plateforme_id) { setError('Plateforme requise'); return; }
+    if (!form.montant_brut || isNaN(Number(form.montant_brut)) || Number(form.montant_brut) <= 0) {
+      setError('Le montant doit être un nombre positif'); return;
+    }
+    if (!form.date) { setError('Date requise'); return; }
+
     setSubmitting(true);
     try {
       const periode = getPeriode(form.date);
@@ -275,9 +287,11 @@ export default function Ventes() {
     : '—';
   const moyVente = nbVentes > 0 ? (totalVentes / nbVentes) : 0;
 
-  /* Colors for initials */
-  const INIT_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#ef4444', '#06b6d4', '#6366f1'];
-  const getColor = id => INIT_COLORS[(id || 0) % INIT_COLORS.length];
+  /* Colors for initials — use chatteur DB colors via CHATTEUR_COLORS */
+  const getChatteurColorFromList = (id) => {
+    const c = chatteurs.find(x => x.id == id);
+    return CHATTEUR_COLORS[c?.couleur]?.bg || '#94a3b8';
+  };
 
   /* ─── Render ─── */
   return (
@@ -500,10 +514,10 @@ export default function Ventes() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                         <div style={{
                           width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
-                          background: `${getColor(v.chatteur_id)}15`,
-                          border: `1.5px solid ${getColor(v.chatteur_id)}40`,
+                          background: `${getChatteurColorFromList(v.chatteur_id)}20`,
+                          border: `1.5px solid ${getChatteurColorFromList(v.chatteur_id)}50`,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '0.7rem', fontWeight: 700, color: getColor(v.chatteur_id),
+                          fontSize: '0.7rem', fontWeight: 700, color: getChatteurColorFromList(v.chatteur_id),
                         }}>
                           {getInitial(chatteurs, v.chatteur_id)}
                         </div>
@@ -511,7 +525,11 @@ export default function Ventes() {
                       </div>
                     </td>
                     <td>
-                      <span style={{ fontWeight: 500, fontSize: '0.85rem', color: '#1b2e4b' }}>
+                      <span className="badge" style={{
+                        background: v.modele_couleur_fond || '#f1f5f9',
+                        color: v.modele_couleur_texte || '#475569',
+                        fontWeight: 500, fontSize: '0.8rem',
+                      }}>
                         {v.modele_pseudo || '—'}
                       </span>
                     </td>

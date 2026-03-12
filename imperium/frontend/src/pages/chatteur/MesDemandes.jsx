@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { CalendarCheck, Plus, Trash2, Clock, Check, X } from 'lucide-react';
-import api from '../../utils/api';
+import api from '../../api/index.js';
 import { useToast } from '../../components/Toast.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 
@@ -16,7 +16,7 @@ export default function MesDemandes() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState(null);
-  const { addToast } = useToast();
+  const toast = useToast();
 
   const [form, setForm] = useState({
     type: 'conge', date_debut: '', date_fin: '', motif: '', echange_avec_id: '',
@@ -38,25 +38,34 @@ export default function MesDemandes() {
   useEffect(() => { fetchData(); }, []);
 
   const handleSubmit = async () => {
+    // Client-side validation
+    if (!form.date_debut) { toast('Date de début requise', 'error'); return; }
+    if (!form.date_fin) { toast('Date de fin requise', 'error'); return; }
+    if (new Date(form.date_fin) <= new Date(form.date_debut)) {
+      toast('La date de fin doit être après la date de début', 'error'); return;
+    }
+    if (form.type === 'echange' && !form.echange_avec_id) {
+      toast('Sélectionnez un chatteur pour l\'échange', 'error'); return;
+    }
     try {
       await api.post('/api/demandes', form);
-      addToast('Demande soumise', 'success');
+      toast('Demande soumise', 'success');
       setShowForm(false);
       setForm({ type: 'conge', date_debut: '', date_fin: '', motif: '', echange_avec_id: '' });
       fetchData();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Erreur', 'error');
+      toast(err.response?.data?.error || 'Erreur', 'error');
     }
   };
 
   const handleDelete = async () => {
     try {
       await api.delete(`/api/demandes/${deleteId}`);
-      addToast('Demande annulée', 'success');
+      toast('Demande annulée', 'success');
       setDeleteId(null);
       fetchData();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Erreur', 'error');
+      toast(err.response?.data?.error || 'Erreur', 'error');
     }
   };
 

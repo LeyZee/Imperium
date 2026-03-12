@@ -3,7 +3,7 @@ import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
-import { Trophy, TrendingUp, Euro, AlertTriangle, Target, Pencil, Check, BarChart3, Megaphone } from 'lucide-react';
+import { Trophy, TrendingUp, Euro, AlertTriangle, Target, Pencil, Check, BarChart3, ArrowLeftRight } from 'lucide-react';
 
 const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
 
@@ -94,7 +94,18 @@ function VentesParModele({ data }) {
           return (
             <div key={item.pseudo || i} style={{ marginBottom: i < top5.length - 1 ? '0.6rem' : 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 500, color: '#1b2e4b' }}>{item.pseudo || 'Non assign\u00e9'}</span>
+                <span style={{
+                  fontSize: '0.82rem', fontWeight: 500, color: '#1b2e4b',
+                  display: 'inline-flex', alignItems: 'center', gap: '0.35rem',
+                }}>
+                  {item.couleur_fond && (
+                    <span style={{
+                      width: 8, height: 8, borderRadius: '50%', display: 'inline-block', flexShrink: 0,
+                      background: item.couleur_fond,
+                    }} />
+                  )}
+                  {item.pseudo || 'Non assign\u00e9'}
+                </span>
                 <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f5b731' }}>
                   {(item.total_brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} $
                 </span>
@@ -102,7 +113,7 @@ function VentesParModele({ data }) {
               <div style={{ height: 6, borderRadius: 3, background: '#f1f5f9', overflow: 'hidden' }}>
                 <div style={{
                   height: '100%', borderRadius: 3, width: `${pct}%`,
-                  background: barColors[i] || '#d4c89a',
+                  background: item.couleur_fond || barColors[i] || '#d4c89a',
                   transition: 'width 600ms ease',
                 }} />
               </div>
@@ -120,7 +131,7 @@ function ObjectifWidget({ totalBrut, devise, chatteurId }) {
   const storageKey = `imperium_objectif_${chatteurId}`;
   const [objectif, setObjectif] = useState(() => {
     try {
-      const saved = localStorage.getItem(storageKey);
+      const saved = sessionStorage.getItem(storageKey);
       return saved ? JSON.parse(saved) : null;
     } catch { return null; }
   });
@@ -131,13 +142,13 @@ function ObjectifWidget({ totalBrut, devise, chatteurId }) {
     const montant = parseFloat(inputVal);
     if (!montant || montant <= 0) return;
     const obj = { montant, devise: devise || 'USD' };
-    localStorage.setItem(storageKey, JSON.stringify(obj));
+    sessionStorage.setItem(storageKey, JSON.stringify(obj));
     setObjectif(obj);
     setEditing(false);
   };
 
   const handleClear = () => {
-    localStorage.removeItem(storageKey);
+    sessionStorage.removeItem(storageKey);
     setObjectif(null);
     setInputVal('');
     setEditing(true);
@@ -248,7 +259,7 @@ export default function ChatteurDashboard() {
   const [prevKpis, setPrevKpis] = useState(null);
   const [ventes, setVentes] = useState([]);
   const [ventesParModele, setVentesParModele] = useState([]);
-  const [annonces, setAnnonces] = useState([]);
+  const [tauxChange, setTauxChange] = useState(null);
   const [objectifsProgress, setObjectifsProgress] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -270,15 +281,15 @@ export default function ChatteurDashboard() {
         .catch(() => ({ data: null })),
       api.get(`/api/ventes/par-modele?periode_debut=${periode.debut}&periode_fin=${periode.fin}`, { signal: controller.signal })
         .catch(() => ({ data: [] })),
-      api.get('/api/annonces', { signal: controller.signal }).catch(() => ({ data: [] })),
+      api.get('/api/taux/current?from=USD&to=EUR', { signal: controller.signal }).catch(() => ({ data: null })),
       api.get(`/api/objectifs/progress?periode_debut=${periode.debut}&periode_fin=${periode.fin}`, { signal: controller.signal }).catch(() => ({ data: [] })),
-    ]).then(([k, v, pk, vm, ann, objP]) => {
+    ]).then(([k, v, pk, vm, tauxRes, objP]) => {
       setKpis(k.data);
       setPrevKpis(pk.data);
       const ventesData = v.data?.ventes || v.data || [];
       setVentes(Array.isArray(ventesData) ? ventesData.slice(0, 5) : []);
       setVentesParModele(Array.isArray(vm.data) ? vm.data : []);
-      setAnnonces(Array.isArray(ann.data) ? ann.data.filter(a => a.actif) : []);
+      setTauxChange(tauxRes.data?.rate || null);
       setObjectifsProgress(Array.isArray(objP.data) ? objP.data : []);
     })
     .catch(() => { if (!controller.signal.aborted) setError('Impossible de charger les donn\u00e9es.'); })
@@ -360,25 +371,17 @@ export default function ChatteurDashboard() {
         </div>
       )}
 
-      {/* Annonces */}
-      {!loading && annonces.length > 0 && (
-        <div style={{ display: 'grid', gap: '0.75rem' }}>
-          {annonces.map(a => (
-            <div key={a.id} style={{
-              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
-              borderRadius: '12px', padding: '1rem 1.25rem',
-              border: '1px solid rgba(245,183,49,0.3)',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
-                <Megaphone size={16} color="#b8860b" />
-                <span style={{ fontWeight: 700, color: '#92400e', fontSize: '0.9rem' }}>{a.title}</span>
-              </div>
-              <p style={{ fontSize: '0.82rem', color: '#78350f', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{a.content}</p>
-              <p style={{ fontSize: '0.65rem', color: '#a16207', marginTop: '0.35rem' }}>
-                {a.author_prenom || ''} · {new Date(a.created_at).toLocaleDateString('fr-FR')}
-              </p>
-            </div>
-          ))}
+      {/* Taux de change */}
+      {!loading && tauxChange && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          padding: '0.6rem 1rem', borderRadius: '10px',
+          background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.1)',
+        }}>
+          <ArrowLeftRight size={14} color="#6366f1" />
+          <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+            Taux de change : <strong style={{ color: '#1b2e4b' }}>1 $ = {tauxChange.toFixed(4)} €</strong>
+          </span>
         </div>
       )}
 
@@ -393,6 +396,11 @@ export default function ChatteurDashboard() {
             {objectifsProgress.map(obj => {
               const pct = obj.progress;
               const color = pct >= 100 ? '#f5b731' : pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+              const restant = obj.montant_cible - obj.actual;
+              const motivMsg = pct >= 100 ? 'Objectif atteint ! 🎉'
+                : pct >= 80 ? `Presque ! Plus que ${restant.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € !`
+                : pct >= 50 ? 'Tu es sur la bonne voie !'
+                : 'Continue comme ça !';
               return (
                 <div key={obj.id}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.8rem' }}>
@@ -404,9 +412,9 @@ export default function ChatteurDashboard() {
                   <div style={{ background: '#f1f5f9', borderRadius: '999px', height: '8px' }}>
                     <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: color, borderRadius: '999px', transition: 'width 500ms ease' }} />
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.15rem' }}>
-                    <span>{obj.actual.toFixed(0)} €</span>
-                    <span>{obj.montant_cible.toFixed(0)} €</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginTop: '0.15rem' }}>
+                    <span style={{ color: '#94a3b8' }}>{obj.actual.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} € / {obj.montant_cible.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</span>
+                    <span style={{ fontWeight: 600, color, fontSize: '0.68rem' }}>{motivMsg}</span>
                   </div>
                 </div>
               );
@@ -446,7 +454,11 @@ export default function ChatteurDashboard() {
                         {v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR') : '\u2014'}
                       </span>
                       {v.modele_pseudo && (
-                        <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{"\u00b7"} {v.modele_pseudo}</span>
+                        <span className="badge" style={{
+                          fontSize: '0.68rem', padding: '1px 7px', borderRadius: '99px', fontWeight: 600,
+                          background: v.modele_couleur_fond || '#f1f5f9',
+                          color: v.modele_couleur_texte || '#475569',
+                        }}>{v.modele_pseudo}</span>
                       )}
                     </div>
                     <span style={{ fontWeight: 700, color: '#f5b731' }}>

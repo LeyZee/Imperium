@@ -1,51 +1,55 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Megaphone, Plus, Edit2, EyeOff } from 'lucide-react';
-import api from '../../utils/api';
+import api from '../../api/index.js';
 import { useToast } from '../../components/Toast.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
+import usePolling from '../../hooks/usePolling.js';
 
 export default function Annonces() {
   const [annonces, setAnnonces] = useState([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
-  const { addToast } = useToast();
+  const toast = useToast();
 
-  const fetchAnnonces = async () => {
-    setLoading(true);
+  const fetchAnnonces = useCallback(async () => {
+    setLoading(prev => !annonces.length ? true : prev);
     try {
       const { data } = await api.get('/api/annonces');
       setAnnonces(data);
     } catch { /* empty */ }
     setLoading(false);
-  };
+  }, []);
 
   useEffect(() => { fetchAnnonces(); }, []);
+
+  // Auto-refresh every 30s
+  usePolling(fetchAnnonces, 30000);
 
   const handleSave = async (form) => {
     try {
       if (form.id) {
         await api.put(`/api/annonces/${form.id}`, form);
-        addToast('Annonce mise à jour', 'success');
+        toast('Annonce mise à jour', 'success');
       } else {
         await api.post('/api/annonces', form);
-        addToast('Annonce créée', 'success');
+        toast('Annonce créée', 'success');
       }
       setModal(null);
       fetchAnnonces();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Erreur', 'error');
+      toast(err.response?.data?.error || 'Erreur', 'error');
     }
   };
 
   const handleDelete = async () => {
     try {
       await api.delete(`/api/annonces/${deleteId}`);
-      addToast('Annonce désactivée', 'success');
+      toast('Annonce désactivée', 'success');
       setDeleteId(null);
       fetchAnnonces();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Erreur', 'error');
+      toast(err.response?.data?.error || 'Erreur', 'error');
     }
   };
 
@@ -125,7 +129,11 @@ function AnnonceModal({ data, onClose, onSave }) {
 
         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
           <button onClick={onClose} className="btn-secondary">Annuler</button>
-          <button onClick={() => onSave(form)} className="btn-primary haptic">{data.id ? 'Modifier' : 'Publier'}</button>
+          <button onClick={() => {
+            if (!form.title.trim()) return;
+            if (!form.content.trim()) return;
+            onSave(form);
+          }} className="btn-primary haptic" disabled={!form.title.trim() || !form.content.trim()}>{data.id ? 'Modifier' : 'Publier'}</button>
         </div>
       </div>
     </div>

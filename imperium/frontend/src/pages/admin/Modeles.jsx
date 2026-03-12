@@ -5,7 +5,18 @@ import { useToast } from '../../components/Toast.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
 
-const emptyForm = { pseudo: '', part_percent: 0.35, photo: null };
+const emptyForm = { pseudo: '', part_percent: 0.35, photo: null, couleur_fond: '#F2A7C3', couleur_texte: '#ffffff' };
+
+const MODELE_PASTEL_COLORS = [
+  '#F2A7C3', '#E8829B', '#D4577A', // roses
+  '#C4A6E8', '#A77BDB', '#8B5CF6', // lavandes
+  '#A7D8F0', '#7BC4E8', '#4BA8D8', // bleus ciel
+  '#F7C59F', '#F0A770', '#E88A42', // pêches
+  '#B5E6C5', '#8DD4A5', '#65C285', // menthes
+  '#F5C6D0', '#E6A8B8', '#D68FA0', // roses doux
+  '#D4C5F0', '#BCA8E0', '#A48BD0', // mauves
+  '#FFD6A5', '#FFC078', '#FFAA4C', // abricots
+];
 
 export default function Modeles() {
   const toast = useToast();
@@ -55,7 +66,7 @@ export default function Modeles() {
   }
 
   function openEdit(m) {
-    setForm({ ...m });
+    setForm({ ...m, couleur_fond: m.couleur_fond || '#F2A7C3', couleur_texte: m.couleur_texte || '#ffffff' });
     setEditId(m.id);
     setSelectedPlatforms(modelPlatforms[m.id] || []);
     setPhotoPreview(m.photo || null);
@@ -155,13 +166,13 @@ export default function Modeles() {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <div style={{
                             width: '30px', height: '30px', borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
-                            background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            border: '1px solid #e2e8f0',
+                            background: m.couleur_fond || '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            border: `2px solid ${m.couleur_fond || '#e2e8f0'}`,
                           }}>
                             {m.photo ? (
                               <img src={m.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             ) : (
-                              <User size={14} color="#94a3b8" />
+                              <User size={14} color={m.couleur_texte || '#94a3b8'} />
                             )}
                           </div>
                           <span style={{ fontWeight: 500 }}>{m.pseudo}</span>
@@ -277,6 +288,25 @@ export default function Modeles() {
                       </button>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* Color picker */}
+              <div style={{ marginBottom: '1rem' }}>
+                <label className="label">Couleur</label>
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
+                  {MODELE_PASTEL_COLORS.map(c => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => setForm(f => ({ ...f, couleur_fond: c }))}
+                      style={{
+                        width: 28, height: 28, borderRadius: '50%', border: form.couleur_fond === c ? '3px solid #1a1f2e' : '2px solid #e2e8f0',
+                        background: c, cursor: 'pointer', transition: 'all 150ms',
+                        transform: form.couleur_fond === c ? 'scale(1.15)' : 'scale(1)',
+                      }}
+                    />
+                  ))}
                 </div>
               </div>
 

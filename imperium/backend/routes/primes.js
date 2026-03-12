@@ -4,8 +4,14 @@ const { authMiddleware, adminOrManager } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { logActivity } = require('../utils/activityLogger');
+const { recalculatePaies } = require('../services/paie-calculator');
 
 const router = express.Router();
+
+// Recalcul paies pour les périodes couvertes par une prime
+function recalcForPrime(periode_debut, periode_fin) {
+  try { recalculatePaies(periode_debut, periode_fin || periode_debut); } catch { /* ignore */ }
+}
 
 // GET /api/primes
 router.get('/', authMiddleware, asyncHandler((req, res) => {
@@ -27,7 +33,7 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
   if (periode_fin) { where += ' AND pm.periode_fin <= ?'; params.push(periode_fin); }
 
   const rows = db.prepare(`
-    SELECT pm.*, c.prenom as chatteur_prenom
+    SELECT pm.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur
     FROM primes_manuelles pm
     JOIN chatteurs c ON c.id = pm.chatteur_id
     WHERE ${where}
@@ -46,11 +52,15 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   }
   if (montant <= 0) throw new ApiError(400, 'Le montant doit être positif');
 
-  const result = db.prepare(
-    'INSERT INTO primes_manuelles (chatteur_id, montant, raison, periode_debut, periode_fin, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(chatteur_id, montant, raison ?? null, periode_debut, periode_fin, req.user.id);
-
-  logActivity(req.user.id, 'create_prime', 'prime', result.lastInsertRowid, `${montant}€ pour chatteur #${chatteur_id}`);
+  const insertAndLog = db.transaction(() => {
+    const result = db.prepare(
+      'INSERT INTO primes_manuelles (chatteur_id, montant, raison, periode_debut, periode_fin, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(chatteur_id, montant, raison ?? null, periode_debut, periode_fin, req.user.id);
+    logActivity(req.user.id, 'create_prime', 'prime', result.lastInsertRowid, `${montant}€ pour chatteur #${chatteur_id}`);
+    return result;
+  });
+  const result = insertAndLog();
+  recalcForPrime(periode_debut, periode_fin);
 
   res.status(201).json({ id: result.lastInsertRowid });
 }));
@@ -63,10 +73,14 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const existing = db.prepare('SELECT id FROM primes_manuelles WHERE id = ? AND actif = 1').get(id);
   if (!existing) throw new ApiError(404, 'Prime non trouvée');
 
-  db.prepare('UPDATE primes_manuelles SET montant = COALESCE(?, montant), raison = COALESCE(?, raison) WHERE id = ?')
-    .run(montant ?? null, raison ?? null, id);
-
-  logActivity(req.user.id, 'update_prime', 'prime', parseInt(id));
+  const updateAndLog = db.transaction(() => {
+    db.prepare('UPDATE primes_manuelles SET montant = COALESCE(?, montant), raison = COALESCE(?, raison) WHERE id = ?')
+      .run(montant ?? null, raison ?? null, id);
+    logActivity(req.user.id, 'update_prime', 'prime', parseInt(id));
+    return db.prepare('SELECT periode_debut, periode_fin FROM primes_manuelles WHERE id = ?').get(id);
+  });
+  const updated = updateAndLog();
+  if (updated) recalcForPrime(updated.periode_debut, updated.periode_fin);
 
   res.json({ message: 'Prime mise à jour' });
 }));
@@ -74,8 +88,14 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 // DELETE /api/primes/:id (soft delete)
 router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;
-  db.prepare('UPDATE primes_manuelles SET actif = 0 WHERE id = ?').run(id);
-  logActivity(req.user.id, 'delete_prime', 'prime', parseInt(id));
+  const deleteAndLog = db.transaction(() => {
+    const p = db.prepare('SELECT periode_debut, periode_fin FROM primes_manuelles WHERE id = ? AND actif = 1').get(id);
+    db.prepare('UPDATE primes_manuelles SET actif = 0 WHERE id = ?').run(id);
+    logActivity(req.user.id, 'delete_prime', 'prime', parseInt(id));
+    return p;
+  });
+  const prime = deleteAndLog();
+  if (prime) recalcForPrime(prime.periode_debut, prime.periode_fin);
   res.json({ message: 'Prime supprimée' });
 }));
 

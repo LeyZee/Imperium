@@ -6,6 +6,8 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
 const { parsePagination, paginatedResponse } = require('../utils/pagination');
+const { getExchangeRate } = require('../utils/rateCache');
+const { validateDate } = require('../utils/validation');
 
 const router = express.Router();
 
@@ -16,11 +18,11 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
   let where = [];
   const params = [];
 
-  // Chatteur can only see their own
+  // Chatteur can only see their own — ignore chatteur_id param
   if (req.user.role === 'chatteur') {
     where.push('v.chatteur_id = ?');
     params.push(req.user.chatteur_id);
-  } else if (chatteur_id) {
+  } else if (chatteur_id && (req.user.role === 'admin' || req.user.role === 'manager')) {
     where.push('v.chatteur_id = ?');
     params.push(chatteur_id);
   }
@@ -42,9 +44,9 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
     const total = db.prepare(`SELECT COUNT(*) as c FROM ventes v ${whereStr}`).get(...params);
     const ventes = db.prepare(`
       SELECT v.*,
-        c.prenom as chatteur_prenom,
-        m.pseudo as modele_pseudo,
-        p.nom as plateforme_nom, p.tva_rate, p.commission_rate, p.devise
+        c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+        m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
+        p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte, p.tva_rate, p.commission_rate, p.devise
       FROM ventes v
       JOIN chatteurs c ON c.id = v.chatteur_id
       LEFT JOIN modeles m ON m.id = v.modele_id
@@ -58,9 +60,9 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 
   const ventes = db.prepare(`
     SELECT v.*,
-      c.prenom as chatteur_prenom,
-      m.pseudo as modele_pseudo,
-      p.nom as plateforme_nom, p.tva_rate, p.commission_rate, p.devise
+      c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
+      p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte, p.tva_rate, p.commission_rate, p.devise
     FROM ventes v
     JOIN chatteurs c ON c.id = v.chatteur_id
     LEFT JOIN modeles m ON m.id = v.modele_id
@@ -100,7 +102,7 @@ router.get('/par-modele', authMiddleware, asyncHandler((req, res) => {
 
   const whereStr = where.length ? 'WHERE ' + where.join(' AND ') : '';
   const result = db.prepare(`
-    SELECT m.pseudo, SUM(v.montant_brut) as total_brut, COUNT(*) as nb_ventes
+    SELECT m.pseudo, m.couleur_fond, m.couleur_texte, SUM(v.montant_brut) as total_brut, COUNT(*) as nb_ventes
     FROM ventes v
     LEFT JOIN modeles m ON m.id = v.modele_id
     ${whereStr}
@@ -204,6 +206,7 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   // Get period before deleting
   const vente = db.prepare('SELECT periode_debut, periode_fin FROM ventes WHERE id = ?').get(req.params.id);
+  if (!vente) throw new ApiError(404, 'Vente introuvable');
   db.prepare('DELETE FROM ventes WHERE id = ?').run(req.params.id);
 
   // Auto-recalculate paies for the period
@@ -227,8 +230,7 @@ router.get('/summary', authMiddleware, asyncHandler((req, res) => {
     params.push(periode_debut, periode_fin);
   }
 
-  const taux = db.prepare('SELECT taux FROM taux_change WHERE devise_base = ? AND devise_cible = ? ORDER BY date_maj DESC LIMIT 1').get('USD', 'EUR');
-  const tauxChange = taux?.taux || 0.92;
+  const tauxChange = getExchangeRate();
 
   const byPlateforme = db.prepare(`
     SELECT p.nom, p.tva_rate, p.commission_rate, p.devise,
@@ -280,6 +282,8 @@ router.get('/summary', authMiddleware, asyncHandler((req, res) => {
 router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { periode_debut, periode_fin } = req.query;
   if (!periode_debut || !periode_fin) throw new ApiError(400, 'periode_debut et periode_fin requis');
+  const dateErr = validateDate(periode_debut) || validateDate(periode_fin);
+  if (dateErr) throw new ApiError(400, dateErr);
 
   const { sendCSV } = require('../utils/csvExport');
 

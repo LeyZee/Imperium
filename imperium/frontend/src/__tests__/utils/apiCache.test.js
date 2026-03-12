@@ -45,14 +45,14 @@ describe('apiCache', () => {
     expect(getCached('b')).toBeNull();
   });
 
-  test('uses default TTL of 30 seconds', () => {
+  test('uses default TTL of 5 minutes', () => {
     vi.useFakeTimers();
     setCache('ttl-key', 'data');
 
-    vi.advanceTimersByTime(29000); // 29s
+    vi.advanceTimersByTime(299000); // 4m59s
     expect(getCached('ttl-key')).toBe('data');
 
-    vi.advanceTimersByTime(2000); // 31s total
+    vi.advanceTimersByTime(2000); // 5m01s total
     expect(getCached('ttl-key')).toBeNull();
     vi.useRealTimers();
   });

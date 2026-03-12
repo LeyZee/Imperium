@@ -19,8 +19,8 @@ const TIMEZONES = [
   { key: 'Madagascar', label: 'Madagascar', tz: 'Indian/Antananarivo', offset: 2 },
 ];
 
-const PAYS_ISO_TZ = { 'France': 'fr', 'Benin': 'bj', 'Madagascar': 'mg' };
-const PAYS_TO_TZ_KEY = { 'France': 'France', 'Benin': 'Benin', 'Madagascar': 'Madagascar' };
+const PAYS_ISO_TZ = { 'France': 'fr', 'Benin': 'bj', 'Bénin': 'bj', 'Madagascar': 'mg' };
+const PAYS_TO_TZ_KEY = { 'France': 'France', 'Benin': 'Benin', 'Bénin': 'Benin', 'Madagascar': 'Madagascar' };
 
 function getMonday(date) {
   const d = new Date(date);

@@ -95,7 +95,7 @@ function handleUpdate(update) {
   });
 
   if (result.skipped) {
-    console.log(`   ↳ Message ignoré (pas de "montant brut")`);
+    console.log(`   ↳ Message ignoré (pas un rapport de shift)`);
     return;
   }
 

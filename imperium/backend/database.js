@@ -20,6 +20,11 @@ const db = new Database(DB_PATH);
 // Enable foreign keys
 db.exec('PRAGMA foreign_keys = ON');
 
+// WAL mode: enables concurrent reads without blocking writes (major perf boost)
+db.exec('PRAGMA journal_mode = WAL');
+// Synchronous NORMAL: safe for WAL mode, faster than FULL
+db.exec('PRAGMA synchronous = NORMAL');
+
 function initDB() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -248,17 +253,33 @@ db.exec(`
   )
 `);
 
+// Fix directeur role — schema was patched offline via fix-db.js
+// This block only runs the UPDATE if the CHECK constraint already includes 'directeur'
+try {
+  const schemaRow = db.prepare('SELECT sql FROM sqlite_master WHERE type=? AND name=?').get(['table', 'chatteurs']);
+  if (schemaRow && schemaRow.sql && schemaRow.sql.includes('directeur')) {
+    db.exec("UPDATE chatteurs SET role = 'directeur' WHERE role = 'manager' AND user_id = (SELECT id FROM users WHERE role = 'admin' LIMIT 1)");
+  }
+  db.exec("INSERT OR IGNORE INTO migrations (name) VALUES ('fix_directeur_role')");
+} catch (e) {
+  if (!e.message?.includes('no such table')) {
+    console.error('Directeur role fix:', e.message);
+  }
+}
+
 function runMigration(name, fn) {
-  const existing = db.prepare('SELECT 1 FROM migrations WHERE name = ?').get([name]);
+  // Use prepare+finalize to check, properly releasing locks
+  const stmt = db.prepare('SELECT 1 FROM migrations WHERE name = ?');
+  const existing = stmt.get([name]);
+  stmt.finalize();
   if (existing) return;
   try {
     fn();
-    db.prepare('INSERT INTO migrations (name) VALUES (?)').run([name]);
+    db.exec(`INSERT OR IGNORE INTO migrations (name) VALUES ('${name.replace(/'/g, "''")}')`);
     console.log('Migration applied:', name);
   } catch (e) {
-    // Column/index already exists — mark as applied anyway (only for simple ALTER TABLE migrations)
     if (e.message && (e.message.includes('duplicate column') || e.message.includes('already exists'))) {
-      db.prepare('INSERT INTO migrations (name) VALUES (?)').run([name]);
+      db.exec(`INSERT OR IGNORE INTO migrations (name) VALUES ('${name.replace(/'/g, "''")}')`);
       console.log('Migration skipped (already applied):', name);
     } else {
       console.error('Migration FAILED:', name, '-', e.message);
@@ -585,6 +606,84 @@ runMigration('assign_chatteur_emails', () => {
       .run([email, u.id]);
   }
   if (users.length > 0) console.log(`Assigned emails to ${users.length} users`);
+});
+
+runMigration('add_malus_type', () => {
+  db.exec("ALTER TABLE malus ADD COLUMN type_malus TEXT NOT NULL DEFAULT 'montant'");
+});
+
+runMigration('add_malus_periode_fin', () => {
+  db.exec("ALTER TABLE malus ADD COLUMN periode_fin DATE");
+  // Copy periode to periode_fin for existing rows so the range query works
+  db.exec("UPDATE malus SET periode_fin = periode WHERE periode_fin IS NULL");
+});
+
+// --- Beta: Additional performance indexes ---
+runMigration('add_beta_performance_indexes', () => {
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_created ON ventes(created_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_paies_statut ON paies(statut)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_paies_chatteur_periode ON paies(chatteur_id, periode_debut, periode_fin)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_shifts_date_only ON shifts(date)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_primes_chatteur_periode ON primes_manuelles(chatteur_id, periode_debut, periode_fin)");
+});
+
+// --- Modele colors (pastel feminine palette) ---
+runMigration('add_modeles_couleurs', () => {
+  db.exec("ALTER TABLE modeles ADD COLUMN couleur_fond TEXT NOT NULL DEFAULT '#f5b731'");
+  db.exec("ALTER TABLE modeles ADD COLUMN couleur_texte TEXT NOT NULL DEFAULT '#ffffff'");
+});
+
+runMigration('seed_modele_colors', () => {
+  // Assign distinct pastel colors to existing modeles
+  const modeles = db.prepare('SELECT id, pseudo FROM modeles ORDER BY id').all();
+  const pastelColors = [
+    '#F2A7C3', // rose doux
+    '#C4A6E8', // lavande
+    '#A7D8F0', // bleu ciel
+    '#F7C59F', // pêche
+    '#B5E6C5', // menthe
+  ];
+  modeles.forEach((m, i) => {
+    db.prepare('UPDATE modeles SET couleur_fond = ?, couleur_texte = ? WHERE id = ?')
+      .run(pastelColors[i % pastelColors.length], '#ffffff', m.id);
+  });
+});
+
+// --- Add SACHA (owner) as manager for payroll calculation ---
+runMigration('add_sacha_manager', () => {
+  // SACHA is the admin (user_id=1) and gets 5% of total_net_ht_equipe
+  const adminUser = db.prepare('SELECT id FROM users WHERE role = ?').get('admin');
+  if (!adminUser) return;
+
+  // Check if a chatteur entry already exists for this user
+  const existing = db.prepare('SELECT id FROM chatteurs WHERE user_id = ?').get(adminUser.id);
+  if (existing) return;
+
+  db.prepare(`
+    INSERT INTO chatteurs (user_id, prenom, role, taux_commission, taux_net_equipe, actif, pays)
+    VALUES (?, 'SACHA', 'manager', 0.0, 0.05, 1, 'France')
+  `).run(adminUser.id);
+});
+
+runMigration('add_directeur_role', () => {
+  // placeholder — actual fix runs before runMigration calls (see above)
+});
+
+// --- Quick win: Additional composite indexes for common queries ---
+runMigration('add_composite_indexes_v2', () => {
+  // Ventes: filtrage par chatteur + montant (doublons Telegram, dashboard)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_chatteur_montant ON ventes(chatteur_id, montant_brut)");
+  // Shifts: requête planning par chatteur + date
+  db.exec("CREATE INDEX IF NOT EXISTS idx_shifts_chatteur_date ON shifts(chatteur_id, date)");
+  // Malus: lookup par période range
+  db.exec("CREATE INDEX IF NOT EXISTS idx_malus_periode_range ON malus(periode, periode_fin)");
+  // Factures: lookup rapide par chatteur + période
+  db.exec("CREATE INDEX IF NOT EXISTS idx_factures_chatteur_periode ON factures(chatteur_id, periode_debut, periode_fin)");
+  // Activity logs: filtrage par user + type
+  db.exec("CREATE INDEX IF NOT EXISTS idx_activity_user_action ON activity_logs(user_id, action)");
+  // Objectifs: chatteur + période (suggestions endpoint)
+  db.exec("CREATE INDEX IF NOT EXISTS idx_objectifs_chatteur_actif ON objectifs(chatteur_id, actif)");
 });
 
 console.log(`DB initialized in ${Date.now() - dbStartTime}ms`);

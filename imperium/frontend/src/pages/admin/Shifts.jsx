@@ -125,13 +125,13 @@ export default function Shifts() {
       // Fetch conflict alerts for current + next week
       const today = new Date();
       const dow = today.getDay();
-      const weekStart = addDays(today, -(dow === 0 ? 6 : dow - 1)); // Monday
-      const weekEnd = addDays(weekStart, 13); // Sunday of next week
-      api.get(`/api/shifts/conflits?date_debut=${toISO(weekStart)}&date_fin=${toISO(weekEnd)}`)
+      const conflictStart = addDays(today, -(dow === 0 ? 6 : dow - 1)); // Monday
+      const conflictEnd = addDays(conflictStart, 13); // Sunday of next week
+      api.get(`/api/shifts/conflits?date_debut=${toISO(conflictStart)}&date_fin=${toISO(conflictEnd)}`)
         .then(r => setConflits(r.data))
         .catch(() => setConflits(null));
     } catch (err) {
-      setFetchError(err.response?.data?.error || 'Erreur lors du chargement des shifts');
+      setFetchError(err.response?.data?.error || err.message || 'Erreur lors du chargement des shifts');
     } finally { setLoading(false); }
   }
 
@@ -335,7 +335,7 @@ export default function Shifts() {
                       fontSize: '0.7rem', background: '#fee2e2', color: '#991b1b',
                       padding: '0.15rem 0.5rem', borderRadius: '12px',
                     }}>
-                      {d.date} Créneau {d.creneau} — {d.modele}
+                      {d.date} {d.creneau_label || `Créneau ${d.creneau}`}
                     </span>
                   ))}
                   {conflits.non_couverts.length > 5 && (
@@ -351,7 +351,7 @@ export default function Shifts() {
       {fetchError ? (
         <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
           {fetchError}
-          <button onClick={fetchShifts} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>R\u00e9essayer</button>
+          <button onClick={fetchShifts} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
         </div>
       ) : loading ? (
         <div className="card" style={{ padding: '1rem' }}><TableSkeleton rows={6} cols={8} /></div>
@@ -559,16 +559,20 @@ function ModelCard({ model, shifts, days, tzOffset, getChatteurName, getChatteur
         {model.photo ? (
           <img src={model.photo} alt="" style={{
             width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
-            border: '2px solid rgba(245,183,49,0.3)', flexShrink: 0,
+            border: `2px solid ${model.couleur_fond || 'rgba(245,183,49,0.3)'}`,
+            flexShrink: 0,
             transition: 'transform 300ms ease',
             transform: hovered ? 'scale(1.1)' : 'scale(1)',
           }} />
         ) : (
           <div style={{
             width: 28, height: 28, borderRadius: '50%',
-            background: 'rgba(245,183,49,0.12)', border: '2px solid rgba(245,183,49,0.3)',
+            background: model.couleur_fond || 'rgba(245,183,49,0.12)',
+            border: `2px solid ${model.couleur_fond || 'rgba(245,183,49,0.3)'}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '0.65rem', fontWeight: 700, color: '#1b2e4b', flexShrink: 0,
+            fontSize: '0.65rem', fontWeight: 700,
+            color: model.couleur_texte || '#ffffff',
+            flexShrink: 0,
             transition: 'transform 300ms ease, background 300ms ease',
             transform: hovered ? 'scale(1.1) rotate(5deg)' : 'scale(1)',
           }}>

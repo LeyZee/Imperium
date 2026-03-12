@@ -9,12 +9,12 @@ export function AuthProvider({ children }) {
 
   // Restore session on mount — check cookie via /api/auth/me
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
+    const storedUser = sessionStorage.getItem('user');
     if (storedUser) {
       try {
         setUser(JSON.parse(storedUser));
       } catch {
-        localStorage.removeItem('user');
+        sessionStorage.removeItem('user');
       }
     }
     setLoading(false);
@@ -24,7 +24,7 @@ export function AuthProvider({ children }) {
     const response = await api.post('/api/auth/login', { email, password });
     const { user: newUser } = response.data;
 
-    localStorage.setItem('user', JSON.stringify(newUser));
+    sessionStorage.setItem('user', JSON.stringify(newUser));
     setUser(newUser);
 
     return newUser;
@@ -33,7 +33,7 @@ export function AuthProvider({ children }) {
   const refreshUser = (updatedFields) => {
     const newUser = { ...user, ...updatedFields };
     setUser(newUser);
-    localStorage.setItem('user', JSON.stringify(newUser));
+    sessionStorage.setItem('user', JSON.stringify(newUser));
   };
 
   const logout = async () => {
@@ -42,7 +42,7 @@ export function AuthProvider({ children }) {
     } catch {
       // Ignore errors — clear local state regardless
     }
-    localStorage.removeItem('user');
+    sessionStorage.removeItem('user');
     setUser(null);
     window.location.href = '/login';
   };

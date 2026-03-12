@@ -47,7 +47,8 @@ const ROLE_LABELS = {
  * @param {number} montantHT - Invoice HT amount in EUR
  * @returns {{ invoiceNum: string, seqNum: number, isDuplicate: boolean }}
  */
-function getOrCreateInvoice(chatteurId, debut, fin, montantHT) {
+// Wrapped in transaction to prevent race condition on seq_num
+const getOrCreateInvoice = db.transaction((chatteurId, debut, fin, montantHT) => {
   // Check if invoice already exists for this chatteur+period
   const existing = db.prepare(
     'SELECT * FROM factures WHERE chatteur_id = ? AND periode_debut = ? AND periode_fin = ?'
@@ -57,7 +58,7 @@ function getOrCreateInvoice(chatteurId, debut, fin, montantHT) {
     return { invoiceNum: existing.invoice_num, seqNum: existing.seq_num, isDuplicate: true };
   }
 
-  // Get next sequential number (global, across all invoices)
+  // Get next sequential number (global, across all invoices) — atomic inside transaction
   const lastSeq = db.prepare('SELECT MAX(seq_num) as max_seq FROM factures').get();
   const nextSeq = (lastSeq?.max_seq || 0) + 1;
 
@@ -70,7 +71,7 @@ function getOrCreateInvoice(chatteurId, debut, fin, montantHT) {
   ).run(invoiceNum, nextSeq, chatteurId, debut, fin, montantHT);
 
   return { invoiceNum, seqNum: nextSeq, isDuplicate: false };
-}
+});
 
 /**
  * Generate a compact, single-page, French-compliant invoice PDF.

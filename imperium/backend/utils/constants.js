@@ -12,7 +12,7 @@ const CRENEAUX = {
 };
 
 const ROLES = ['admin', 'chatteur'];
-const CHATTEUR_ROLES = ['chatteur', 'manager', 'va'];
+const CHATTEUR_ROLES = ['chatteur', 'manager', 'directeur', 'va'];
 const PAIE_STATUTS = ['calculé', 'validé', 'payé'];
 const DEFAULT_TAUX_CHANGE = 0.92;
 

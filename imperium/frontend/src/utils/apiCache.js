@@ -1,5 +1,5 @@
 const cache = new Map();
-const DEFAULT_TTL = 30000; // 30 seconds
+const DEFAULT_TTL = 300000; // 5 minutes — reference data rarely changes mid-session
 
 export function getCached(key) {
   const entry = cache.get(key);

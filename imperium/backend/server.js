@@ -3,6 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
 const logger = require('./utils/logger');
@@ -21,7 +22,7 @@ require('./database'); // init DB on startup
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Security headers with CSP
+// Security headers with CSP + HSTS
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -32,8 +33,16 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "https://flagcdn.com"],
       connectSrc: ["'self'"],
     }
-  }
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year
+    includeSubDomains: true,
+    preload: true,
+  },
 }));
+
+// Gzip/Brotli compression for all responses
+app.use(compression());
 
 // Cookie parser
 app.use(cookieParser());
@@ -67,6 +76,14 @@ const loginLimiter = rateLimit({
   message: { error: 'Trop de tentatives, réessayez dans 1 minute.' }
 });
 app.use('/api/auth/login', loginLimiter);
+
+// Stricter rate limits on CPU-intensive endpoints
+const pdfLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Trop de requêtes PDF, réessayez dans 1 minute.' } });
+app.use('/api/paies/facture', pdfLimiter);
+const zipLimiter = rateLimit({ windowMs: 60 * 1000, max: 3, message: { error: 'Trop de requêtes ZIP, réessayez dans 1 minute.' } });
+app.use('/api/paies/factures-zip', zipLimiter);
+const exportLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Trop de requêtes export, réessayez dans 1 minute.' } });
+app.use('/api/ventes/export', exportLimiter);
 
 // CSRF protection — require X-Requested-With header on state-changing requests
 app.use('/api', (req, res, next) => {
@@ -133,6 +150,17 @@ process.on('uncaughtException', (err) => {
 
 const server = app.listen(PORT, () => {
   logger.info(`Imperium API démarrée sur http://localhost:${PORT}`);
+
+  // Auto-refresh exchange rate on startup + every 6 hours
+  const { refreshExchangeRate } = require('./utils/rateCache');
+  refreshExchangeRate().catch(err => {
+    logger.warn('Exchange rate refresh on startup failed', { error: err.message });
+  });
+  setInterval(() => {
+    refreshExchangeRate().catch(err => {
+      logger.warn('Exchange rate periodic refresh failed', { error: err.message });
+    });
+  }, 6 * 60 * 60 * 1000); // 6 hours
 
   // Start Telegram polling bot after a short delay (let HTTP server be ready first)
   setTimeout(() => {

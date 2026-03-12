@@ -27,7 +27,8 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
   if (periode_fin) { where += ' AND o.periode_fin <= ?'; params.push(periode_fin); }
 
   const rows = db.prepare(`
-    SELECT o.*, c.prenom as chatteur_prenom, m.pseudo as modele_pseudo
+    SELECT o.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte
     FROM objectifs o
     LEFT JOIN chatteurs c ON c.id = o.chatteur_id
     LEFT JOIN modeles m ON m.id = o.modele_id
@@ -54,7 +55,8 @@ router.get('/progress', authMiddleware, asyncHandler((req, res) => {
   }
 
   const objectifs = db.prepare(`
-    SELECT o.*, c.prenom as chatteur_prenom, m.pseudo as modele_pseudo
+    SELECT o.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte
     FROM objectifs o
     LEFT JOIN chatteurs c ON c.id = o.chatteur_id
     LEFT JOIN modeles m ON m.id = o.modele_id
@@ -89,6 +91,94 @@ router.get('/progress', authMiddleware, asyncHandler((req, res) => {
   });
 
   res.json(results);
+}));
+
+// GET /api/objectifs/suggestions?chatteur_id=X — data-driven goal suggestions
+router.get('/suggestions', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { chatteur_id } = req.query;
+
+  // Get last 6 periods of ventes data
+  let query, params;
+  if (chatteur_id) {
+    query = `
+      SELECT v.periode_debut, v.periode_fin,
+        COALESCE(SUM(v.montant_brut), 0) as total_brut
+      FROM ventes v
+      WHERE v.chatteur_id = ?
+      GROUP BY v.periode_debut, v.periode_fin
+      ORDER BY v.periode_debut DESC
+      LIMIT 6
+    `;
+    params = [chatteur_id];
+  } else {
+    // Global: sum all chatteurs
+    query = `
+      SELECT v.periode_debut, v.periode_fin,
+        COALESCE(SUM(v.montant_brut), 0) as total_brut
+      FROM ventes v
+      GROUP BY v.periode_debut, v.periode_fin
+      ORDER BY v.periode_debut DESC
+      LIMIT 6
+    `;
+    params = [];
+  }
+
+  const periodes = db.prepare(query).all(...params);
+
+  if (periodes.length === 0) {
+    return res.json({
+      periodes: [],
+      moyenne: 0,
+      mediane: 0,
+      meilleure: 0,
+      tendance: 0,
+      suggestions: { realiste: 0, ambitieux: 0, challenge: 0 },
+    });
+  }
+
+  const values = periodes.map(p => p.total_brut);
+  const moyenne = values.reduce((s, v) => s + v, 0) / values.length;
+
+  // Median
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const mediane = sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+
+  const meilleure = Math.max(...values);
+
+  // Trend: compare recent 3 vs older 3
+  let tendance = 0;
+  if (periodes.length >= 4) {
+    const half = Math.floor(periodes.length / 2);
+    const recent = values.slice(0, half);
+    const ancien = values.slice(half);
+    const avgRecent = recent.reduce((s, v) => s + v, 0) / recent.length;
+    const avgAncien = ancien.reduce((s, v) => s + v, 0) / ancien.length;
+    if (avgAncien > 0) tendance = ((avgRecent - avgAncien) / avgAncien) * 100;
+  }
+
+  // Suggestions based on last 3 periods average
+  const last3 = values.slice(0, Math.min(3, values.length));
+  const moyLast3 = last3.reduce((s, v) => s + v, 0) / last3.length;
+
+  const suggestions = {
+    realiste: Math.round(moyLast3),
+    ambitieux: Math.round(meilleure),
+    challenge: Math.round(meilleure * 1.2),
+  };
+
+  res.json({
+    periodes: periodes.reverse().map(p => ({
+      debut: p.periode_debut,
+      fin: p.periode_fin,
+      total_brut: p.total_brut,
+    })),
+    moyenne: Math.round(moyenne),
+    mediane: Math.round(mediane),
+    meilleure: Math.round(meilleure),
+    tendance: Math.round(tendance),
+    suggestions,
+  });
 }));
 
 // POST /api/objectifs

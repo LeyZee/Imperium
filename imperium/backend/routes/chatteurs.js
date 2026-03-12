@@ -96,8 +96,11 @@ router.get('/classement/historique-cagnotte', authMiddleware, asyncHandler((req,
 // GET /api/chatteurs/:id
 router.get('/:id', authMiddleware, asyncHandler((req, res) => {
   const { id } = req.params;
+  const parsedId = parseInt(id, 10);
+  if (isNaN(parsedId)) throw new ApiError(400, 'ID invalide');
+
   // Chatteur can only see themselves
-  if (req.user.role === 'chatteur' && req.user.chatteur_id !== parseInt(id, 10)) {
+  if (req.user.role === 'chatteur' && req.user.chatteur_id !== parsedId) {
     throw new ApiError(403, 'Accès refusé');
   }
 
@@ -106,9 +109,16 @@ router.get('/:id', authMiddleware, asyncHandler((req, res) => {
     FROM chatteurs c
     LEFT JOIN users u ON u.id = c.user_id
     WHERE c.id = ?
-  `).get(id);
+  `).get(parsedId);
 
   if (!chatteur) throw new ApiError(404, 'Chatteur introuvable');
+
+  // Strip sensitive fields for chatteur role
+  if (req.user.role === 'chatteur') {
+    const { iban, taux_commission, taux_net_equipe, taux_horaire, ...safe } = chatteur;
+    return res.json(safe);
+  }
+
   res.json(chatteur);
 }));
 
@@ -122,9 +132,9 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 
   if (!prenom) throw new ApiError(400, 'Prénom requis');
 
-  // Manager can only create chatteurs, not other managers
-  if (req.user.role === 'manager' && role === 'manager') {
-    throw new ApiError(403, 'Un manager ne peut pas créer d\'autres managers');
+  // Manager can only create chatteurs, not other managers/directeurs
+  if (req.user.role === 'manager' && (role === 'manager' || role === 'directeur')) {
+    throw new ApiError(403, 'Un manager ne peut pas créer d\'autres managers ou directeurs');
   }
 
   let user_id = null;
@@ -138,7 +148,7 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     const hash = bcrypt.hashSync(password, 10);
     const userResult = db.prepare(
       'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
-    ).run(email, hash, role === 'manager' ? 'manager' : 'chatteur', email);
+    ).run(email, hash, (role === 'manager' || role === 'directeur') ? 'manager' : 'chatteur', email);
     user_id = userResult.lastInsertRowid;
   }
 
@@ -237,7 +247,7 @@ router.put('/:id/account', authMiddleware, adminOnly, asyncHandler((req, res) =>
     if (conflict) throw new ApiError(409, 'Cet email est déjà utilisé');
 
     // Sync role from chatteur profile to user account
-    const userRole = chatteur.role === 'manager' ? 'manager' : 'chatteur';
+    const userRole = (chatteur.role === 'manager' || chatteur.role === 'directeur') ? 'manager' : 'chatteur';
     db.prepare('UPDATE users SET email = ?, username = ?, role = ? WHERE id = ?').run(email.trim(), email.trim(), userRole, chatteur.user_id);
     // Also sync email on the chatteur profile
     db.prepare('UPDATE chatteurs SET email = ? WHERE id = ?').run(email.trim(), id);
@@ -259,7 +269,7 @@ router.put('/:id/account', authMiddleware, adminOnly, asyncHandler((req, res) =>
 
     const hash = bcrypt.hashSync(new_password, 10);
     const chatteurData = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
-    const userRole = chatteurData?.role === 'manager' ? 'manager' : 'chatteur';
+    const userRole = (chatteurData?.role === 'manager' || chatteurData?.role === 'directeur') ? 'manager' : 'chatteur';
     const userResult = db.prepare(
       'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
     ).run(email.trim(), hash, userRole, email.trim());
@@ -279,10 +289,10 @@ router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) =>
     if (req.user.chatteur_id === parseInt(id)) {
       throw new ApiError(403, 'Vous ne pouvez pas vous désactiver vous-même');
     }
-    // Manager cannot deactivate other managers (admin only)
+    // Manager cannot deactivate other managers or directeurs (admin only)
     const target = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
-    if (target && target.role === 'manager') {
-      throw new ApiError(403, 'Seul un admin peut désactiver un manager');
+    if (target && (target.role === 'manager' || target.role === 'directeur')) {
+      throw new ApiError(403, 'Seul un admin peut désactiver un manager ou directeur');
     }
   }
 

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
+import usePolling from '../../hooks/usePolling.js';
 import { ChevronLeft, ChevronRight, Clock, Coffee, Globe } from 'lucide-react';
 
 // Creneau start/end hours (in the shift's timezone)
@@ -80,15 +81,24 @@ export default function MonPlanning() {
 
   const chatteurTz = PAYS_TZ[chatteurPays] || 'Europe/Paris';
 
-  useEffect(() => {
+  const fetchShifts = useCallback(() => {
+    if (!user?.chatteur_id) return;
     const controller = new AbortController();
-    setLoading(true);
+    setLoading(prev => !shifts.length ? true : prev); // Only show loader on first load
     api.get(`/api/shifts/semaine?date=${toISO(weekStart)}`, { signal: controller.signal }).then(({ data }) => {
       const all = data.shifts || data;
       setShifts(Array.isArray(all) ? all.filter(s => s.chatteur_id === user?.chatteur_id) : []);
     }).catch(() => {}).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [weekStart, user]);
+  }, [weekStart, user?.chatteur_id]);
+
+  useEffect(() => {
+    const cleanup = fetchShifts();
+    return cleanup;
+  }, [fetchShifts]);
+
+  // Auto-refresh every 30s
+  usePolling(fetchShifts, 30000);
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const totalShifts = shifts.length;
@@ -211,7 +221,8 @@ export default function MonPlanning() {
                           </span>
                           {s.plateforme_nom && (
                             <span style={{
-                              background: 'rgba(27,46,75,0.08)', color: '#1b2e4b',
+                              background: s.plateforme_couleur_fond || 'rgba(27,46,75,0.08)',
+                              color: s.plateforme_couleur_texte || '#1b2e4b',
                               padding: '0.25rem 0.6rem', borderRadius: '6px',
                               fontSize: '0.75rem', fontWeight: 600,
                             }}>
@@ -219,8 +230,12 @@ export default function MonPlanning() {
                             </span>
                           )}
                           {s.modele_pseudo && (
-                            <span style={{ color: '#64748b', fontSize: '0.8rem' }}>
-                              · {s.modele_pseudo}
+                            <span className="badge" style={{
+                              fontSize: '0.72rem', padding: '0.2rem 0.55rem', borderRadius: '99px', fontWeight: 600,
+                              background: s.modele_couleur_fond || '#f1f5f9',
+                              color: s.modele_couleur_texte || '#475569',
+                            }}>
+                              {s.modele_pseudo}
                             </span>
                           )}
                         </div>

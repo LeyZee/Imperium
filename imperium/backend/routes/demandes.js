@@ -28,8 +28,8 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 
   const rows = db.prepare(`
     SELECT d.*,
-      c.prenom as chatteur_prenom,
-      e.prenom as echange_avec_prenom,
+      c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+      e.prenom as echange_avec_prenom, e.couleur as echange_avec_couleur,
       r.prenom as reviewed_by_prenom
     FROM demandes d
     JOIN chatteurs c ON c.id = d.chatteur_id
@@ -45,7 +45,7 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 // GET /api/demandes/pending
 router.get('/pending', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const rows = db.prepare(`
-    SELECT d.*, c.prenom as chatteur_prenom, e.prenom as echange_avec_prenom
+    SELECT d.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur, e.prenom as echange_avec_prenom, e.couleur as echange_avec_couleur
     FROM demandes d
     JOIN chatteurs c ON c.id = d.chatteur_id
     LEFT JOIN chatteurs e ON e.id = d.echange_avec_id

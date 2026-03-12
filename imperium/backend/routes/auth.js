@@ -9,6 +9,37 @@ const logger = require('../utils/logger');
 
 const router = express.Router();
 
+// --- Brute force protection: account lockout after 5 failed attempts ---
+const loginAttempts = new Map(); // email → { count, lockedUntil }
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
+
+function checkLockout(email) {
+  const entry = loginAttempts.get(email);
+  if (!entry) return;
+  if (entry.lockedUntil && Date.now() < entry.lockedUntil) {
+    const minutes = Math.ceil((entry.lockedUntil - Date.now()) / 60000);
+    throw new ApiError(429, `Compte verrouillé. Réessayez dans ${minutes} minute${minutes > 1 ? 's' : ''}.`);
+  }
+  if (entry.lockedUntil && Date.now() >= entry.lockedUntil) {
+    loginAttempts.delete(email); // Reset after lockout period
+  }
+}
+
+function recordFailedAttempt(email) {
+  const entry = loginAttempts.get(email) || { count: 0, lockedUntil: null };
+  entry.count++;
+  if (entry.count >= MAX_ATTEMPTS) {
+    entry.lockedUntil = Date.now() + LOCKOUT_DURATION;
+    logger.warn('Account locked due to failed attempts', { email, attempts: entry.count });
+  }
+  loginAttempts.set(email, entry);
+}
+
+function resetAttempts(email) {
+  loginAttempts.delete(email);
+}
+
 // POST /api/auth/login — login by email
 router.post('/login', asyncHandler((req, res) => {
   const { email, password } = req.body;
@@ -16,11 +47,23 @@ router.post('/login', asyncHandler((req, res) => {
     throw new ApiError(400, 'Email et mot de passe requis');
   }
 
+  // Check lockout before any DB query
+  checkLockout(email);
+
   const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
-  if (!user) throw new ApiError(401, 'Identifiants incorrects');
+  if (!user) {
+    recordFailedAttempt(email);
+    throw new ApiError(401, 'Identifiants incorrects');
+  }
 
   const valid = bcrypt.compareSync(password, user.password_hash);
-  if (!valid) throw new ApiError(401, 'Identifiants incorrects');
+  if (!valid) {
+    recordFailedAttempt(email);
+    throw new ApiError(401, 'Identifiants incorrects');
+  }
+
+  // Success — reset attempts
+  resetAttempts(email);
 
   // If chatteur, get their chatteur profile
   let chatteur = null;

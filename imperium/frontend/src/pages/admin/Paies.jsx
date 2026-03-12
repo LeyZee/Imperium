@@ -4,8 +4,8 @@ import StatCard from '../../components/StatCard.jsx';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
-  Euro, TrendingUp, Building2, ArrowLeftRight,
-  Trophy, RefreshCw, ChevronDown, Crown, Users,
+  Euro, TrendingUp, Building2,
+  Trophy, RefreshCw, ChevronDown, Crown, Users, Shield,
   CheckCircle, Clock, AlertCircle, Download, FileText,
 } from 'lucide-react';
 
@@ -202,6 +202,7 @@ export default function Paies() {
 
   const paies = data?.paies || [];
   const managers = data?.managers || [];
+  const directeurs = data?.directeurs || [];
   const resume = data?.resume || {};
   const top = resume.top_chatteurs || [];
 
@@ -222,7 +223,7 @@ export default function Paies() {
           <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Calcul automatique et suivi des rémunérations</p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
           {/* Download all invoices */}
           {paies.length > 0 && (
             <button
@@ -240,7 +241,7 @@ export default function Paies() {
               ) : (
                 <>
                   <Download size={15} />
-                  Toutes les factures
+                  <span className="hide-mobile">Toutes les</span> factures
                 </>
               )}
             </button>
@@ -272,7 +273,7 @@ export default function Paies() {
             <button
               className="btn-primary"
               onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: '200px', justifyContent: 'space-between' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: '160px', justifyContent: 'space-between' }}
             >
               <span style={{ fontSize: '0.85rem' }}>{period?.label}</span>
               <ChevronDown size={15} style={{
@@ -341,12 +342,6 @@ export default function Paies() {
               icon={Building2}
               color="#10b981"
             />
-            <StatCard
-              title="Taux de Change"
-              value={resume.taux_change ? `1 $ = ${resume.taux_change.toFixed(4)} €` : '—'}
-              icon={ArrowLeftRight}
-              color="#64748b"
-            />
           </div>
 
           {/* Top 3 Podium */}
@@ -356,31 +351,31 @@ export default function Paies() {
                 <Trophy size={18} color="#f5b731" />
                 <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Top Chatteurs</h3>
               </div>
-              <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(top.length, 3)}, 1fr)`, gap: '0.75rem' }}>
+              <div className="stagger-children podium-grid" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(top.length, 3)}, 1fr)`, gap: '0.75rem' }}>
                 {top.map((t, i) => (
                   <div
                     key={t.chatteur_id}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: '0.75rem',
-                      padding: '0.85rem 1rem', borderRadius: '10px',
+                      display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.7rem 0.75rem', borderRadius: '10px',
                       background: PODIUM_ICONS[i].bg,
                       border: `1px solid ${PODIUM_ICONS[i].color}25`,
                       transition: 'transform 200ms ease, box-shadow 200ms ease',
                     }}
                     className="hover-lift"
                   >
-                    <span style={{ fontSize: '1.5rem' }}>{PODIUM_ICONS[i].emoji}</span>
+                    <span style={{ fontSize: '1.3rem', flexShrink: 0 }}>{PODIUM_ICONS[i].emoji}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontWeight: 600, fontSize: '0.85rem', color: '#1a1f2e', margin: 0 }}>{t.nom}</p>
-                      <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0.15rem 0 0' }}>
+                      <p style={{ fontWeight: 600, fontSize: '0.82rem', color: '#1a1f2e', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.nom}</p>
+                      <p style={{ fontSize: '0.7rem', color: '#64748b', margin: '0.15rem 0 0', whiteSpace: 'nowrap' }}>
                         Net HT: {fmtEur(t.net_ht)}
                       </p>
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <p style={{ fontWeight: 700, fontSize: '0.9rem', color: PODIUM_ICONS[i].color, margin: 0 }}>
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <p style={{ fontWeight: 700, fontSize: '0.82rem', color: PODIUM_ICONS[i].color, margin: 0, whiteSpace: 'nowrap' }}>
                         +{fmtEur(t.prime)}
                       </p>
-                      <p style={{ fontSize: '0.65rem', color: '#94a3b8', margin: '0.1rem 0 0' }}>
+                      <p style={{ fontSize: '0.6rem', color: '#94a3b8', margin: '0.1rem 0 0' }}>
                         prime
                       </p>
                     </div>
@@ -560,7 +555,7 @@ export default function Paies() {
                 display: 'flex', alignItems: 'center', gap: '0.5rem',
               }}>
                 <Crown size={16} color="#f5b731" />
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Manager</h3>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Managers</h3>
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table>
@@ -658,35 +653,98 @@ export default function Paies() {
             </div>
           )}
 
-          {/* Résumé Financier */}
-          {paies.length > 0 && (
-            <div className="card">
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <Building2 size={16} /> Résumé Financier
-              </h3>
-              <div className="stagger-children" style={{
-                display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-                gap: '0.75rem',
+          {/* Directeur Section — admin only */}
+          {directeurs.length > 0 && (
+            <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: '1rem' }}>
+              <div style={{
+                padding: '1rem 1.25rem',
+                borderBottom: '1px solid rgba(0,0,0,0.06)',
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
               }}>
-                {[
-                  { label: 'Net HT Équipe', value: fmtEur(resume.total_net_ht_equipe), color: '#6366f1' },
-                  { label: 'Part Modèles (Total Payé)', value: fmtEur(resume.total_paye_equipe), color: '#f5b731' },
-                  { label: 'Trésorerie Agence', value: fmtEur(resume.tresorerie_agence), color: '#10b981' },
-                ].map(item => (
-                  <div key={item.label} style={{
-                    padding: '0.85rem 1rem', borderRadius: '10px',
-                    background: `${item.color}08`, border: `1px solid ${item.color}20`,
-                    transition: 'transform 200ms',
-                  }}
-                    className="hover-scale-sm"
-                  >
-                    <p style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.3rem' }}>{item.label}</p>
-                    <p style={{ fontWeight: 700, fontSize: '1.1rem', color: item.color, margin: 0 }}>{item.value}</p>
-                  </div>
-                ))}
+                <Shield size={16} color="#6366f1" />
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Directeur</h3>
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Nom</th>
+                      <th style={{ textAlign: 'right' }}>% du Net HT Équipe</th>
+                      <th style={{ textAlign: 'right' }}>Base (Net HT Équipe)</th>
+                      <th style={{ textAlign: 'right' }}>TOTAL</th>
+                      {!isManager && <th style={{ textAlign: 'center' }}>Statut</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="stagger-rows">
+                    {directeurs.map(d => {
+                      const statutStyle = STATUT_STYLES[d.statut] || STATUT_STYLES['calculé'];
+                      return (
+                        <tr key={d.id} className="hover-gold-row">
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <div style={{
+                                width: 32, height: 32, borderRadius: '50%',
+                                background: 'linear-gradient(135deg, #6366f1, #818cf8)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: '0.7rem', fontWeight: 700, color: '#fff', flexShrink: 0,
+                              }}>
+                                <Shield size={16} />
+                              </div>
+                              <span style={{ fontWeight: 500 }}>{d.chatteur_prenom}</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: '#6366f1' }}>
+                            {fmtPercent(d.taux_net_equipe)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {fmtEur(resume.total_net_ht_equipe)}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: '#6366f1' }}>
+                            {fmtEur(d.total_chatteur)}
+                          </td>
+                          {!isManager && (
+                            <td style={{ textAlign: 'center' }}>
+                              <select
+                                value={d.statut}
+                                onChange={e => handleStatutChange(d.id, e.target.value)}
+                                style={{
+                                  background: statutStyle.bg,
+                                  color: statutStyle.color,
+                                  border: statutStyle.border,
+                                  borderRadius: '20px',
+                                  padding: '0.2rem 0.5rem',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 600,
+                                  cursor: 'pointer',
+                                  outline: 'none',
+                                  appearance: 'none',
+                                  WebkitAppearance: 'none',
+                                  textAlign: 'center',
+                                  minWidth: '75px',
+                                }}
+                              >
+                                <option value="calculé">Calculé</option>
+                                <option value="validé">Validé</option>
+                                <option value="payé">Payé</option>
+                              </select>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
+
+          {/* Taux de change — petit texte discret */}
+          {resume.taux_change && (
+            <p style={{ fontSize: '0.72rem', color: '#94a3b8', textAlign: 'right', margin: '0.25rem 0 0' }}>
+              Taux de change : 1 $ = {resume.taux_change.toFixed(4)} € (mis à jour automatiquement)
+            </p>
+          )}
+
         </>
       ) : null}
 
@@ -701,6 +759,14 @@ export default function Paies() {
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
+        }
+        @media (max-width: 600px) {
+          .podium-grid {
+            grid-template-columns: 1fr !important;
+          }
+          .hide-mobile {
+            display: none !important;
+          }
         }
       `}</style>
     </div>

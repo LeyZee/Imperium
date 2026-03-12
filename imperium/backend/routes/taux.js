@@ -4,6 +4,7 @@ const db = require('../database');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const logger = require('../utils/logger');
+const { invalidateRateCache } = require('../utils/rateCache');
 
 const router = express.Router();
 
@@ -39,6 +40,7 @@ router.post('/refresh', authMiddleware, adminOnly, asyncHandler(async (req, res)
       VALUES (?, ?, ?, ?)
     `).run('USD', 'EUR', taux, today);
 
+    invalidateRateCache();
     res.json({ taux, date_maj: today, source: 'frankfurter.app' });
   } catch (err) {
     // Fallback: update date only

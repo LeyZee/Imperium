@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { CalendarCheck, Check, X } from 'lucide-react';
 import api from '../../utils/api';
 import { useToast } from '../../components/Toast.jsx';
+import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
 const STATUT_BADGE = {
   en_attente: { cls: 'badge badge-warning', label: 'En attente' },
@@ -13,7 +14,7 @@ export default function Demandes() {
   const [demandes, setDemandes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filterStatut, setFilterStatut] = useState('');
-  const { addToast } = useToast();
+  const toast = useToast();
 
   const fetchDemandes = async () => {
     setLoading(true);
@@ -30,10 +31,10 @@ export default function Demandes() {
   const handleReview = async (id, statut) => {
     try {
       await api.put(`/api/demandes/${id}/review`, { statut });
-      addToast(`Demande ${statut === 'approuve' ? 'approuvée' : 'refusée'}`, 'success');
+      toast(`Demande ${statut === 'approuve' ? 'approuvée' : 'refusée'}`, 'success');
       fetchDemandes();
     } catch (err) {
-      addToast(err.response?.data?.error || 'Erreur', 'error');
+      toast(err.response?.data?.error || 'Erreur', 'error');
     }
   };
 
@@ -78,7 +79,21 @@ export default function Demandes() {
                 const badge = STATUT_BADGE[d.statut];
                 return (
                   <tr key={d.id}>
-                    <td>{d.chatteur_prenom}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{
+                          width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                          background: `${CHATTEUR_COLORS[d.chatteur_couleur]?.bg || '#94a3b8'}20`,
+                          border: `1.5px solid ${CHATTEUR_COLORS[d.chatteur_couleur]?.bg || '#94a3b8'}50`,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '0.65rem', fontWeight: 700,
+                          color: CHATTEUR_COLORS[d.chatteur_couleur]?.bg || '#94a3b8',
+                        }}>
+                          {d.chatteur_prenom?.[0]?.toUpperCase() || '?'}
+                        </div>
+                        <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>{d.chatteur_prenom}</span>
+                      </div>
+                    </td>
                     <td>
                       <span className={d.type === 'conge' ? 'badge badge-navy' : 'badge badge-gold'}>
                         {d.type === 'conge' ? 'Congé' : 'Échange'}
@@ -86,7 +101,23 @@ export default function Demandes() {
                     </td>
                     <td>{d.date_debut} → {d.date_fin}</td>
                     <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.motif || '-'}</td>
-                    <td>{d.echange_avec_prenom || '-'}</td>
+                    <td>
+                      {d.echange_avec_prenom ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{
+                            width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                            background: `${CHATTEUR_COLORS[d.echange_avec_couleur]?.bg || '#94a3b8'}20`,
+                            border: `1.5px solid ${CHATTEUR_COLORS[d.echange_avec_couleur]?.bg || '#94a3b8'}50`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '0.65rem', fontWeight: 700,
+                            color: CHATTEUR_COLORS[d.echange_avec_couleur]?.bg || '#94a3b8',
+                          }}>
+                            {d.echange_avec_prenom?.[0]?.toUpperCase() || '?'}
+                          </div>
+                          <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>{d.echange_avec_prenom}</span>
+                        </div>
+                      ) : '-'}
+                    </td>
                     <td><span className={badge.cls}>{badge.label}</span></td>
                     <td>
                       {d.statut === 'en_attente' && (

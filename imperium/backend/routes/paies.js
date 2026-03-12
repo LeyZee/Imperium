@@ -9,6 +9,9 @@ const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
 const { logActivity } = require('../utils/activityLogger');
 const { notifyChatteur } = require('../utils/notifier');
+const { getExchangeRate } = require('../utils/rateCache');
+const { validateDate } = require('../utils/validation');
+const { parsePagination, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
@@ -18,32 +21,36 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
   if (!debut || !fin) {
     throw new ApiError(400, 'debut et fin requis');
   }
+  const dateErr = validateDate(debut) || validateDate(fin);
+  if (dateErr) throw new ApiError(400, dateErr);
 
-  // Fetch paie rows with chatteur + plateforme info
+  // Fetch paie rows with chatteur + plateforme info + user role
   const paies = db.prepare(`
     SELECT p.*,
       c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
       c.taux_commission, c.role, c.taux_net_equipe,
-      pl.nom as plateforme_nom, pl.devise, pl.couleur_fond, pl.couleur_texte
+      pl.nom as plateforme_nom, pl.devise, pl.couleur_fond, pl.couleur_texte,
+      u.role as user_role
     FROM paies p
     JOIN chatteurs c ON c.id = p.chatteur_id
+    LEFT JOIN users u ON u.id = c.user_id
     LEFT JOIN plateformes pl ON pl.id = p.plateforme_id
     WHERE p.periode_debut = ? AND p.periode_fin = ?
     ORDER BY (c.role = 'manager') ASC, p.net_ht_eur DESC, c.prenom
   `).all(debut, fin);
 
-  // Split into normal chatteurs and managers
-  const normalPaies = paies.filter(p => p.role !== 'manager');
-  const managerPaies = paies.filter(p => p.role === 'manager');
+  // Split into normal chatteurs, managers, and directeurs
+  // Manager/directeur platform sales (plateforme_id NOT NULL) stay with normal paies for correct total
+  // Manager/directeur summary rows (plateforme_id NULL = team revenue share) go to managers/directeurs
+  const normalPaies = paies.filter(p => (p.role !== 'manager' && p.role !== 'directeur') || p.plateforme_id != null);
+  const managerPaies = paies.filter(p => p.role === 'manager' && p.plateforme_id == null);
+  const directeurPaies = paies.filter(p => p.role === 'directeur' && p.plateforme_id == null);
 
-  // Taux change
-  const tauxRow = db.prepare(
-    'SELECT taux FROM taux_change WHERE devise_base = ? AND devise_cible = ? ORDER BY date_maj DESC LIMIT 1'
-  ).get('USD', 'EUR');
-  const tauxChange = tauxRow?.taux || 0.92;
+  // Taux change (cached)
+  const tauxChange = getExchangeRate();
 
-  // Calculate résumé
-  const totalNetHTEquipe = normalPaies.reduce((s, p) => s + p.net_ht_eur, 0);
+  // Calculate résumé — include ALL platform sales (including managers' own) for consistency with paie-calculator
+  const totalNetHTEquipe = paies.reduce((s, p) => s + (p.net_ht_eur || 0), 0);
   const totalPayeEquipe = paies.reduce((s, p) => s + p.total_chatteur, 0);
 
   // Trésorerie agence = part agence du CA - ce qu'on paye aux chatteurs/managers
@@ -84,6 +91,7 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
   res.json({
     paies: normalPaies,
     managers: managerPaies,
+    directeurs: directeurPaies,
     resume: {
       total_net_ht_equipe: totalNetHTEquipe,
       total_paye_equipe: totalPayeEquipe,
@@ -101,6 +109,8 @@ router.post('/recalculer', authMiddleware, adminOnly, asyncHandler((req, res) =>
   if (!debut || !fin) {
     throw new ApiError(400, 'debut et fin requis');
   }
+  const dateErr = validateDate(debut) || validateDate(fin);
+  if (dateErr) throw new ApiError(400, dateErr);
 
   const result = recalculatePaies(debut, fin);
   res.json(result);
@@ -116,7 +126,11 @@ router.put('/:id/statut', authMiddleware, adminOrManager, asyncHandler((req, res
   if (req.user.role === 'manager' && statut === 'payé') {
     throw new ApiError(403, 'Seul un administrateur peut marquer une paie comme payée');
   }
-  const paie = db.prepare('SELECT chatteur_id FROM paies WHERE id = ?').get(req.params.id);
+  const paie = db.prepare('SELECT p.chatteur_id, c.role as chatteur_role FROM paies p JOIN chatteurs c ON c.id = p.chatteur_id WHERE p.id = ?').get(req.params.id);
+  // Manager cannot modify directeur paies
+  if (req.user.role === 'manager' && paie?.chatteur_role === 'directeur') {
+    throw new ApiError(403, 'Seul un administrateur peut modifier la paie du directeur');
+  }
   db.prepare('UPDATE paies SET statut = ? WHERE id = ?').run(statut, req.params.id);
 
   logActivity(req.user.id, 'update_paie_statut', 'paie', parseInt(req.params.id), statut);
@@ -230,7 +244,7 @@ router.get('/facture', authMiddleware, asyncHandler((req, res) => {
   stream.pipe(res);
 }));
 
-// GET /api/paies/previsionnel?debut=&fin= — forecast for current period
+// GET /api/paies/previsionnel?debut=&fin= — forecast for current period using historical data
 router.get('/previsionnel', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { debut, fin } = req.query;
   if (!debut || !fin) throw new ApiError(400, 'debut et fin requis');
@@ -241,13 +255,7 @@ router.get('/previsionnel', authMiddleware, adminOrManager, asyncHandler((req, r
   const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
   const elapsedDays = Math.min(Math.ceil((now - startDate) / (1000 * 60 * 60 * 24)), totalDays);
 
-  if (elapsedDays <= 0) {
-    return res.json({ elapsed_days: 0, total_days: totalDays, ratio: 0, actuals: {}, forecasts: {} });
-  }
-
-  const ratio = totalDays / Math.max(elapsedDays, 1);
-
-  // Get actual totals
+  // Get actual totals for current period
   const actual = db.prepare(`
     SELECT
       COALESCE(SUM(ventes_brutes), 0) as total_brut,
@@ -258,19 +266,80 @@ router.get('/previsionnel', authMiddleware, adminOrManager, asyncHandler((req, r
     WHERE periode_debut = ? AND periode_fin = ?
   `).get(debut, fin);
 
+  // Get historical periods (last 6 completed periods) for smart forecasting
+  const historique = db.prepare(`
+    SELECT periode_debut, periode_fin,
+      COALESCE(SUM(ventes_brutes), 0) as total_brut,
+      COALESCE(SUM(net_ht_eur), 0) as total_net_ht,
+      COALESCE(SUM(commission_chatteur), 0) as total_commission,
+      COALESCE(SUM(total_chatteur), 0) as total_paie
+    FROM paies
+    WHERE periode_debut < ? AND plateforme_id IS NOT NULL
+    GROUP BY periode_debut, periode_fin
+    ORDER BY periode_debut DESC
+    LIMIT 6
+  `).all(debut);
+
+  // Calculate historical averages
+  const nbPeriodes = historique.length;
+  const moyennes = {
+    total_brut: nbPeriodes > 0 ? historique.reduce((s, h) => s + h.total_brut, 0) / nbPeriodes : 0,
+    total_net_ht: nbPeriodes > 0 ? historique.reduce((s, h) => s + h.total_net_ht, 0) / nbPeriodes : 0,
+    total_commission: nbPeriodes > 0 ? historique.reduce((s, h) => s + h.total_commission, 0) / nbPeriodes : 0,
+    total_paie: nbPeriodes > 0 ? historique.reduce((s, h) => s + h.total_paie, 0) / nbPeriodes : 0,
+  };
+
+  // Best period
+  const meilleure = historique.length > 0
+    ? historique.reduce((best, h) => h.total_net_ht > best.total_net_ht ? h : best, historique[0])
+    : null;
+
+  // Trend: compare avg of last 3 vs avg of first 3 (if 6+ periods)
+  let tendance = 0;
+  if (historique.length >= 4) {
+    const recent = historique.slice(0, Math.floor(historique.length / 2));
+    const ancien = historique.slice(Math.floor(historique.length / 2));
+    const avgRecent = recent.reduce((s, h) => s + h.total_net_ht, 0) / recent.length;
+    const avgAncien = ancien.reduce((s, h) => s + h.total_net_ht, 0) / ancien.length;
+    if (avgAncien > 0) tendance = ((avgRecent - avgAncien) / avgAncien) * 100;
+  }
+
+  // Smart forecast: weighted blend of linear extrapolation + historical average
+  // If period barely started (< 30%), rely more on historical. As period progresses, trust actuals more.
+  const progressRatio = elapsedDays / Math.max(totalDays, 1);
+  const linearRatio = totalDays / Math.max(elapsedDays, 1);
+
+  const blend = (actualVal, linearVal, histVal) => {
+    if (elapsedDays <= 0) return histVal; // Period not started → use history
+    // Weight: at start → 70% history, at end → 90% linear
+    const linearWeight = Math.min(0.3 + progressRatio * 0.6, 0.9);
+    return linearVal * linearWeight + histVal * (1 - linearWeight);
+  };
+
   const forecasts = {
-    total_brut: actual.total_brut * ratio,
-    total_net_ht: actual.total_net_ht * ratio,
-    total_commission: actual.total_commission * ratio,
-    total_paie: actual.total_paie * ratio,
+    total_brut: blend(actual.total_brut, actual.total_brut * linearRatio, moyennes.total_brut),
+    total_net_ht: blend(actual.total_net_ht, actual.total_net_ht * linearRatio, moyennes.total_net_ht),
+    total_commission: blend(actual.total_commission, actual.total_commission * linearRatio, moyennes.total_commission),
+    total_paie: blend(actual.total_paie, actual.total_paie * linearRatio, moyennes.total_paie),
   };
 
   res.json({
     elapsed_days: elapsedDays,
     total_days: totalDays,
-    ratio,
+    progress_ratio: progressRatio,
     actuals: actual,
     forecasts,
+    historique: {
+      nb_periodes: nbPeriodes,
+      moyennes,
+      meilleure_net_ht: meilleure?.total_net_ht || 0,
+      tendance,
+      periodes: historique.map(h => ({
+        debut: h.periode_debut,
+        fin: h.periode_fin,
+        net_ht: h.total_net_ht,
+      })),
+    },
   });
 }));
 
@@ -278,6 +347,8 @@ router.get('/previsionnel', authMiddleware, adminOrManager, asyncHandler((req, r
 router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { debut, fin } = req.query;
   if (!debut || !fin) throw new ApiError(400, 'debut et fin requis');
+  const dateErr = validateDate(debut) || validateDate(fin);
+  if (dateErr) throw new ApiError(400, dateErr);
 
   const { sendCSV } = require('../utils/csvExport');
 

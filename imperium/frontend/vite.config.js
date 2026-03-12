@@ -13,6 +13,17 @@ export default defineConfig({
       }
     }
   },
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'recharts': ['recharts'],
+          'lucide': ['lucide-react'],
+        }
+      }
+    }
+  },
   test: {
     globals: true,
     environment: 'jsdom',

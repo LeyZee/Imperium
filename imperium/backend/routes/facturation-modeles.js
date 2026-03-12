@@ -22,7 +22,7 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   // Ventes agrégées par modèle + plateforme
   const rows = db.prepare(`
     SELECT
-      m.id as modele_id, m.pseudo, m.part_percent, m.photo,
+      m.id as modele_id, m.pseudo, m.part_percent, m.photo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
       pl.id as plateforme_id, pl.nom as plateforme_nom, pl.devise,
       pl.tva_rate, pl.commission_rate,
       pl.couleur_fond, pl.couleur_texte,
@@ -51,6 +51,8 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
       pseudo: r.pseudo,
       part_percent: r.part_percent,
       photo: r.photo,
+      modele_couleur_fond: r.modele_couleur_fond,
+      modele_couleur_texte: r.modele_couleur_texte,
       plateforme_id: r.plateforme_id,
       plateforme_nom: r.plateforme_nom,
       devise: r.devise,
@@ -75,6 +77,8 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
         pseudo: d.pseudo,
         part_percent: d.part_percent,
         photo: d.photo,
+        modele_couleur_fond: d.modele_couleur_fond,
+        modele_couleur_texte: d.modele_couleur_texte,
         plateformes: [],
         nb_ventes: 0,
         total_brut: 0,

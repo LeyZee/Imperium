@@ -30,3 +30,20 @@ export function validatePositiveNumber(value, fieldName) {
   if (isNaN(num) || num < 0) return `${fieldName} doit être un nombre positif`;
   return null;
 }
+
+export function validateDate(dateStr) {
+  if (!dateStr) return 'Date requise';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return 'Format de date invalide (YYYY-MM-DD)';
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return 'Date invalide';
+  return null;
+}
+
+export function validateDateRange(debut, fin) {
+  const errDebut = validateDate(debut);
+  if (errDebut) return errDebut;
+  const errFin = validateDate(fin);
+  if (errFin) return errFin;
+  if (new Date(fin) <= new Date(debut)) return 'La date de fin doit être après la date de début';
+  return null;
+}

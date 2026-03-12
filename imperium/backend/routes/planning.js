@@ -31,8 +31,8 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
   const shifts = db.prepare(`
     SELECT s.*,
       c.prenom as chatteur_prenom,
-      m.pseudo as modele_pseudo,
-      p.nom as plateforme_nom
+      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
+      p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte
     FROM shifts s
     JOIN chatteurs c ON c.id = s.chatteur_id
     LEFT JOIN modeles m ON m.id = s.modele_id
@@ -92,6 +92,11 @@ router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) =>
 // GET /api/shifts/chatteur-modeles/:chatteurId — distinct models+platforms a chatteur has shifts for
 router.get('/chatteur-modeles/:chatteurId', authMiddleware, asyncHandler((req, res) => {
   const cid = req.params.chatteurId;
+
+  // Chatteur can only see their own models
+  if (req.user.role === 'chatteur' && req.user.chatteur_id !== parseInt(cid, 10)) {
+    throw new ApiError(403, 'Accès refusé');
+  }
   const combos = db.prepare(`
     SELECT DISTINCT src.modele_id, src.plateforme_id, m.pseudo as modele_pseudo, p.nom as plateforme_nom
     FROM (
@@ -339,7 +344,8 @@ router.get('/en-ligne', authMiddleware, adminOrManager, asyncHandler((req, res) 
 
   const shifts = db.prepare(`
     SELECT s.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
-      m.pseudo as modele_pseudo, p.nom as plateforme_nom
+      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
+      p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte
     FROM shifts s
     JOIN chatteurs c ON c.id = s.chatteur_id
     LEFT JOIN modeles m ON m.id = s.modele_id
@@ -436,20 +442,22 @@ router.get('/conflits', authMiddleware, adminOrManager, asyncHandler((req, res) 
     }
   }
 
-  // Find uncovered slots (for each date × creneau × modele × plateforme)
+  // Find uncovered slots: date × creneau where nobody is working at all
   const nonCouverts = [];
+  // Build set of covered date|creneau (regardless of model/platform)
+  const coveredCreneaux = new Set();
+  for (const key of Object.keys(covered)) {
+    const [date, creneau] = key.split('|');
+    coveredCreneaux.add(`${date}|${creneau}`);
+  }
 
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
     const dateStr = `${d.getFullYear()}-${padN(d.getMonth() + 1)}-${padN(d.getDate())}`;
     for (const creneau of [1, 2, 3, 4]) {
-      for (const mp of modPlats) {
-        const key = `${dateStr}|${creneau}|${mp.modele_id}|${mp.plateforme_id}`;
-        if (!covered[key]) {
-          nonCouverts.push({
-            date: dateStr, creneau, creneau_label: CRENEAUX[creneau]?.label || '',
-            modele_pseudo: mp.modele_pseudo, plateforme_nom: mp.plateforme_nom,
-          });
-        }
+      if (!coveredCreneaux.has(`${dateStr}|${creneau}`)) {
+        nonCouverts.push({
+          date: dateStr, creneau, creneau_label: CRENEAUX[creneau]?.label || '',
+        });
       }
     }
   }

@@ -2,14 +2,14 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Euro, Trophy, AlertCircle, Calendar, Minus, Plus, MessageSquare, Trash2, Send } from 'lucide-react';
 import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
-import api from '../../utils/api';
+import api from '../../api/index.js';
 import { CHATTEUR_COLORS } from '../../constants/colors';
 import StatCard from '../../components/StatCard.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
 
-const PAYS_ISO = { 'France': 'fr', 'Benin': 'bj', 'Madagascar': 'mg' };
+const PAYS_ISO = { 'France': 'fr', 'Benin': 'bj', 'Bénin': 'bj', 'Madagascar': 'mg' };
 const DONUT_COLORS = ['#f5b731', '#1b2e4b', '#6366f1', '#10b981', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4'];
-const MOIS_COURTS = ['Jan', 'F\u00e9v', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Ao\u00fbt', 'Sep', 'Oct', 'Nov', 'D\u00e9c'];
+const MOIS_COURTS = ['Jan', 'Fév', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
 
 export default function ChatteurDetail() {
   const { id } = useParams();
@@ -23,19 +23,21 @@ export default function ChatteurDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [ventesRecentes, setVentesRecentes] = useState([]);
+  const [plateformes, setPlateformes] = useState([]);
 
   useEffect(() => { fetchAll(); }, [id]);
 
   async function fetchAll() {
     setLoading(true);
     try {
-      const [cRes, kRes, hRes, mRes, nRes, vRes] = await Promise.all([
+      const [cRes, kRes, hRes, mRes, nRes, vRes, pRes] = await Promise.all([
         api.get(`/api/chatteurs/${id}`),
         api.get(`/api/chatteurs/${id}/kpis`),
         api.get(`/api/chatteurs/${id}/historique`),
         api.get(`/api/ventes/par-modele?chatteur_id=${id}`),
         api.get(`/api/notes?chatteur_id=${id}`).catch(() => ({ data: [] })),
         api.get(`/api/ventes?chatteur_id=${id}&limit=10`).catch(() => ({ data: [] })),
+        api.get('/api/plateformes').catch(() => ({ data: [] })),
       ]);
       setChatteur(cRes.data);
       setKpis(kRes.data);
@@ -43,8 +45,9 @@ export default function ChatteurDetail() {
       setVentesParModele(mRes.data || []);
       setNotes(nRes.data || []);
       setVentesRecentes(Array.isArray(vRes.data) ? vRes.data.slice(0, 10) : []);
+      setPlateformes(Array.isArray(pRes.data) ? pRes.data : []);
     } catch {
-      setError('Impossible de charger les donn\u00e9es du chatteur.');
+      setError('Impossible de charger les données du chatteur.');
     } finally {
       setLoading(false);
     }
@@ -99,11 +102,11 @@ export default function ChatteurDetail() {
   const totalBrut = kpis?.ventes?.reduce((s, v) => s + (v.total_brut || 0), 0) || 0;
 
   const stats = [
-    { title: 'Total Ventes', value: `${totalBrut.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} \u20ac`, icon: Euro, color: '#f5b731' },
-    { title: 'Commission', value: `${(kpis?.commission_totale || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} \u20ac`, icon: Euro, color: '#10b981' },
-    { title: 'Rang', value: kpis?.rang ? `${kpis.rang}/${kpis.nb_chatteurs}` : '\u2014', icon: Trophy, color: '#f59e0b' },
-    { title: 'Malus', value: `${(kpis?.malus_total || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} \u20ac`, icon: Minus, color: '#ef4444' },
-    { title: 'Primes', value: `${(kpis?.primes_total || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} \u20ac`, icon: Plus, color: '#8b5cf6' },
+    { title: 'Total Ventes', value: `${totalBrut.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Euro, color: '#f5b731' },
+    { title: 'Commission', value: `${(kpis?.commission_totale || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Euro, color: '#10b981' },
+    { title: 'Rang', value: kpis?.rang ? `${kpis.rang}/${kpis.nb_chatteurs}` : '—', icon: Trophy, color: '#f59e0b' },
+    { title: 'Malus', value: `${(kpis?.malus_total || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Minus, color: '#ef4444' },
+    { title: 'Primes', value: `${(kpis?.primes_total || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Plus, color: '#8b5cf6' },
     { title: 'Shifts', value: kpis?.nb_shifts || 0, icon: Calendar, color: '#1b2e4b' },
   ];
 
@@ -120,13 +123,20 @@ export default function ChatteurDetail() {
     };
   });
 
-  // Pie data for modeles
+  // Pie data for modeles (now with DB colors)
   const totalModeles = ventesParModele.reduce((s, d) => s + d.total_brut, 0);
-  const modelesPie = ventesParModele.map(d => ({
+  const modelesPie = ventesParModele.map((d, i) => ({
     ...d,
-    pseudo: d.pseudo || 'Non assign\u00e9',
+    pseudo: d.pseudo || 'Non assigné',
     percentage: totalModeles > 0 ? (d.total_brut / totalModeles) * 100 : 0,
+    color: d.couleur_fond || DONUT_COLORS[i % DONUT_COLORS.length],
   }));
+
+  // Build plateforme color map from fetched data
+  const platColorMap = {};
+  plateformes.forEach(p => {
+    platColorMap[p.nom] = { bg: p.couleur_fond || '#1b2e4b', text: p.couleur_texte || '#ffffff' };
+  });
 
   // Pie data for plateformes
   const totalPlat = kpis?.ventes_par_plateforme?.reduce((s, d) => s + d.total_brut, 0) || 0;
@@ -134,35 +144,54 @@ export default function ChatteurDetail() {
     ...d,
     name: d.plateforme,
     percentage: totalPlat > 0 ? (d.total_brut / totalPlat) * 100 : 0,
+    color: platColorMap[d.plateforme]?.bg || DONUT_COLORS[0],
   }));
 
   return (
-    <div className="page-enter">
+    <div className="page-enter chatteur-detail">
+      <style>{`
+        .chatteur-detail .detail-header { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .chatteur-detail .detail-identity { display: flex; align-items: center; gap: 1rem; flex: 1; min-width: 0; }
+        .chatteur-detail .detail-highlights { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+        .chatteur-detail .detail-charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+        @media (max-width: 640px) {
+          .chatteur-detail .detail-header { gap: 0.75rem; }
+          .chatteur-detail .detail-identity { gap: 0.75rem; }
+          .chatteur-detail .detail-highlights > div { flex: 1 1 100% !important; }
+          .chatteur-detail .detail-charts-grid { grid-template-columns: 1fr; }
+          .chatteur-detail .detail-avatar { width: 44px !important; height: 44px !important; }
+          .chatteur-detail .detail-avatar-icon { width: 44px !important; height: 44px !important; }
+          .chatteur-detail .stats-grid { grid-template-columns: 1fr 1fr !important; }
+          .chatteur-detail .stats-grid .card p[class] { font-size: 1.35rem !important; }
+        }
+      `}</style>
+
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
+      <div className="detail-header">
         <button onClick={() => navigate(-1)} className="btn-ghost" style={{ padding: '0.4rem' }}>
           <ArrowLeft size={18} />
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flex: 1 }}>
+        <div className="detail-identity">
           {/* Avatar */}
           {chatteur.photo ? (
-            <img src={chatteur.photo} alt="" style={{
+            <img src={chatteur.photo} alt="" className="detail-avatar" style={{
               width: 56, height: 56, borderRadius: '50%', objectFit: 'cover',
               border: `3px solid ${colorInfo.bg}`,
             }} />
           ) : (
-            <div style={{
+            <div className="detail-avatar-icon" style={{
               width: 56, height: 56, borderRadius: '50%',
               background: colorInfo.bg, border: `3px solid ${colorInfo.border}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
             }}>
               <User size={24} color={colorInfo.text} />
             </div>
           )}
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h1 style={{ fontWeight: 700, color: '#1a1f2e', marginBottom: '0.15rem' }}>{chatteur.prenom}</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: '#64748b' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: '#64748b', flexWrap: 'wrap' }}>
               <span style={{
                 padding: '0.15rem 0.5rem', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600,
                 background: chatteur.role === 'manager' ? '#fef3c7' : chatteur.role === 'va' ? '#f3e8ff' : '#dbeafe',
@@ -177,38 +206,61 @@ export default function ChatteurDetail() {
           </div>
         </div>
 
-        {/* Meta info */}
-        <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.78rem', color: '#64748b' }}>
+      </div>
+
+      {/* Meta highlight cards */}
+      {(kpis?.moyenne_par_periode > 0 || kpis?.meilleure_periode) && (
+        <div className="detail-highlights" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
           {kpis?.moyenne_par_periode > 0 && (
-            <div>
-              <p style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 500, marginBottom: '0.1rem' }}>Moy./p\u00e9riode</p>
-              <p style={{ fontWeight: 700, color: '#1a1f2e' }}>{kpis.moyenne_par_periode.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} \u20ac</p>
+            <div style={{
+              flex: '1 1 160px', padding: '0.75rem 1rem', borderRadius: '12px',
+              background: 'linear-gradient(135deg, #f0f4ff 0%, #e8efff 100%)',
+              border: '1px solid #dbeafe',
+            }}>
+              <p style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 600, color: '#6366f1', letterSpacing: '0.04em', marginBottom: '0.25rem' }}>
+                {'Moy. / période'}
+              </p>
+              <p style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1a1f2e', lineHeight: 1.1 }}>
+                {kpis.moyenne_par_periode.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {'€'}
+              </p>
             </div>
           )}
           {kpis?.meilleure_periode && (
-            <div>
-              <p style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 500, marginBottom: '0.1rem' }}>Meilleure p\u00e9riode</p>
-              <p style={{ fontWeight: 700, color: '#f5b731' }}>
-                {kpis.meilleure_periode.total?.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} \u20ac
+            <div style={{
+              flex: '1 1 200px', padding: '0.75rem 1rem', borderRadius: '12px',
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+              border: '1px solid #fde68a',
+            }}>
+              <p style={{ fontSize: '0.65rem', textTransform: 'uppercase', fontWeight: 600, color: '#d97706', letterSpacing: '0.04em', marginBottom: '0.25rem' }}>
+                {'🏆 Meilleure période'}
               </p>
-              <p style={{ fontSize: '0.6rem' }}>{kpis.meilleure_periode.periode_debut} \u2192 {kpis.meilleure_periode.periode_fin}</p>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <p style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f59e0b', lineHeight: 1.1 }}>
+                  {kpis.meilleure_periode.total?.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {'€'}
+                </p>
+                <span style={{ fontSize: '0.7rem', color: '#92400e', fontWeight: 500 }}>
+                  {new Date(kpis.meilleure_periode.periode_debut + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                  {' → '}
+                  {new Date(kpis.meilleure_periode.periode_fin + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </span>
+              </div>
             </div>
           )}
         </div>
-      </div>
+      )}
 
       {/* Stats */}
-      <div className="stats-grid stagger-children" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+      <div className="stats-grid stagger-children">
         {stats.map(s => <StatCard key={s.title} {...s} />)}
       </div>
 
       {/* Charts Row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+      <div className="detail-charts-grid">
         {/* Evolution BarChart */}
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>\u00c9volution Net HT</h3>
-            <p style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{chartData.length} derni\u00e8res p\u00e9riodes</p>
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{'Évolution Net HT'}</h3>
+            <p style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{chartData.length} {'dernières périodes'}</p>
           </div>
           <div style={{ padding: '1rem 0.5rem 0.5rem 0' }}>
             {chartData.length >= 2 ? (
@@ -218,7 +270,7 @@ export default function ChatteurDetail() {
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={45}
                     tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k` : `${v}`} />
-                  <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} \u20ac`} labelFormatter={(l) => {
+                  <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} €`} labelFormatter={(l) => {
                     const item = chartData.find(d => d.label === l);
                     return item?.fullLabel || l;
                   }} />
@@ -227,7 +279,7 @@ export default function ChatteurDetail() {
               </ResponsiveContainer>
             ) : (
               <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem', fontSize: '0.82rem' }}>
-                Pas assez de donn\u00e9es
+                {'Pas assez de données'}
               </p>
             )}
           </div>
@@ -236,7 +288,7 @@ export default function ChatteurDetail() {
         {/* Pie: Modeles */}
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Ventes par mod\u00e8le</h3>
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{'Ventes par modèle'}</h3>
           </div>
           <div style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
             {modelesPie.length > 0 ? (
@@ -246,16 +298,16 @@ export default function ChatteurDetail() {
                     <PieChart>
                       <Pie data={modelesPie} cx="50%" cy="50%" innerRadius={35} outerRadius={60}
                         paddingAngle={2} dataKey="total_brut" stroke="none">
-                        {modelesPie.map((_, i) => <Cell key={i} fill={DONUT_COLORS[i % DONUT_COLORS.length]} />)}
+                        {modelesPie.map((d, i) => <Cell key={i} fill={d.color} />)}
                       </Pie>
-                      <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} \u20ac`} />
+                      <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} €`} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
                 <div style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                   {modelesPie.map((d, i) => (
                     <div key={d.pseudo + i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: DONUT_COLORS[i % DONUT_COLORS.length], flexShrink: 0 }} />
+                      <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flexShrink: 0 }} />
                       <span style={{ fontSize: '0.75rem', flex: 1 }}>{d.pseudo}</span>
                       <span style={{ fontSize: '0.72rem', fontWeight: 700 }}>{d.percentage.toFixed(0)}%</span>
                     </div>
@@ -270,7 +322,7 @@ export default function ChatteurDetail() {
       </div>
 
       {/* Plateforme Pie + Notes */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+      <div className="detail-charts-grid">
         {/* Pie: Plateformes */}
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
@@ -284,24 +336,24 @@ export default function ChatteurDetail() {
                     <PieChart>
                       <Pie data={platPie} cx="50%" cy="50%" innerRadius={35} outerRadius={60}
                         paddingAngle={2} dataKey="total_brut" stroke="none">
-                        {platPie.map((_, i) => <Cell key={i} fill={DONUT_COLORS[(i + 3) % DONUT_COLORS.length]} />)}
+                        {platPie.map((d, i) => <Cell key={i} fill={d.color} />)}
                       </Pie>
-                      <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} \u20ac`} />
+                      <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} €`} />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
                 <div style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
                   {platPie.map((d, i) => (
                     <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: DONUT_COLORS[(i + 3) % DONUT_COLORS.length], flexShrink: 0 }} />
+                      <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flexShrink: 0 }} />
                       <span style={{ fontSize: '0.75rem', flex: 1 }}>{d.name}</span>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700 }}>{d.total_brut.toLocaleString('fr-FR')} \u20ac</span>
+                      <span style={{ fontSize: '0.72rem', fontWeight: 700 }}>{d.total_brut.toLocaleString('fr-FR')} €</span>
                     </div>
                   ))}
                 </div>
               </>
             ) : (
-              <p style={{ color: '#94a3b8', fontSize: '0.82rem' }}>Aucune donn\u00e9e</p>
+              <p style={{ color: '#94a3b8', fontSize: '0.82rem' }}>{'Aucune donnée'}</p>
             )}
           </div>
         </div>
@@ -367,14 +419,14 @@ export default function ChatteurDetail() {
       {/* Recent sales */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-          <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Derni\u00e8res ventes</h3>
+          <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{'Dernières ventes'}</h3>
         </div>
         <div style={{ overflowX: 'auto' }}>
           <table>
             <thead>
               <tr>
                 <th>Date</th>
-                <th>Mod\u00e8le</th>
+                <th>{'Modèle'}</th>
                 <th>Plateforme</th>
                 <th style={{ textAlign: 'right' }}>Montant</th>
               </tr>
@@ -383,18 +435,28 @@ export default function ChatteurDetail() {
               {ventesRecentes.length > 0 ? ventesRecentes.map(v => (
                 <tr key={v.id}>
                   <td style={{ color: '#64748b', fontSize: '0.8rem' }}>
-                    {v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR') : '\u2014'}
+                    {v.created_at ? new Date(v.created_at).toLocaleDateString('fr-FR') : '—'}
                   </td>
-                  <td>{v.modele_pseudo || '\u2014'}</td>
-                  <td><span className="badge badge-navy">{v.plateforme || '\u2014'}</span></td>
+                  <td>
+                    <span className="badge" style={{
+                      background: v.modele_couleur_fond || '#f1f5f9',
+                      color: v.modele_couleur_texte || '#475569',
+                    }}>{v.modele_pseudo || '—'}</span>
+                  </td>
+                  <td>
+                    <span className="badge" style={{
+                      background: platColorMap[v.plateforme_nom]?.bg || '#1b2e4b',
+                      color: platColorMap[v.plateforme_nom]?.text || '#ffffff',
+                    }}>{v.plateforme_nom || '—'}</span>
+                  </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731' }}>
-                    {v.montant_brut?.toLocaleString('fr-FR')} {v.devise === 'USD' ? '$' : '\u20ac'}
+                    {v.montant_brut?.toLocaleString('fr-FR')} {v.devise === 'USD' ? '$' : '€'}
                   </td>
                 </tr>
               )) : (
                 <tr>
                   <td colSpan={4} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
-                    Aucune vente r\u00e9cente
+                    {'Aucune vente récente'}
                   </td>
                 </tr>
               )}

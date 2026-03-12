@@ -5,6 +5,7 @@ import {
   MessageSquare, Clock, TrendingUp, Play, Square,
   AlertTriangle, CheckCircle, RefreshCw, Wifi, WifiOff,
 } from 'lucide-react';
+import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
 function formatUptime(seconds) {
   if (!seconds) return '—';
@@ -278,7 +279,21 @@ export default function TelegramBot() {
                   <td style={{ fontSize: '0.8rem', color: '#64748b', whiteSpace: 'nowrap' }}>
                     {formatDateTime(imp.created_at?.endsWith('Z') ? imp.created_at : (imp.created_at + 'Z'))}
                   </td>
-                  <td style={{ fontWeight: 500 }}>{imp.chatteur_prenom}</td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+                        background: `${CHATTEUR_COLORS[imp.chatteur_couleur]?.bg || '#94a3b8'}20`,
+                        border: `1.5px solid ${CHATTEUR_COLORS[imp.chatteur_couleur]?.bg || '#94a3b8'}50`,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: '0.65rem', fontWeight: 700,
+                        color: CHATTEUR_COLORS[imp.chatteur_couleur]?.bg || '#94a3b8',
+                      }}>
+                        {imp.chatteur_prenom?.[0]?.toUpperCase() || '?'}
+                      </div>
+                      <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>{imp.chatteur_prenom}</span>
+                    </div>
+                  </td>
                   <td>
                     <span className="badge" style={{
                       background: imp.couleur_fond || '#1b2e4b',

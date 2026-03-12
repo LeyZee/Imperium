@@ -32,7 +32,7 @@ router.get('/:id', authMiddleware, asyncHandler((req, res) => {
 }));
 
 router.post('/', authMiddleware, adminOnly, asyncHandler((req, res) => {
-  const { pseudo, part_percent, photo } = req.body;
+  const { pseudo, part_percent, photo, couleur_fond, couleur_texte } = req.body;
   if (!pseudo) throw new ApiError(400, 'Pseudo requis');
 
   const part = part_percent ?? 0.35;
@@ -41,14 +41,14 @@ router.post('/', authMiddleware, adminOnly, asyncHandler((req, res) => {
   }
 
   const result = db.prepare(
-    'INSERT INTO modeles (pseudo, part_percent, photo) VALUES (?, ?, ?)'
-  ).run(pseudo, part, photo ?? null);
+    'INSERT INTO modeles (pseudo, part_percent, photo, couleur_fond, couleur_texte) VALUES (?, ?, ?, ?, ?)'
+  ).run(pseudo, part, photo ?? null, couleur_fond || '#f5b731', couleur_texte || '#ffffff');
 
   res.status(201).json({ id: result.lastInsertRowid, pseudo, part_percent: part });
 }));
 
 router.put('/:id', authMiddleware, adminOnly, asyncHandler((req, res) => {
-  const { pseudo, part_percent, actif, photo } = req.body;
+  const { pseudo, part_percent, actif, photo, couleur_fond, couleur_texte } = req.body;
   const existing = db.prepare('SELECT id FROM modeles WHERE id = ?').get(req.params.id);
   if (!existing) throw new ApiError(404, 'Modèle introuvable');
 
@@ -63,9 +63,11 @@ router.put('/:id', authMiddleware, adminOnly, asyncHandler((req, res) => {
       pseudo = COALESCE(?, pseudo),
       part_percent = COALESCE(?, part_percent),
       actif = COALESCE(?, actif),
-      photo = COALESCE(?, photo)
+      photo = COALESCE(?, photo),
+      couleur_fond = COALESCE(?, couleur_fond),
+      couleur_texte = COALESCE(?, couleur_texte)
     WHERE id = ?
-  `).run(pseudo ?? null, part_percent ?? null, effectiveActif, photo ?? null, req.params.id);
+  `).run(pseudo ?? null, part_percent ?? null, effectiveActif, photo ?? null, couleur_fond ?? null, couleur_texte ?? null, req.params.id);
 
   res.json({ message: 'Modèle mis à jour' });
 }));

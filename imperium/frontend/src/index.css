@@ -832,6 +832,11 @@ tbody td {
   tbody td {
     white-space: nowrap;
   }
+
+  /* Hide columns marked as hide-sm on mobile */
+  .hide-sm {
+    display: none !important;
+  }
 }
 
 @media (max-width: 480px) {

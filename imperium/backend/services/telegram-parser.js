@@ -22,11 +22,45 @@ function findChatteur(name) {
 }
 
 /**
+ * Patterns to extract monetary amounts from shift reports.
+ * Ordered by specificity — first match wins.
+ */
+const MONTANT_PATTERNS = [
+  /montant\s*brut\s*:?\s*([\d.,]+)\s*[$€]?/i,           // "Montant brut: 150€"
+  /montants?\s*g[ée]n[ée]r[ée]s?\s*:?\s*([\d.,]+)\s*[$€]?/i, // "Montants générés: 18€"
+  /montants?\s*:?\s*([\d.,]+)\s*[$€]/i,                   // "Montant: 50€" (with currency symbol)
+];
+
+/**
+ * Detect if a message looks like a shift report.
+ * Broader than just "montant brut" — accepts various report formats.
+ */
+function isShiftReport(message) {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  // Check for keywords that indicate a shift report
+  if (/montant\s*brut/i.test(message)) return true;
+  if (/montants?\s*g[ée]n[ée]r[ée]s?/i.test(message)) return true;
+  if (/fin\s*de\s*shift/i.test(message) && /\d+\s*[$€]/i.test(message)) return true;
+  return false;
+}
+
+/**
  * Parse a Telegram report message
  * Returns { date, montant_brut } or { error }
  */
 function parseReport(message) {
-  const montantMatch = message.match(/montant\s*brut\s*:?\s*([\d.,]+)\s*[$€]?/i);
+  let montantMatch = null;
+  for (const pattern of MONTANT_PATTERNS) {
+    montantMatch = message.match(pattern);
+    if (montantMatch) break;
+  }
+
+  if (!montantMatch) {
+    // Fallback: look for a standalone amount with currency symbol (e.g. "18€", "50$")
+    montantMatch = message.match(/([\d.,]+)\s*[$€]/);
+  }
+
   if (!montantMatch) {
     return { error: 'Impossible de parser le montant du message' };
   }
@@ -85,7 +119,7 @@ function processMessage({ group_id, sender_name, message }) {
   }
 
   // Check if message contains a report
-  if (!message || !(/montant\s*brut/i.test(message))) {
+  if (!isShiftReport(message)) {
     return { skipped: true };
   }
 
@@ -129,6 +163,7 @@ module.exports = {
   GROUP_PLATFORM,
   findChatteur,
   parseReport,
+  isShiftReport,
   isDuplicate,
   insertVente,
   processMessage,

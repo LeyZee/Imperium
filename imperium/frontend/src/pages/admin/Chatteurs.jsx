@@ -17,12 +17,19 @@ const emptyForm = {
   new_password: '', confirm_password: '', photo: null,
 };
 
-const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', va: 'VA' };
+const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', directeur: 'Directeur', va: 'VA' };
 const ROLE_COLORS = {
   chatteur: { bg: '#dbeafe', color: '#1e40af' },
   manager: { bg: '#fef3c7', color: '#b45309' },
+  directeur: { bg: '#ede9fe', color: '#6366f1' },
   va: { bg: '#f3e8ff', color: '#7c3aed' },
 };
+
+const TABS = [
+  { key: 'chatteur', label: 'Chatteurs', roles: ['chatteur', 'va'] },
+  { key: 'manager', label: 'Managers', roles: ['manager'] },
+  { key: 'directeur', label: 'Directeur', roles: ['directeur'] },
+];
 
 const PAYS_ISO = { 'France': 'fr', 'Bénin': 'bj', 'Madagascar': 'mg' };
 
@@ -47,19 +54,23 @@ export default function Chatteurs() {
   const [photoPreview, setPhotoPreview] = useState(null);
   const [search, setSearch] = useState('');
   const [confirmDel, setConfirmDel] = useState(null); // { id, prenom }
+  const [activeTab, setActiveTab] = useState('chatteur');
   const fileRef = useRef(null);
   const toast = useToast();
 
+  const activeRoles = TABS.find(t => t.key === activeTab)?.roles || ['chatteur', 'va'];
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return chatteurs;
+    let list = chatteurs.filter(c => activeRoles.includes(c.role));
+    if (!search.trim()) return list;
     const q = search.toLowerCase();
-    return chatteurs.filter(c =>
+    return list.filter(c =>
       c.prenom?.toLowerCase().includes(q) ||
       c.role?.toLowerCase().includes(q) ||
       c.pays?.toLowerCase().includes(q) ||
       c.email?.toLowerCase().includes(q)
     );
-  }, [chatteurs, search]);
+  }, [chatteurs, search, activeTab]);
 
   useEffect(() => { fetchChatteurs(); }, []);
 
@@ -91,6 +102,8 @@ export default function Chatteurs() {
   function handlePhotoChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) { setError('Format invalide (JPEG, PNG ou WebP uniquement)'); return; }
     if (file.size > 2 * 1024 * 1024) { setError('Photo trop lourde (max 2 Mo)'); return; }
     const reader = new FileReader();
     reader.onload = () => {
@@ -152,10 +165,41 @@ export default function Chatteurs() {
   return (
     <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
-        <h1 className="text-navy" style={{ fontWeight: 700 }}>Chatteurs</h1>
+        <h1 className="text-navy" style={{ fontWeight: 700 }}>Équipe</h1>
         <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
           <UserPlus size={16} /> Ajouter
         </button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '1rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0' }}>
+        {TABS.map(tab => {
+          const count = chatteurs.filter(c => tab.roles.includes(c.role)).length;
+          const isActive = activeTab === tab.key;
+          return (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '0.5rem 1rem', border: 'none', cursor: 'pointer',
+                fontSize: '0.85rem', fontWeight: isActive ? 600 : 400,
+                color: isActive ? '#f5b731' : '#64748b',
+                background: 'transparent',
+                borderBottom: isActive ? '2px solid #f5b731' : '2px solid transparent',
+                marginBottom: '-2px', transition: 'all 200ms',
+                display: 'flex', alignItems: 'center', gap: '0.4rem',
+              }}
+            >
+              {tab.label}
+              <span style={{
+                fontSize: '0.7rem', fontWeight: 600,
+                padding: '0.1rem 0.4rem', borderRadius: '10px',
+                background: isActive ? 'rgba(245,183,49,0.15)' : '#f1f5f9',
+                color: isActive ? '#f5b731' : '#94a3b8',
+              }}>{count}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Search bar */}
@@ -163,7 +207,7 @@ export default function Chatteurs() {
         <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
         <input
           className="input-field"
-          placeholder="Rechercher un chatteur..."
+          placeholder="Rechercher..."
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{ paddingLeft: '2.25rem', fontSize: '0.85rem' }}
@@ -188,7 +232,7 @@ export default function Chatteurs() {
                   <th>Pays</th>
                   <th style={{ textAlign: 'center' }}>Commission</th>
                   <th>Statut</th>
-                  <th>Actions</th>
+                  <th style={{ textAlign: 'center', minWidth: '120px' }}>Actions</th>
                 </tr>
               </thead>
               <tbody className="stagger-rows">
@@ -253,9 +297,11 @@ export default function Chatteurs() {
                         ) : (
                           <>
                             <span className="badge badge-navy">{(c.taux_commission * 100).toFixed(1).replace('.0', '')}%</span>
-                            {c.role === 'manager' && (
+                            {(c.role === 'manager' || c.role === 'directeur') && (
                               <span className="badge" style={{
-                                marginLeft: '0.3rem', background: '#fef3c7', color: '#b45309',
+                                marginLeft: '0.3rem',
+                                background: c.role === 'directeur' ? '#ede9fe' : '#fef3c7',
+                                color: c.role === 'directeur' ? '#6366f1' : '#b45309',
                                 fontSize: '0.65rem',
                               }}>
                                 +{(c.taux_net_equipe * 100).toFixed(0)}% éq.
@@ -277,11 +323,17 @@ export default function Chatteurs() {
                           );
                         })()}
                       </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
-                          <button onClick={() => navigate(`${basePath}/chatteurs/${c.id}`)} className="btn-ghost" title="Voir d\u00e9tail"><Eye size={16} /></button>
-                          <button onClick={() => openEdit(c)} className="btn-ghost"><Edit size={16} /></button>
-                          {c.statut !== 'inactif' && !(isManager && (c.id === user?.chatteur_id || c.role === 'manager')) && <button onClick={() => setConfirmDel({ id: c.id, prenom: c.prenom })} className="btn-ghost" style={{ color: '#ef4444' }}><UserX size={16} /></button>}
+                      <td style={{ textAlign: 'center' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
+                          {c.role !== 'directeur' && (
+                            <button onClick={() => navigate(`${basePath}/chatteurs/${c.id}`)} className="btn-ghost" title="Voir détail" style={{ padding: '0.35rem' }}><Eye size={16} /></button>
+                          )}
+                          <button onClick={() => openEdit(c)} className="btn-ghost" title="Modifier" style={{ padding: '0.35rem' }}><Edit size={16} /></button>
+                          {c.statut !== 'inactif' && !(isManager && (c.id === user?.chatteur_id || c.role === 'manager' || c.role === 'directeur')) ? (
+                            <button onClick={() => setConfirmDel({ id: c.id, prenom: c.prenom })} className="btn-ghost" title="Désactiver" style={{ color: '#ef4444', padding: '0.35rem' }}><UserX size={16} /></button>
+                          ) : (
+                            <span style={{ width: 30, display: 'inline-block' }} />
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -328,7 +380,7 @@ export default function Chatteurs() {
                   }}>
                     <Camera size={12} color="#fff" />
                   </div>
-                  <input ref={fileRef} type="file" accept="image/*"
+                  <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp"
                     style={{ display: 'none' }} onChange={handlePhotoChange} />
                 </div>
               </div>
@@ -343,6 +395,7 @@ export default function Chatteurs() {
                   <select className="input-field" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
                     <option value="chatteur">Chatteur</option>
                     <option value="manager">Manager</option>
+                    <option value="directeur">Directeur</option>
                     <option value="va">VA</option>
                   </select>
                 </div>
@@ -360,7 +413,7 @@ export default function Chatteurs() {
                     {(form.taux_commission * 100).toFixed(1).replace('.0', '')}%
                     <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: '#94a3b8' }}>(non modifiable)</span>
                   </div>
-                  {form.role === 'manager' && (
+                  {(form.role === 'manager' || form.role === 'directeur') && (
                     <div style={{ marginTop: '0.5rem' }}>
                       <label className="label">Commission équipe</label>
                       <div style={{
@@ -392,7 +445,7 @@ export default function Chatteurs() {
                   {/* Commission presets */}
                   <div className="form-group">
                     <label className="label">Commission personnelle</label>
-                    {form.role === 'manager' ? (
+                    {(form.role === 'manager' || form.role === 'directeur') ? (
                       <>
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
                           <button type="button"
@@ -469,8 +522,8 @@ export default function Chatteurs() {
                     )}
                   </div>
 
-                  {/* Manager: team commission rate */}
-                  {form.role === 'manager' && (
+                  {/* Manager/Directeur: team commission rate */}
+                  {(form.role === 'manager' || form.role === 'directeur') && (
                     <div className="form-group">
                       <label className="label">Commission équipe (%)</label>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -519,13 +572,8 @@ export default function Chatteurs() {
                 </div>
               </div>
               <div className="form-group">
-                <label className="label">Couleur (shifts)</label>
-                <div style={{
-                  display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)',
-                  gap: '0.3rem', marginTop: '0.3rem',
-                  padding: '0.5rem', background: '#f8fafc',
-                  borderRadius: '10px', border: '1px solid #e2e8f0',
-                }}>
+                <label className="label">Couleur</label>
+                <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
                   {CHATTEUR_COLORS.map((clr, i) => {
                     const selected = form.couleur === i;
                     return (
@@ -535,19 +583,14 @@ export default function Chatteurs() {
                         onClick={() => setForm({...form, couleur: i})}
                         title={clr.label}
                         style={{
-                          width: '100%', aspectRatio: '1', borderRadius: '8px',
+                          width: 28, height: 28, borderRadius: '50%',
                           background: clr.bg,
-                          border: selected ? `3px solid ${clr.text}` : '2px solid transparent',
+                          border: selected ? '3px solid #1a1f2e' : '2px solid #e2e8f0',
                           cursor: 'pointer',
-                          transition: 'all 150ms ease',
-                          transform: selected ? 'scale(1.1)' : 'scale(1)',
-                          boxShadow: selected ? `0 2px 8px ${clr.border}80` : 'none',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '0.7rem', fontWeight: 700, color: clr.text,
+                          transition: 'all 150ms',
+                          transform: selected ? 'scale(1.15)' : 'scale(1)',
                         }}
-                      >
-                        {selected ? '✓' : ''}
-                      </button>
+                      />
                     );
                   })}
                 </div>
