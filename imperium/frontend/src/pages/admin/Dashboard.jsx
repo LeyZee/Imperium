@@ -611,22 +611,32 @@ export default function AdminDashboard() {
                           {isCurrent && <span style={{ fontSize: '0.6rem', background: '#10b981', color: '#fff', borderRadius: '10px', padding: '0.05rem 0.4rem', fontWeight: 600 }}>EN COURS</span>}
                           {shifts.length === 0 && <span style={{ fontSize: '0.72rem', color: '#cbd5e1', fontStyle: 'italic' }}>Aucun shift</span>}
                         </div>
-                        {shifts.length > 0 && (
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingLeft: isCurrent ? '14px' : '0' }}>
-                            {shifts.map(s => (
-                              <span key={s.id} style={{
-                                display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
-                                fontSize: '0.7rem', padding: '0.15rem 0.5rem', borderRadius: '12px',
-                                background: isCurrent ? 'rgba(16,185,129,0.1)' : '#f8fafc',
-                                border: `1px solid ${isCurrent ? '#bbf7d0' : '#e2e8f0'}`,
-                                color: '#1b2e4b',
-                              }}>
-                                <strong>{s.chatteur_prenom}</strong>
-                                <span style={{ color: '#94a3b8' }}>{s.modele_pseudo}</span>
-                              </span>
-                            ))}
-                          </div>
-                        )}
+                        {shifts.length > 0 && (() => {
+                          // Group by chatteur: { prenom: [modele1, modele2, ...] }
+                          const byChatteur = {};
+                          shifts.forEach(s => {
+                            if (!byChatteur[s.chatteur_prenom]) byChatteur[s.chatteur_prenom] = [];
+                            if (s.modele_pseudo && !byChatteur[s.chatteur_prenom].includes(s.modele_pseudo)) {
+                              byChatteur[s.chatteur_prenom].push(s.modele_pseudo);
+                            }
+                          });
+                          return (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingLeft: isCurrent ? '14px' : '0' }}>
+                              {Object.entries(byChatteur).map(([prenom, models]) => (
+                                <span key={prenom} style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+                                  fontSize: '0.7rem', padding: '0.15rem 0.5rem', borderRadius: '12px',
+                                  background: isCurrent ? 'rgba(16,185,129,0.1)' : '#f8fafc',
+                                  border: `1px solid ${isCurrent ? '#bbf7d0' : '#e2e8f0'}`,
+                                  color: '#1b2e4b',
+                                }}>
+                                  <strong>{prenom}</strong>
+                                  <span style={{ color: '#94a3b8' }}>{models.join(', ')}</span>
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })}

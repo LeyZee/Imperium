@@ -89,6 +89,22 @@ router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) =>
   res.json({ message: 'Shift supprimé' });
 }));
 
+// GET /api/shifts/chatteur-modeles/:chatteurId — distinct models a chatteur has shifts for
+router.get('/chatteur-modeles/:chatteurId', authMiddleware, asyncHandler((req, res) => {
+  const cid = req.params.chatteurId;
+  const modeles = db.prepare(`
+    SELECT DISTINCT m.id, m.pseudo
+    FROM (
+      SELECT modele_id FROM shifts WHERE chatteur_id = ? AND modele_id IS NOT NULL
+      UNION
+      SELECT modele_id FROM shift_templates WHERE chatteur_id = ? AND modele_id IS NOT NULL
+    ) src
+    JOIN modeles m ON m.id = src.modele_id AND m.actif = 1
+    ORDER BY m.pseudo
+  `).all([cid, cid]);
+  res.json(modeles);
+}));
+
 // --- Shift Templates (recurring weekly schedule) ---
 
 // GET /api/shifts/template — get all templates
@@ -352,7 +368,7 @@ router.get('/conflits', authMiddleware, adminOrManager, asyncHandler((req, res) 
     JOIN plateformes p ON p.id = mp.plateforme_id AND p.actif = 1
   `).all();
 
-  // Get all shifts in the date range
+  // Get all real shifts in the date range
   const shifts = db.prepare(`
     SELECT s.*, c.prenom as chatteur_prenom
     FROM shifts s
@@ -363,8 +379,11 @@ router.get('/conflits', authMiddleware, adminOrManager, asyncHandler((req, res) 
   // Build set of covered slots: "date|creneau|modele_id|plateforme_id"
   const covered = {};
   const doublons = [];
+  // Track which dates have any real shifts (to know where templates should fill in)
+  const datesWithShifts = new Set();
 
   for (const s of shifts) {
+    datesWithShifts.add(s.date);
     const key = `${s.date}|${s.creneau}|${s.modele_id}|${s.plateforme_id}`;
     if (covered[key]) {
       doublons.push({
@@ -377,11 +396,36 @@ router.get('/conflits', authMiddleware, adminOrManager, asyncHandler((req, res) 
     }
   }
 
-  // Find uncovered slots (for each date × creneau × modele × plateforme)
-  const nonCouverts = [];
+  // Expand shift_templates for dates that don't have real shifts
+  const templates = db.prepare(`
+    SELECT t.*, c.prenom as chatteur_prenom
+    FROM shift_templates t
+    JOIN chatteurs c ON c.id = t.chatteur_id
+  `).all();
+
+  const padN = n => String(n).padStart(2, '0');
   const startDate = new Date(date_debut);
   const endDate = new Date(date_fin);
-  const padN = n => String(n).padStart(2, '0');
+
+  if (templates.length > 0) {
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = `${d.getFullYear()}-${padN(d.getMonth() + 1)}-${padN(d.getDate())}`;
+      // Only apply templates for dates without real shifts
+      if (datesWithShifts.has(dateStr)) continue;
+      let dow = d.getDay();
+      dow = dow === 0 ? 7 : dow; // 1=Monday..7=Sunday
+      for (const t of templates) {
+        if (t.day_of_week !== dow) continue;
+        const key = `${dateStr}|${t.creneau}|${t.modele_id}|${t.plateforme_id}`;
+        if (!covered[key]) {
+          covered[key] = t.chatteur_prenom;
+        }
+      }
+    }
+  }
+
+  // Find uncovered slots (for each date × creneau × modele × plateforme)
+  const nonCouverts = [];
 
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
     const dateStr = `${d.getFullYear()}-${padN(d.getMonth() + 1)}-${padN(d.getDate())}`;

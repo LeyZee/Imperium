@@ -77,6 +77,7 @@ export default function Ventes() {
   const [modal, setModal] = useState(null);       // null | 'add' | { ...vente }
   const [form, setForm] = useState(EMPTY_FORM);
   const [modalClosing, setModalClosing] = useState(false);
+  const [chatteurModeles, setChatteurModeles] = useState(null); // null = all models, [] = filtered
 
   /* Delete confirmation */
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -163,8 +164,17 @@ export default function Ventes() {
   }
 
   /* ─── Modal open/close ─── */
+  async function fetchChatteurModeles(chatteurId) {
+    if (!chatteurId) { setChatteurModeles(null); return; }
+    try {
+      const { data } = await api.get(`/api/shifts/chatteur-modeles/${chatteurId}`);
+      setChatteurModeles(data);
+    } catch { setChatteurModeles(null); }
+  }
+
   function openAddModal() {
     setForm(EMPTY_FORM);
+    setChatteurModeles(null);
     setError('');
     setModal('add');
   }
@@ -179,6 +189,7 @@ export default function Ventes() {
       notes: vente.notes || '',
     });
     setError('');
+    fetchChatteurModeles(vente.chatteur_id);
     setModal(vente);
   }
 
@@ -566,7 +577,11 @@ export default function Ventes() {
                 {/* Chatteur */}
                 <div>
                   <label className="label">Chatteur *</label>
-                  <select className="input-field" value={form.chatteur_id} onChange={e => setForm({ ...form, chatteur_id: e.target.value })} required>
+                  <select className="input-field" value={form.chatteur_id} onChange={e => {
+                    const val = e.target.value;
+                    setForm({ ...form, chatteur_id: val, modele_id: '', plateforme_id: '' });
+                    fetchChatteurModeles(val);
+                  }} required>
                     <option value="">Sélectionner...</option>
                     {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
                   </select>
@@ -595,8 +610,21 @@ export default function Ventes() {
                     required
                   >
                     <option value="">Sélectionner...</option>
-                    {modeles.map(m => <option key={m.id} value={m.id}>{m.pseudo}</option>)}
+                    {(chatteurModeles && form.chatteur_id
+                      ? modeles.filter(m => chatteurModeles.some(cm => cm.id === m.id))
+                      : modeles
+                    ).map(m => <option key={m.id} value={m.id}>{m.pseudo}</option>)}
                   </select>
+                  {chatteurModeles && form.chatteur_id && chatteurModeles.length === 0 && (
+                    <div style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '0.2rem' }}>
+                      Ce chatteur n'a aucun shift assigné
+                    </div>
+                  )}
+                  {chatteurModeles && form.chatteur_id && chatteurModeles.length > 0 && (
+                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                      Filtré par les modèles assignés ({chatteurModeles.length})
+                    </div>
+                  )}
                 </div>
 
                 {/* Plateforme (filtered by selected model) */}
