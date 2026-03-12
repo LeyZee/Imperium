@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { CalendarCheck, Check, X, Clock, Filter } from 'lucide-react';
+import { CalendarCheck, Check, X } from 'lucide-react';
 import api from '../../utils/api';
 import { useToast } from '../../components/Toast.jsx';
 
 const STATUT_BADGE = {
-  en_attente: { bg: 'rgba(245,183,49,0.12)', color: '#b8860b', label: 'En attente' },
-  approuve: { bg: 'rgba(34,197,94,0.12)', color: '#16a34a', label: 'Approuvé' },
-  refuse: { bg: 'rgba(239,68,68,0.12)', color: '#dc2626', label: 'Refusé' },
+  en_attente: { cls: 'badge badge-warning', label: 'En attente' },
+  approuve: { cls: 'badge badge-success', label: 'Approuvé' },
+  refuse: { cls: 'badge badge-danger', label: 'Refusé' },
 };
 
 export default function Demandes() {
@@ -40,24 +40,14 @@ export default function Demandes() {
   const pendingCount = demandes.filter(d => d.statut === 'en_attente').length;
 
   return (
-    <div style={{ padding: '2rem' }}>
+    <div className="page-enter" style={{ padding: '2rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1a1f2e', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <CalendarCheck size={24} color="#f5b731" /> Demandes
-          {pendingCount > 0 && (
-            <span style={{
-              background: '#f5b731', color: '#1a1f2e', borderRadius: '12px',
-              padding: '0.1rem 0.5rem', fontSize: '0.75rem', fontWeight: 700,
-            }}>
-              {pendingCount}
-            </span>
-          )}
+          {pendingCount > 0 && <span className="badge badge-gold">{pendingCount}</span>}
         </h1>
         <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)}
-          style={{
-            padding: '0.5rem 0.75rem', borderRadius: '8px',
-            border: '1px solid #e2e8f0', fontSize: '0.85rem', background: '#fff',
-          }}>
+          className="input-field" style={{ width: 'auto' }}>
           <option value="">Tous les statuts</option>
           <option value="en_attente">En attente</option>
           <option value="approuve">Approuvé</option>
@@ -65,67 +55,54 @@ export default function Demandes() {
         </select>
       </div>
 
-      <div style={{ background: '#fff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.08)', overflow: 'hidden' }}>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Chargement...</div>
+          <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner" /></div>
         ) : demandes.length === 0 ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Aucune demande</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+          <table>
             <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={thStyle}>Chatteur</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Dates</th>
-                <th style={thStyle}>Motif</th>
-                <th style={thStyle}>Échange avec</th>
-                <th style={thStyle}>Statut</th>
-                <th style={thStyle}>Actions</th>
+              <tr>
+                <th>Chatteur</th>
+                <th>Type</th>
+                <th>Dates</th>
+                <th>Motif</th>
+                <th>Échange avec</th>
+                <th>Statut</th>
+                <th>Actions</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stagger-rows">
               {demandes.map(d => {
                 const badge = STATUT_BADGE[d.statut];
                 return (
-                  <tr key={d.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={tdStyle}>{d.chatteur_prenom}</td>
-                    <td style={tdStyle}>
-                      <span style={{
-                        background: d.type === 'conge' ? 'rgba(59,130,246,0.1)' : 'rgba(168,85,247,0.1)',
-                        color: d.type === 'conge' ? '#2563eb' : '#7c3aed',
-                        padding: '0.15rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem',
-                      }}>
+                  <tr key={d.id}>
+                    <td>{d.chatteur_prenom}</td>
+                    <td>
+                      <span className={d.type === 'conge' ? 'badge badge-navy' : 'badge badge-gold'}>
                         {d.type === 'conge' ? 'Congé' : 'Échange'}
                       </span>
                     </td>
-                    <td style={tdStyle}>{d.date_debut} → {d.date_fin}</td>
-                    <td style={{ ...tdStyle, maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.motif || '-'}</td>
-                    <td style={tdStyle}>{d.echange_avec_prenom || '-'}</td>
-                    <td style={tdStyle}>
-                      <span style={{
-                        background: badge.bg, color: badge.color,
-                        padding: '0.2rem 0.6rem', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 600,
-                      }}>
-                        {badge.label}
-                      </span>
-                    </td>
-                    <td style={tdStyle}>
+                    <td>{d.date_debut} → {d.date_fin}</td>
+                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.motif || '-'}</td>
+                    <td>{d.echange_avec_prenom || '-'}</td>
+                    <td><span className={badge.cls}>{badge.label}</span></td>
+                    <td>
                       {d.statut === 'en_attente' && (
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button onClick={() => handleReview(d.id, 'approuve')}
-                            style={{ ...actionBtnStyle, color: '#16a34a' }} title="Approuver">
+                            className="icon-btn" style={{ color: '#16a34a' }} title="Approuver">
                             <Check size={16} />
                           </button>
                           <button onClick={() => handleReview(d.id, 'refuse')}
-                            style={{ ...actionBtnStyle, color: '#dc2626' }} title="Refuser">
+                            className="icon-btn" style={{ color: '#dc2626' }} title="Refuser">
                             <X size={16} />
                           </button>
                         </div>
                       )}
                       {d.statut !== 'en_attente' && d.reviewed_by_prenom && (
-                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                          Par {d.reviewed_by_prenom}
-                        </span>
+                        <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Par {d.reviewed_by_prenom}</span>
                       )}
                     </td>
                   </tr>
@@ -138,7 +115,3 @@ export default function Demandes() {
     </div>
   );
 }
-
-const thStyle = { padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600, color: '#64748b', fontSize: '0.75rem', textTransform: 'uppercase' };
-const tdStyle = { padding: '0.75rem 1rem', color: '#334155' };
-const actionBtnStyle = { background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem', display: 'flex', alignItems: 'center' };

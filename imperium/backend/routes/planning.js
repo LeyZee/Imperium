@@ -332,6 +332,7 @@ router.get('/en-ligne', authMiddleware, adminOrManager, asyncHandler((req, res) 
 
   res.json({
     en_ligne: enLigne,
+    all_shifts: shifts,
     creneau_actuel: currentCreneau,
     creneau_label: CRENEAUX[currentCreneau]?.label || '',
     total_shifts_today: shifts.length,

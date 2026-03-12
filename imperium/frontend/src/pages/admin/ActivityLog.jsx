@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Activity, Search, Filter } from 'lucide-react';
+import { Activity } from 'lucide-react';
 import api from '../../utils/api';
 
 const ACTION_LABELS = {
@@ -47,70 +47,48 @@ export default function ActivityLog() {
   const totalPages = Math.ceil(total / 50);
 
   return (
-    <div style={{ padding: '2rem' }}>
+    <div className="page-enter" style={{ padding: '2rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1a1f2e', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Activity size={24} color="#f5b731" /> Journal d'activité
         </h1>
-
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
-          <select
-            value={entityType}
-            onChange={e => { setEntityType(e.target.value); setPage(1); }}
-            style={{
-              padding: '0.5rem 0.75rem', borderRadius: '8px',
-              border: '1px solid #e2e8f0', fontSize: '0.85rem',
-              background: '#fff', color: '#1a1f2e',
-            }}
-          >
-            <option value="">Tous les types</option>
-            <option value="malus">Malus</option>
-            <option value="prime">Primes</option>
-            <option value="annonce">Annonces</option>
-            <option value="demande">Demandes</option>
-            <option value="objectif">Objectifs</option>
-            <option value="chatteur">Chatteurs</option>
-            <option value="paie">Paies</option>
-          </select>
-        </div>
+        <select value={entityType} onChange={e => { setEntityType(e.target.value); setPage(1); }}
+          className="input-field" style={{ width: 'auto' }}>
+          <option value="">Tous les types</option>
+          <option value="malus">Malus</option>
+          <option value="prime">Primes</option>
+          <option value="annonce">Annonces</option>
+          <option value="demande">Demandes</option>
+          <option value="objectif">Objectifs</option>
+          <option value="chatteur">Chatteurs</option>
+          <option value="paie">Paies</option>
+        </select>
       </div>
 
-      <div style={{
-        background: '#fff', borderRadius: '12px', border: '1px solid rgba(0,0,0,0.08)',
-        overflow: 'hidden',
-      }}>
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         {loading ? (
-          <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Chargement...</div>
+          <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner" /></div>
         ) : logs.length === 0 ? (
           <div style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>Aucune activité enregistrée</div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+          <table>
             <thead>
-              <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                <th style={thStyle}>Date</th>
-                <th style={thStyle}>Utilisateur</th>
-                <th style={thStyle}>Action</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Détails</th>
+              <tr>
+                <th>Date</th>
+                <th>Utilisateur</th>
+                <th>Action</th>
+                <th>Type</th>
+                <th>Détails</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="stagger-rows">
               {logs.map(log => (
-                <tr key={log.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={tdStyle}>{new Date(log.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                  <td style={tdStyle}>{log.user_prenom || log.user_email || '-'}</td>
-                  <td style={tdStyle}>{ACTION_LABELS[log.action] || log.action}</td>
-                  <td style={tdStyle}>
-                    <span style={{
-                      background: 'rgba(245, 183, 49, 0.1)', color: '#b8860b',
-                      padding: '0.15rem 0.5rem', borderRadius: '12px', fontSize: '0.75rem',
-                    }}>
-                      {log.entity_type || '-'}
-                    </span>
-                  </td>
-                  <td style={{ ...tdStyle, maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {log.details || '-'}
-                  </td>
+                <tr key={log.id}>
+                  <td>{new Date(log.created_at).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                  <td>{log.user_prenom || log.user_email || '-'}</td>
+                  <td>{ACTION_LABELS[log.action] || log.action}</td>
+                  <td><span className="badge badge-gold">{log.entity_type || '-'}</span></td>
+                  <td style={{ maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{log.details || '-'}</td>
                 </tr>
               ))}
             </tbody>
@@ -120,29 +98,15 @@ export default function ActivityLog() {
         {totalPages > 1 && (
           <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', padding: '1rem', borderTop: '1px solid #e2e8f0' }}>
             <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
-              style={paginationBtnStyle}>← Précédent</button>
+              className="btn-secondary">← Précédent</button>
             <span style={{ padding: '0.5rem', fontSize: '0.85rem', color: '#64748b' }}>
               Page {page} / {totalPages}
             </span>
             <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}
-              style={paginationBtnStyle}>Suivant →</button>
+              className="btn-secondary">Suivant →</button>
           </div>
         )}
       </div>
     </div>
   );
 }
-
-const thStyle = {
-  padding: '0.75rem 1rem', textAlign: 'left', fontWeight: 600,
-  color: '#64748b', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em',
-};
-
-const tdStyle = {
-  padding: '0.75rem 1rem', color: '#334155',
-};
-
-const paginationBtnStyle = {
-  padding: '0.4rem 0.8rem', borderRadius: '6px', border: '1px solid #e2e8f0',
-  background: '#fff', cursor: 'pointer', fontSize: '0.8rem', color: '#334155',
-};

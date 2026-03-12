@@ -122,10 +122,10 @@ export default function Shifts() {
       if (data.has_templates !== undefined) {
         setHasTemplates(data.has_templates);
       }
-      // Fetch conflict alerts for the week
-      const d0 = toISO(weekStart);
-      const d6 = toISO(addDays(weekStart, 6));
-      api.get(`/api/shifts/conflits?date_debut=${d0}&date_fin=${d6}`)
+      // Fetch conflict alerts for next 14 days from today
+      const today = new Date();
+      const in13 = addDays(today, 13);
+      api.get(`/api/shifts/conflits?date_debut=${toISO(today)}&date_fin=${toISO(in13)}`)
         .then(r => setConflits(r.data))
         .catch(() => setConflits(null));
     } catch (err) {
@@ -325,7 +325,7 @@ export default function Shifts() {
               <AlertTriangle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '0.1rem' }} />
               <div>
                 <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#991b1b', marginBottom: '0.25rem' }}>
-                  {conflits.non_couverts.length} créneau{conflits.non_couverts.length > 1 ? 'x' : ''} non couvert{conflits.non_couverts.length > 1 ? 's' : ''}
+                  {conflits.non_couverts.length} créneau{conflits.non_couverts.length > 1 ? 'x' : ''} non couvert{conflits.non_couverts.length > 1 ? 's' : ''} (14 prochains jours)
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
                   {conflits.non_couverts.slice(0, 5).map((d, i) => (

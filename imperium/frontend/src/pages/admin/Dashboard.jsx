@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, ClipboardList, CreditCard, ChevronDown, ArrowRight, AlertTriangle, RefreshCw, Gift, Wifi } from 'lucide-react';
+import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, ClipboardList, CreditCard, ChevronDown, ArrowRight, AlertTriangle, RefreshCw, Gift, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/index.js';
 import StatCard from '../../components/StatCard.jsx';
@@ -335,12 +335,9 @@ export default function AdminDashboard() {
       const pd = debut || res.data.periode?.debut;
       const pf = fin || res.data.periode?.fin;
 
-      // Get current week dates for conflict detection
+      // Get next 14 days for conflict detection
       const now = new Date();
-      const dayOfWeek = now.getDay();
-      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
-      const monday = new Date(now); monday.setDate(now.getDate() + mondayOffset);
-      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+      const in13 = new Date(now); in13.setDate(now.getDate() + 13);
       const fmtDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
       const [modeleRes, classementRes, histRes, enLigneRes, prevRes, conflitsRes] = await Promise.all([
@@ -349,7 +346,7 @@ export default function AdminDashboard() {
         api.get('/api/chatteurs/classement/historique-cagnotte?nb_periodes=6').catch(() => ({ data: null })),
         api.get('/api/shifts/en-ligne').catch(() => ({ data: null })),
         api.get(`/api/paies/previsionnel?debut=${pd}&fin=${pf}`).catch(() => ({ data: null })),
-        api.get(`/api/shifts/conflits?date_debut=${fmtDate(monday)}&date_fin=${fmtDate(sunday)}`).catch(() => ({ data: null })),
+        api.get(`/api/shifts/conflits?date_debut=${fmtDate(now)}&date_fin=${fmtDate(in13)}`).catch(() => ({ data: null })),
       ]);
 
       setVentesParModele(Array.isArray(modeleRes.data) ? modeleRes.data : []);
@@ -508,7 +505,7 @@ export default function AdminDashboard() {
         >
           <AlertTriangle size={18} color="#ef4444" style={{ flexShrink: 0 }} />
           <span style={{ fontSize: '0.82rem', color: '#991b1b', flex: 1 }}>
-            <strong>Conflits planning cette semaine :</strong>{' '}
+            <strong>Conflits planning (14 prochains jours) :</strong>{' '}
             {conflits.doublons?.length > 0 && `${conflits.doublons.length} doublon${conflits.doublons.length > 1 ? 's' : ''}`}
             {conflits.doublons?.length > 0 && conflits.non_couverts?.length > 0 && ', '}
             {conflits.non_couverts?.length > 0 && `${conflits.non_couverts.length} cr\u00e9neau${conflits.non_couverts.length > 1 ? 'x' : ''} non couvert${conflits.non_couverts.length > 1 ? 's' : ''}`}
@@ -559,42 +556,84 @@ export default function AdminDashboard() {
       {/* ── En ligne + Prévisionnel ── */}
       {!loading && (enLigne || previsionnel) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-          {/* En ligne maintenant */}
-          {enLigne && (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Wifi size={16} color="#10b981" />
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>
-                  En ligne maintenant
-                  <span style={{ marginLeft: '0.5rem', background: '#10b981', color: '#fff', borderRadius: '12px', padding: '0.1rem 0.5rem', fontSize: '0.7rem' }}>
-                    {enLigne.en_ligne?.length || 0}
-                  </span>
-                </h3>
-              </div>
-              <div style={{ padding: '0.75rem 1.25rem' }}>
-                {enLigne.en_ligne?.length > 0 ? (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {enLigne.en_ligne.map(s => (
-                      <div key={s.id} style={{
-                        display: 'flex', alignItems: 'center', gap: '0.35rem',
-                        background: '#f0fdf4', padding: '0.3rem 0.6rem', borderRadius: '20px',
-                        fontSize: '0.75rem', border: '1px solid #bbf7d0',
-                      }}>
-                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
-                        <span style={{ fontWeight: 600 }}>{s.chatteur_prenom}</span>
-                        <span style={{ color: '#64748b' }}>{s.modele_pseudo}</span>
-                      </div>
-                    ))}
+          {/* Shifts en cours */}
+          {enLigne && (() => {
+            const CRENEAU_LABELS = { 1: '08h-14h', 2: '14h-20h', 3: '20h-02h', 4: '02h-08h' };
+            const currentCreneau = enLigne.creneau_actuel;
+            // Group all today's shifts by creneau (backend returns all shifts for today via en_ligne + we reconstruct)
+            const allShifts = enLigne.all_shifts || [];
+            const grouped = { 1: [], 2: [], 3: [], 4: [] };
+            allShifts.forEach(s => {
+              if (grouped[s.creneau]) grouped[s.creneau].push(s);
+            });
+            // Fallback: if backend doesn't return all_shifts, put en_ligne in current creneau
+            if (allShifts.length === 0 && enLigne.en_ligne?.length > 0) {
+              grouped[currentCreneau] = enLigne.en_ligne;
+            }
+
+            return (
+              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Clock size={16} color="#f5b731" />
+                    <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>
+                      Shifts en cours
+                    </h3>
                   </div>
-                ) : (
-                  <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Aucun chatteur en ligne ({enLigne.creneau_label})</p>
-                )}
-                <p style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.5rem' }}>
-                  Créneau: {enLigne.creneau_label} · {enLigne.total_shifts_today} shifts aujourd'hui
-                </p>
+                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                    {enLigne.total_shifts_today || 0} shifts aujourd'hui
+                  </span>
+                </div>
+                <div style={{ padding: '0.5rem 0' }}>
+                  {[1, 2, 3, 4].map(creneau => {
+                    const isCurrent = creneau === currentCreneau;
+                    const isPast = creneau < currentCreneau;
+                    const shifts = grouped[creneau] || [];
+                    return (
+                      <div
+                        key={creneau}
+                        onClick={() => navigate('/admin/shifts')}
+                        style={{
+                          padding: '0.5rem 1.25rem',
+                          borderLeft: isCurrent ? '3px solid #10b981' : '3px solid transparent',
+                          background: isCurrent ? 'rgba(16,185,129,0.04)' : 'transparent',
+                          opacity: isPast ? 0.5 : 1,
+                          cursor: 'pointer',
+                          transition: 'background 200ms',
+                        }}
+                        className="hover-row"
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: shifts.length > 0 ? '0.35rem' : 0 }}>
+                          {isCurrent && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', animation: 'pulse 2s infinite' }} />}
+                          <span style={{ fontSize: '0.75rem', fontWeight: isCurrent ? 700 : 500, color: isCurrent ? '#10b981' : '#64748b', minWidth: '60px' }}>
+                            {CRENEAU_LABELS[creneau]}
+                          </span>
+                          {isCurrent && <span style={{ fontSize: '0.6rem', background: '#10b981', color: '#fff', borderRadius: '10px', padding: '0.05rem 0.4rem', fontWeight: 600 }}>EN COURS</span>}
+                          {shifts.length === 0 && <span style={{ fontSize: '0.72rem', color: '#cbd5e1', fontStyle: 'italic' }}>Aucun shift</span>}
+                        </div>
+                        {shifts.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', paddingLeft: isCurrent ? '14px' : '0' }}>
+                            {shifts.map(s => (
+                              <span key={s.id} style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+                                fontSize: '0.7rem', padding: '0.15rem 0.5rem', borderRadius: '12px',
+                                background: isCurrent ? 'rgba(16,185,129,0.1)' : '#f8fafc',
+                                border: `1px solid ${isCurrent ? '#bbf7d0' : '#e2e8f0'}`,
+                                color: '#1b2e4b',
+                              }}>
+                                <strong>{s.chatteur_prenom}</strong>
+                                <span style={{ color: '#94a3b8' }}>{s.modele_pseudo}</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* Prévisionnel */}
           {previsionnel && previsionnel.elapsed_days > 0 && (

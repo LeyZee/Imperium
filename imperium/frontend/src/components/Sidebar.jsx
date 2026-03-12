@@ -18,7 +18,6 @@ import {
   Megaphone,
   CalendarCheck,
   Target,
-  Trophy,
 } from 'lucide-react';
 
 const adminItems = [
@@ -32,7 +31,6 @@ const adminItems = [
   { to: '/admin/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
   { to: '/admin/malus', icon: MinusCircle, label: 'Malus & Primes' },
   { to: '/admin/objectifs', icon: Target, label: 'Objectifs' },
-  { to: '/admin/classement', icon: Trophy, label: 'Classement' },
   { to: '/admin/annonces', icon: Megaphone, label: 'Annonces' },
   { to: '/admin/demandes', icon: CalendarCheck, label: 'Demandes' },
   { to: '/admin/journal', icon: Activity, label: 'Journal' },
@@ -48,7 +46,6 @@ const managerItems = [
   { to: '/manager/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
   { to: '/manager/malus', icon: MinusCircle, label: 'Malus & Primes' },
   { to: '/manager/objectifs', icon: Target, label: 'Objectifs' },
-  { to: '/manager/classement', icon: Trophy, label: 'Classement' },
   { to: '/manager/annonces', icon: Megaphone, label: 'Annonces' },
   { to: '/manager/demandes', icon: CalendarCheck, label: 'Demandes' },
   { to: '/manager/journal', icon: Activity, label: 'Journal' },
@@ -60,7 +57,6 @@ const chatteurItems = [
   { to: '/chatteur/planning-general', icon: Calendar, label: 'Planning Général' },
   { to: '/chatteur/factures', icon: FileText, label: 'Mes Factures' },
   { to: '/chatteur/performance', icon: TrendingUp, label: 'Ma Performance' },
-  { to: '/chatteur/classement', icon: Trophy, label: 'Classement' },
   { to: '/chatteur/demandes', icon: CalendarCheck, label: 'Mes Demandes' },
 ];
 

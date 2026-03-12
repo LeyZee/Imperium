@@ -134,11 +134,13 @@ process.on('uncaughtException', (err) => {
 const server = app.listen(PORT, () => {
   logger.info(`Imperium API démarrée sur http://localhost:${PORT}`);
 
-  // Start Telegram polling bot
-  const telegramPoller = require('./services/telegram-poller');
-  telegramPoller.start().catch(err => {
-    logger.error('Telegram bot failed to start', { error: err.message });
-  });
+  // Start Telegram polling bot after a short delay (let HTTP server be ready first)
+  setTimeout(() => {
+    const telegramPoller = require('./services/telegram-poller');
+    telegramPoller.start().catch(err => {
+      logger.error('Telegram bot failed to start', { error: err.message });
+    });
+  }, 2000);
 });
 
 // Graceful shutdown

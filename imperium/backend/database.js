@@ -1,8 +1,20 @@
 const { Database } = require('node-sqlite3-wasm');
 const bcrypt = require('bcryptjs');
 const path = require('path');
+const fs = require('fs');
 
 const DB_PATH = path.join(__dirname, 'imperium.db');
+const dbStartTime = Date.now();
+
+// Clean up stale .lock directory from node-sqlite3-wasm crashes
+const lockDir = DB_PATH + '.lock';
+try {
+  if (fs.existsSync(lockDir)) {
+    fs.rmdirSync(lockDir);
+    console.log('Cleaned up stale DB lock directory');
+  }
+} catch (e) { /* ignore */ }
+
 const db = new Database(DB_PATH);
 
 // Enable foreign keys
@@ -551,6 +563,31 @@ runMigration('link_users_to_chatteurs', () => {
     db.prepare('UPDATE users SET prenom = ? WHERE id = ? AND prenom IS NULL').run([row.prenom, row.user_id]);
   }
 });
+
+runMigration('assign_chatteur_emails', () => {
+  const users = db.prepare(`
+    SELECT u.id, u.username, u.email, c.prenom
+    FROM users u
+    LEFT JOIN chatteurs c ON c.user_id = u.id
+    WHERE u.role IN ('chatteur', 'manager')
+    AND (u.email IS NULL OR u.email NOT LIKE '%@%')
+  `).all([]);
+
+  for (const u of users) {
+    const base = (u.username || u.prenom || '').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+    if (!base) continue;
+    const email = base + '@impera-agency.com';
+    db.prepare('UPDATE users SET email = ?, username = ? WHERE id = ?')
+      .run([email, email, u.id]);
+    db.prepare('UPDATE chatteurs SET email = ? WHERE user_id = ?')
+      .run([email, u.id]);
+  }
+  if (users.length > 0) console.log(`Assigned emails to ${users.length} users`);
+});
+
+console.log(`DB initialized in ${Date.now() - dbStartTime}ms`);
 
 // Compatibility wrapper: makes node-sqlite3-wasm behave like better-sqlite3
 // (accepts spread args instead of requiring an array)
