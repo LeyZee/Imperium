@@ -13,6 +13,12 @@ import {
   Menu,
   X,
   MessageSquare,
+  Activity,
+  MinusCircle,
+  Megaphone,
+  CalendarCheck,
+  Target,
+  Trophy,
 } from 'lucide-react';
 
 const adminItems = [
@@ -24,7 +30,28 @@ const adminItems = [
   { to: '/admin/ventes', icon: TrendingUp, label: 'Ventes' },
   { to: '/admin/paies', icon: CreditCard, label: 'Paies' },
   { to: '/admin/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
+  { to: '/admin/malus', icon: MinusCircle, label: 'Malus & Primes' },
+  { to: '/admin/objectifs', icon: Target, label: 'Objectifs' },
+  { to: '/admin/classement', icon: Trophy, label: 'Classement' },
+  { to: '/admin/annonces', icon: Megaphone, label: 'Annonces' },
+  { to: '/admin/demandes', icon: CalendarCheck, label: 'Demandes' },
+  { to: '/admin/journal', icon: Activity, label: 'Journal' },
   { to: '/admin/telegram', icon: MessageSquare, label: 'Telegram Bot' },
+];
+
+const managerItems = [
+  { to: '/manager/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/manager/chatteurs', icon: Users, label: 'Chatteurs' },
+  { to: '/manager/shifts', icon: Calendar, label: 'Shifts' },
+  { to: '/manager/ventes', icon: TrendingUp, label: 'Ventes' },
+  { to: '/manager/paies', icon: CreditCard, label: 'Paies' },
+  { to: '/manager/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
+  { to: '/manager/malus', icon: MinusCircle, label: 'Malus & Primes' },
+  { to: '/manager/objectifs', icon: Target, label: 'Objectifs' },
+  { to: '/manager/classement', icon: Trophy, label: 'Classement' },
+  { to: '/manager/annonces', icon: Megaphone, label: 'Annonces' },
+  { to: '/manager/demandes', icon: CalendarCheck, label: 'Demandes' },
+  { to: '/manager/journal', icon: Activity, label: 'Journal' },
 ];
 
 const chatteurItems = [
@@ -33,11 +60,13 @@ const chatteurItems = [
   { to: '/chatteur/planning-general', icon: Calendar, label: 'Planning Général' },
   { to: '/chatteur/factures', icon: FileText, label: 'Mes Factures' },
   { to: '/chatteur/performance', icon: TrendingUp, label: 'Ma Performance' },
+  { to: '/chatteur/classement', icon: Trophy, label: 'Classement' },
+  { to: '/chatteur/demandes', icon: CalendarCheck, label: 'Mes Demandes' },
 ];
 
 export default function Sidebar({ role, mobileOpen, onMobileClose }) {
   const [collapsed, setCollapsed] = useState(false);
-  const items = role === 'admin' ? adminItems : chatteurItems;
+  const items = role === 'admin' ? adminItems : role === 'manager' ? managerItems : chatteurItems;
   const location = useLocation();
 
   // Close mobile sidebar on navigation
@@ -63,6 +92,8 @@ export default function Sidebar({ role, mobileOpen, onMobileClose }) {
 
       <aside
         className="sidebar"
+        role="navigation"
+        aria-label="Menu principal"
         style={{
           '--sidebar-w': collapsed ? '64px' : '256px',
           width: 'var(--sidebar-w)',
@@ -119,8 +150,8 @@ export default function Sidebar({ role, mobileOpen, onMobileClose }) {
               alignItems: 'center',
               transition: 'color 200ms',
             }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = '#f5b731')}
-            onMouseLeave={(e) => (e.currentTarget.style.color = 'rgba(255,255,255,0.5)')}
+            className="sidebar-collapse-btn hover-gold-btn"
+            aria-label={collapsed ? 'Ouvrir le menu' : 'Réduire le menu'}
           >
             {collapsed ? <Menu size={18} /> : <X size={18} />}
           </button>
@@ -150,20 +181,7 @@ export default function Sidebar({ role, mobileOpen, onMobileClose }) {
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
               })}
-              onMouseEnter={(e) => {
-                const link = e.currentTarget;
-                if (!link.classList.contains('active')) {
-                  link.style.color = '#f5b731';
-                  link.style.background = 'rgba(245, 183, 49, 0.06)';
-                }
-              }}
-              onMouseLeave={(e) => {
-                const link = e.currentTarget;
-                if (!link.classList.contains('active')) {
-                  link.style.color = 'rgba(255,255,255,0.6)';
-                  link.style.background = 'transparent';
-                }
-              }}
+              className="hover-sidebar-link"
             >
               {({ isActive }) => (
                 <>

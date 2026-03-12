@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, ClipboardList, CreditCard, ChevronDown, ArrowRight, AlertTriangle, RefreshCw, Gift } from 'lucide-react';
+import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, ClipboardList, CreditCard, ChevronDown, ArrowRight, AlertTriangle, RefreshCw, Gift, Wifi } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/index.js';
 import StatCard from '../../components/StatCard.jsx';
@@ -39,7 +39,7 @@ function TrendBadge({ value }) {
 }
 
 /* ── Feature A: Donut Chart Modèles ── */
-const DONUT_COLORS = ['#f5b731', '#f0c75e', '#e6a914', '#d4951a', '#c8850f', '#b87408', '#a86600', '#946000'];
+const DONUT_COLORS = ['#f5b731', '#1b2e4b', '#6366f1', '#10b981', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4'];
 
 function CustomDonutTooltip({ active, payload }) {
   if (!active || !payload?.length) return null;
@@ -101,7 +101,7 @@ function DonutChartModeles({ data }) {
             <div key={d.pseudo + i} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
               <div style={{ width: 10, height: 10, borderRadius: 3, background: DONUT_COLORS[i % DONUT_COLORS.length], flexShrink: 0 }} />
               <span style={{ fontSize: '0.8rem', fontWeight: 500, color: '#1b2e4b', flex: 1 }}>{d.pseudo}</span>
-              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f5b731' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1b2e4b' }}>
                 {d.total_brut.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"}
               </span>
               <span style={{ fontSize: '0.68rem', color: '#94a3b8', minWidth: 36, textAlign: 'right' }}>{d.percentage.toFixed(0)}%</span>
@@ -316,6 +316,9 @@ export default function AdminDashboard() {
   const [ventesParModele, setVentesParModele] = useState([]);
   const [cagnotteData, setCagnotteData] = useState(null);
   const [cagnotteHistorique, setCagnotteHistorique] = useState(null);
+  const [enLigne, setEnLigne] = useState(null);
+  const [previsionnel, setPrevisionnel] = useState(null);
+  const [conflits, setConflits] = useState(null);
   const navigate = useNavigate();
 
   async function fetchDashboard(debut, fin) {
@@ -332,17 +335,31 @@ export default function AdminDashboard() {
       const pd = debut || res.data.periode?.debut;
       const pf = fin || res.data.periode?.fin;
 
-      const [modeleRes, classementRes, histRes] = await Promise.all([
+      // Get current week dates for conflict detection
+      const now = new Date();
+      const dayOfWeek = now.getDay();
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      const monday = new Date(now); monday.setDate(now.getDate() + mondayOffset);
+      const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+      const fmtDate = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+      const [modeleRes, classementRes, histRes, enLigneRes, prevRes, conflitsRes] = await Promise.all([
         api.get(`/api/ventes/par-modele?periode_debut=${pd}&periode_fin=${pf}`).catch(() => ({ data: [] })),
         api.get(`/api/chatteurs/classement?periode_debut=${pd}&periode_fin=${pf}`).catch(() => ({ data: null })),
         api.get('/api/chatteurs/classement/historique-cagnotte?nb_periodes=6').catch(() => ({ data: null })),
+        api.get('/api/shifts/en-ligne').catch(() => ({ data: null })),
+        api.get(`/api/paies/previsionnel?debut=${pd}&fin=${pf}`).catch(() => ({ data: null })),
+        api.get(`/api/shifts/conflits?date_debut=${fmtDate(monday)}&date_fin=${fmtDate(sunday)}`).catch(() => ({ data: null })),
       ]);
 
       setVentesParModele(Array.isArray(modeleRes.data) ? modeleRes.data : []);
       setCagnotteData(classementRes.data || null);
       setCagnotteHistorique(histRes.data || null);
+      setEnLigne(enLigneRes.data || null);
+      setPrevisionnel(prevRes.data || null);
+      setConflits(conflitsRes.data || null);
     } catch {
-      setError('Impossible de charger les donn\u00e9es du dashboard.');
+      setError('Impossible de charger les données du dashboard.');
     } finally {
       setLoading(false);
     }
@@ -445,8 +462,7 @@ export default function AdminDashboard() {
                       fontWeight: isActive ? 600 : 400, fontSize: '0.8rem',
                       transition: 'background 150ms',
                     }}
-                    onMouseEnter={e => { if (!isActive) e.target.style.background = 'rgba(0,0,0,0.03)'; }}
-                    onMouseLeave={e => { if (!isActive) e.target.style.background = 'transparent'; }}
+                    className={!isActive ? 'hover-row' : ''}
                     >
                       {formatPeriodLabel(p.debut, p.fin)}
                       {i === 0 && <span style={{ fontSize: '0.65rem', color: '#94a3b8', marginLeft: '0.5rem' }}>(en cours)</span>}
@@ -476,6 +492,28 @@ export default function AdminDashboard() {
             {data.totalBrutEur === 0 && data.nbChatteurs === 0 ? ' ' : ''}
             {data.nbChatteurs === 0 ? 'Aucun chatteur actif.' : ''}
           </span>
+        </div>
+      )}
+
+      {/* Conflict alert banner */}
+      {!loading && conflits && (conflits.doublons?.length > 0 || conflits.non_couverts?.length > 0) && (
+        <div
+          onClick={() => navigate('/admin/shifts')}
+          style={{
+            display: 'flex', alignItems: 'center', gap: '0.75rem',
+            padding: '0.75rem 1rem', borderRadius: '10px', marginBottom: '1rem',
+            background: '#fef2f2', border: '1px solid #fecaca', cursor: 'pointer',
+            transition: 'background 200ms',
+          }}
+        >
+          <AlertTriangle size={18} color="#ef4444" style={{ flexShrink: 0 }} />
+          <span style={{ fontSize: '0.82rem', color: '#991b1b', flex: 1 }}>
+            <strong>Conflits planning cette semaine :</strong>{' '}
+            {conflits.doublons?.length > 0 && `${conflits.doublons.length} doublon${conflits.doublons.length > 1 ? 's' : ''}`}
+            {conflits.doublons?.length > 0 && conflits.non_couverts?.length > 0 && ', '}
+            {conflits.non_couverts?.length > 0 && `${conflits.non_couverts.length} cr\u00e9neau${conflits.non_couverts.length > 1 ? 'x' : ''} non couvert${conflits.non_couverts.length > 1 ? 's' : ''}`}
+          </span>
+          <ArrowRight size={14} color="#991b1b" />
         </div>
       )}
 
@@ -517,6 +555,79 @@ export default function AdminDashboard() {
           </button>
         ))}
       </div>
+
+      {/* ── En ligne + Prévisionnel ── */}
+      {!loading && (enLigne || previsionnel) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+          {/* En ligne maintenant */}
+          {enLigne && (
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Wifi size={16} color="#10b981" />
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>
+                  En ligne maintenant
+                  <span style={{ marginLeft: '0.5rem', background: '#10b981', color: '#fff', borderRadius: '12px', padding: '0.1rem 0.5rem', fontSize: '0.7rem' }}>
+                    {enLigne.en_ligne?.length || 0}
+                  </span>
+                </h3>
+              </div>
+              <div style={{ padding: '0.75rem 1.25rem' }}>
+                {enLigne.en_ligne?.length > 0 ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {enLigne.en_ligne.map(s => (
+                      <div key={s.id} style={{
+                        display: 'flex', alignItems: 'center', gap: '0.35rem',
+                        background: '#f0fdf4', padding: '0.3rem 0.6rem', borderRadius: '20px',
+                        fontSize: '0.75rem', border: '1px solid #bbf7d0',
+                      }}>
+                        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981' }} />
+                        <span style={{ fontWeight: 600 }}>{s.chatteur_prenom}</span>
+                        <span style={{ color: '#64748b' }}>{s.modele_pseudo}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Aucun chatteur en ligne ({enLigne.creneau_label})</p>
+                )}
+                <p style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.5rem' }}>
+                  Créneau: {enLigne.creneau_label} · {enLigne.total_shifts_today} shifts aujourd'hui
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* Prévisionnel */}
+          {previsionnel && previsionnel.elapsed_days > 0 && (
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Prévisionnel période</h3>
+              </div>
+              <div style={{ padding: '0.75rem 1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#64748b' }}>Progression</span>
+                  <span style={{ fontWeight: 600 }}>{previsionnel.elapsed_days}/{previsionnel.total_days} jours</span>
+                </div>
+                <div style={{ background: '#f1f5f9', borderRadius: '999px', height: '8px', marginBottom: '0.75rem' }}>
+                  <div style={{
+                    width: `${Math.round((previsionnel.elapsed_days / previsionnel.total_days) * 100)}%`,
+                    height: '100%', background: '#f5b731', borderRadius: '999px',
+                  }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div>
+                    <p style={{ color: '#64748b', fontSize: '0.7rem' }}>Actuel Net HT</p>
+                    <p style={{ fontWeight: 700, color: '#1a1f2e' }}>{previsionnel.actuals?.total_net_ht?.toFixed(0) || 0} €</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#64748b', fontSize: '0.7rem' }}>Prévu Net HT</p>
+                    <p style={{ fontWeight: 700, color: '#f5b731' }}>{previsionnel.forecasts?.total_net_ht?.toFixed(0) || 0} €</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── NEW: Donut Modèles + Cagnotte Prime ── */}
       {!loading && (

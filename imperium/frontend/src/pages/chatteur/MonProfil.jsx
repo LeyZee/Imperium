@@ -15,8 +15,7 @@ function InfoRow({ icon: Icon, label, value, extra }) {
       transition: 'all 200ms ease',
       cursor: 'default',
     }}
-    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(245,183,49,0.08)'; e.currentTarget.style.transform = 'translateX(4px)'; }}
-    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(245,183,49,0.04)'; e.currentTarget.style.transform = 'translateX(0)'; }}
+    className="hover-row"
     >
       <div style={{
         width: 36, height: 36, borderRadius: '10px',
@@ -47,10 +46,12 @@ export default function MonProfil() {
       setLoading(false);
       return;
     }
-    api.get(`/api/chatteurs/${user.chatteur_id}`)
+    const controller = new AbortController();
+    api.get(`/api/chatteurs/${user.chatteur_id}`, { signal: controller.signal })
       .then(({ data }) => setChatteur(data))
-      .catch(() => setError('Impossible de charger ton profil.'))
-      .finally(() => setLoading(false));
+      .catch((err) => { if (!controller.signal.aborted) setError('Impossible de charger ton profil.'); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [user?.chatteur_id]);
 
   if (loading) return <div className="page-enter" style={{ maxWidth: 500, margin: '0 auto' }}><CardSkeleton count={2} /></div>;

@@ -303,21 +303,22 @@ export default function MaPerformance() {
       setLoading(false);
       return;
     }
+    const controller = new AbortController();
     setLoading(true);
     Promise.all([
-      api.get(`/api/chatteurs/${user.chatteur_id}/historique`),
-      api.get(`/api/chatteurs/classement?periode_debut=${periode.debut}&periode_fin=${periode.fin}`),
-      api.get('/api/chatteurs/classement/historique-cagnotte?nb_periodes=6'),
+      api.get(`/api/chatteurs/${user.chatteur_id}/historique`, { signal: controller.signal }),
+      api.get(`/api/chatteurs/classement?periode_debut=${periode.debut}&periode_fin=${periode.fin}`, { signal: controller.signal }),
+      api.get('/api/chatteurs/classement/historique-cagnotte?nb_periodes=6', { signal: controller.signal }),
     ]).then(([h, c, ch]) => {
       setHistorique(h.data || []);
       setClassementData(c.data || {});
       setCagnotteHistorique(ch.data || {});
     })
-    .catch((err) => {
-      console.error('MaPerformance fetch error:', err);
-      setError('Impossible de charger les donn\u00e9es.');
+    .catch(() => {
+      if (!controller.signal.aborted) setError('Impossible de charger les donn\u00e9es.');
     })
-    .finally(() => setLoading(false));
+    .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [user?.chatteur_id, periode.debut, periode.fin]);
 
   // Memoize all derived computations

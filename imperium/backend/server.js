@@ -3,14 +3,40 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 const rateLimit = require('express-rate-limit');
+const logger = require('./utils/logger');
+
+// Validate required environment variables
+const REQUIRED_ENV = ['JWT_SECRET'];
+const missing = REQUIRED_ENV.filter(key => !process.env[key]);
+if (missing.length > 0) {
+  logger.error(`Missing required environment variables: ${missing.join(', ')}`);
+  logger.error('Create a backend/.env file with the required variables');
+  process.exit(1);
+}
+
 require('./database'); // init DB on startup
 
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Security headers
-app.use(helmet());
+// Security headers with CSP
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https://flagcdn.com"],
+      connectSrc: ["'self'"],
+    }
+  }
+}));
+
+// Cookie parser
+app.use(cookieParser());
 
 // CORS (configurable via env for production)
 app.use(cors({
@@ -42,6 +68,30 @@ const loginLimiter = rateLimit({
 });
 app.use('/api/auth/login', loginLimiter);
 
+// CSRF protection — require X-Requested-With header on state-changing requests
+app.use('/api', (req, res, next) => {
+  if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+    // Allow Telegram webhook (uses its own auth) and health endpoint
+    if (req.path.startsWith('/telegram/report')) return next();
+    const xrw = req.headers['x-requested-with'];
+    if (!xrw || xrw !== 'XMLHttpRequest') {
+      return res.status(403).json({ error: 'Requête non autorisée (en-tête CSRF manquant)' });
+    }
+  }
+  next();
+});
+
+// Health check
+app.get('/health', (req, res) => {
+  try {
+    const db = require('./database');
+    db.prepare('SELECT 1').get();
+    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+  } catch {
+    res.status(503).json({ status: 'error', error: 'Database unavailable' });
+  }
+});
+
 // Routes
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/chatteurs', require('./routes/chatteurs'));
@@ -55,33 +105,52 @@ app.use('/api/taux', require('./routes/taux'));
 app.use('/api/malus', require('./routes/malus'));
 app.use('/api/telegram', require('./routes/telegram'));
 app.use('/api/facturation-modeles', require('./routes/facturation-modeles'));
+app.use('/api/activity-logs', require('./routes/activity-logs'));
+app.use('/api/primes', require('./routes/primes'));
+app.use('/api/notes', require('./routes/notes'));
+app.use('/api/annonces', require('./routes/annonces'));
+app.use('/api/demandes', require('./routes/demandes'));
+app.use('/api/objectifs', require('./routes/objectifs'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 // Global error handler (catches errors passed via next(err))
 app.use((err, req, res, next) => {
-  console.error('Route error:', err.message);
-  if (!res.headersSent) {
-    res.status(500).json({ error: 'Erreur interne du serveur' });
-  }
+  const status = err.statusCode || 500;
+  const response = {
+    error: err.message || 'Erreur interne du serveur',
+    ...(err.details && { details: err.details }),
+    ...(process.env.NODE_ENV === 'development' && status >= 500 && { stack: err.stack }),
+  };
+  if (status >= 500) logger.error('Server error', { message: err.message, stack: err.stack?.split('\n')[1]?.trim() });
+  if (!res.headersSent) res.status(status).json(response);
 });
 
 // Safety net for uncaught sync exceptions in route handlers (node-sqlite3-wasm)
 process.on('uncaughtException', (err) => {
-  console.error('Uncaught exception:', err.message);
+  logger.error('Uncaught exception', { message: err.message });
   // Don't exit — keep serving. Log for monitoring.
 });
 
-app.listen(PORT, () => {
-  console.log(`🏛️  Imperium API démarrée sur http://localhost:${PORT}`);
+const server = app.listen(PORT, () => {
+  logger.info(`Imperium API démarrée sur http://localhost:${PORT}`);
 
   // Start Telegram polling bot
   const telegramPoller = require('./services/telegram-poller');
   telegramPoller.start().catch(err => {
-    console.error('❌ Telegram bot failed to start:', err.message);
+    logger.error('Telegram bot failed to start', { error: err.message });
   });
 });
 
 // Graceful shutdown
-process.on('SIGINT', () => {
+function gracefulShutdown(signal) {
+  logger.info(`${signal} received. Shutting down gracefully...`);
   try { require('./services/telegram-poller').stop(); } catch {}
-  process.exit(0);
-});
+  server.close(() => {
+    logger.info('Server closed.');
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 5000);
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));

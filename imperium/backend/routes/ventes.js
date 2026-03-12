@@ -1,13 +1,17 @@
 const express = require('express');
 const db = require('../database');
-const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/auth');
 const { recalculatePaies } = require('../services/paie-calculator');
+const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const logger = require('../utils/logger');
+const { parsePagination, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
 
-// GET /api/ventes?periode_debut=&periode_fin=&chatteur_id=
-router.get('/', authMiddleware, (req, res) => {
-  const { periode_debut, periode_fin, chatteur_id } = req.query;
+// GET /api/ventes?periode_debut=&periode_fin=&chatteur_id=&page=&limit=
+router.get('/', authMiddleware, asyncHandler((req, res) => {
+  const { periode_debut, periode_fin, chatteur_id, page } = req.query;
 
   let where = [];
   const params = [];
@@ -32,6 +36,26 @@ router.get('/', authMiddleware, (req, res) => {
 
   const whereStr = where.length ? 'WHERE ' + where.join(' AND ') : '';
 
+  // Support optional pagination (backward compatible — returns array if no page param)
+  if (page) {
+    const pg = parsePagination(req.query);
+    const total = db.prepare(`SELECT COUNT(*) as c FROM ventes v ${whereStr}`).get(...params);
+    const ventes = db.prepare(`
+      SELECT v.*,
+        c.prenom as chatteur_prenom,
+        m.pseudo as modele_pseudo,
+        p.nom as plateforme_nom, p.tva_rate, p.commission_rate, p.devise
+      FROM ventes v
+      JOIN chatteurs c ON c.id = v.chatteur_id
+      LEFT JOIN modeles m ON m.id = v.modele_id
+      JOIN plateformes p ON p.id = v.plateforme_id
+      ${whereStr}
+      ORDER BY v.periode_debut DESC, v.created_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, pg.limit, pg.offset);
+    return res.json(paginatedResponse(ventes, total.c, pg.page, pg.limit));
+  }
+
   const ventes = db.prepare(`
     SELECT v.*,
       c.prenom as chatteur_prenom,
@@ -46,10 +70,10 @@ router.get('/', authMiddleware, (req, res) => {
   `).all(...params);
 
   res.json(ventes);
-});
+}));
 
 // GET /api/ventes/par-modele — sales grouped by model (global for admin, filtered for chatteur)
-router.get('/par-modele', authMiddleware, (req, res) => {
+router.get('/par-modele', authMiddleware, asyncHandler((req, res) => {
   const { periode_debut, periode_fin } = req.query;
 
   const where = [];
@@ -74,35 +98,30 @@ router.get('/par-modele', authMiddleware, (req, res) => {
     params.push(periode_fin);
   }
 
-  try {
-    const whereStr = where.length ? 'WHERE ' + where.join(' AND ') : '';
-    const result = db.prepare(`
-      SELECT m.pseudo, SUM(v.montant_brut) as total_brut, COUNT(*) as nb_ventes
-      FROM ventes v
-      LEFT JOIN modeles m ON m.id = v.modele_id
-      ${whereStr}
-      GROUP BY v.modele_id
-      ORDER BY total_brut DESC
-    `).all(...params);
+  const whereStr = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  const result = db.prepare(`
+    SELECT m.pseudo, SUM(v.montant_brut) as total_brut, COUNT(*) as nb_ventes
+    FROM ventes v
+    LEFT JOIN modeles m ON m.id = v.modele_id
+    ${whereStr}
+    GROUP BY v.modele_id
+    ORDER BY total_brut DESC
+  `).all(...params);
 
-    res.json(result);
-  } catch (err) {
-    console.error('GET /api/ventes/par-modele error:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
+  res.json(result);
+}));
 
 // POST /api/ventes
-router.post('/', authMiddleware, adminOnly, (req, res) => {
+router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes } = req.body;
 
   if (!chatteur_id || !plateforme_id || montant_brut === undefined || !periode_debut || !periode_fin) {
-    return res.status(400).json({ error: 'Champs requis manquants' });
+    throw new ApiError(400, 'Champs requis manquants');
   }
 
   const montant = parseFloat(montant_brut);
   if (isNaN(montant) || montant <= 0) {
-    return res.status(400).json({ error: 'Montant brut invalide (doit être un nombre positif)' });
+    throw new ApiError(400, 'Montant brut invalide (doit être un nombre positif)');
   }
 
   // Validate modele+plateforme association
@@ -113,9 +132,7 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
     if (!link) {
       const modele = db.prepare('SELECT pseudo FROM modeles WHERE id = ?').get(modele_id);
       const pf = db.prepare('SELECT nom FROM plateformes WHERE id = ?').get(plateforme_id);
-      return res.status(400).json({
-        error: `${modele?.pseudo || 'Ce modèle'} n'est pas sur ${pf?.nom || 'cette plateforme'}`
-      });
+      throw new ApiError(400, `${modele?.pseudo || 'Ce modèle'} n'est pas sur ${pf?.nom || 'cette plateforme'}`);
     }
   }
 
@@ -126,17 +143,17 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
 
   // Auto-recalculate paies for this period
   try { recalculatePaies(periode_debut, periode_fin); } catch (err) {
-    console.error('Erreur auto-recalcul paies:', err.message);
+    logger.error('Erreur auto-recalcul paies', { error: err.message });
   }
 
   res.status(201).json({ id: result.lastInsertRowid });
-});
+}));
 
 // PUT /api/ventes/:id
-router.put('/:id', authMiddleware, adminOnly, (req, res) => {
+router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { montant_brut, modele_id, plateforme_id, periode_debut, periode_fin, notes } = req.body;
   const existing = db.prepare('SELECT id FROM ventes WHERE id = ?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: 'Vente introuvable' });
+  if (!existing) throw new ApiError(404, 'Vente introuvable');
 
   // Get current period before update for recalcul
   const current = db.prepare('SELECT * FROM ventes WHERE id = ?').get(req.params.id);
@@ -177,14 +194,14 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
       recalculatePaies(current.periode_debut, current.periode_fin);
     }
   } catch (err) {
-    console.error('Erreur auto-recalcul paies:', err.message);
+    logger.error('Erreur auto-recalcul paies', { error: err.message });
   }
 
   res.json({ message: 'Vente mise à jour' });
-});
+}));
 
 // DELETE /api/ventes/:id
-router.delete('/:id', authMiddleware, adminOnly, (req, res) => {
+router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   // Get period before deleting
   const vente = db.prepare('SELECT periode_debut, periode_fin FROM ventes WHERE id = ?').get(req.params.id);
   db.prepare('DELETE FROM ventes WHERE id = ?').run(req.params.id);
@@ -192,15 +209,15 @@ router.delete('/:id', authMiddleware, adminOnly, (req, res) => {
   // Auto-recalculate paies for the period
   if (vente) {
     try { recalculatePaies(vente.periode_debut, vente.periode_fin); } catch (err) {
-      console.error('Erreur auto-recalcul paies:', err.message);
+      logger.error('Erreur auto-recalcul paies', { error: err.message });
     }
   }
 
   res.json({ message: 'Vente supprimée' });
-});
+}));
 
 // GET /api/ventes/summary — dashboard summary
-router.get('/summary', authMiddleware, (req, res) => {
+router.get('/summary', authMiddleware, asyncHandler((req, res) => {
   const { periode_debut, periode_fin } = req.query;
 
   let dateFilter = '';
@@ -257,6 +274,37 @@ router.get('/summary', authMiddleware, (req, res) => {
     by_plateforme: byPlateforme,
     top_chatteur: topChatteur
   });
-});
+}));
+
+// GET /api/ventes/export-csv?periode_debut=&periode_fin=
+router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { periode_debut, periode_fin } = req.query;
+  if (!periode_debut || !periode_fin) throw new ApiError(400, 'periode_debut et periode_fin requis');
+
+  const { sendCSV } = require('../utils/csvExport');
+
+  const ventes = db.prepare(`
+    SELECT v.periode_debut, v.periode_fin,
+      c.prenom as chatteur, m.pseudo as modele, p.nom as plateforme,
+      p.devise, v.montant_brut, v.notes
+    FROM ventes v
+    JOIN chatteurs c ON c.id = v.chatteur_id
+    LEFT JOIN modeles m ON m.id = v.modele_id
+    JOIN plateformes p ON p.id = v.plateforme_id
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ?
+    ORDER BY v.periode_debut, c.prenom
+  `).all(periode_debut, periode_fin);
+
+  sendCSV(res, `ventes_${periode_debut}_${periode_fin}.csv`, ventes, [
+    { key: 'periode_debut', label: 'Début période' },
+    { key: 'periode_fin', label: 'Fin période' },
+    { key: 'chatteur', label: 'Chatteur' },
+    { key: 'modele', label: 'Modèle' },
+    { key: 'plateforme', label: 'Plateforme' },
+    { key: 'devise', label: 'Devise' },
+    { key: 'montant_brut', label: 'Montant brut' },
+    { key: 'notes', label: 'Notes' },
+  ]);
+}));
 
 module.exports = router;

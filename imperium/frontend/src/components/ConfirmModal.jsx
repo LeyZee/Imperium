@@ -1,6 +1,10 @@
 import { AlertTriangle } from 'lucide-react';
+import React from 'react';
+import useFocusTrap from '../hooks/useFocusTrap';
 
-export default function ConfirmModal({ open, title, message, onConfirm, onCancel, danger = true }) {
+function ConfirmModal({ open, title, message, onConfirm, onCancel, danger = true }) {
+  const trapRef = useFocusTrap(open);
+
   if (!open) return null;
 
   return (
@@ -10,7 +14,7 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
         backdropFilter: 'blur(4px)', zIndex: 1000,
         animation: 'overlayFade 200ms ease',
       }} />
-      <div style={{
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title" style={{
         position: 'fixed', top: '50%', left: '50%',
         transform: 'translate(-50%, -50%)',
         background: '#fff', borderRadius: '16px', padding: '2rem',
@@ -27,7 +31,7 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
         }}>
           <AlertTriangle size={24} color={danger ? '#dc2626' : '#2563eb'} />
         </div>
-        <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1a1f2e', margin: '0 0 0.5rem' }}>
+        <h3 id="confirm-modal-title" style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1a1f2e', margin: '0 0 0.5rem' }}>
           {title || 'Confirmer'}
         </h3>
         <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '0 0 1.5rem', lineHeight: 1.5 }}>
@@ -37,12 +41,15 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
           <button
             onClick={onCancel}
             className="btn-ghost"
+            aria-label="Annuler"
+            data-close
             style={{ padding: '0.5rem 1.25rem', fontSize: '0.85rem' }}
           >
             Annuler
           </button>
           <button
             onClick={onConfirm}
+            className="hover-lift"
             style={{
               padding: '0.5rem 1.25rem', fontSize: '0.85rem', fontWeight: 600,
               border: 'none', borderRadius: '8px', cursor: 'pointer',
@@ -50,10 +57,6 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
               background: danger ? '#dc2626' : '#1b2e4b',
               transition: 'all 200ms ease',
             }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.03)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = 'none'; }}
-            onMouseDown={e => e.currentTarget.style.transform = 'scale(0.96)'}
-            onMouseUp={e => e.currentTarget.style.transform = 'scale(1.03)'}
           >
             Confirmer
           </button>
@@ -62,3 +65,5 @@ export default function ConfirmModal({ open, title, message, onConfirm, onCancel
     </>
   );
 }
+
+export default React.memo(ConfirmModal);

@@ -1,14 +1,16 @@
 const express = require('express');
 const db = require('../database');
-const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/auth');
+const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/ApiError');
 
 const router = express.Router();
 
 // GET /api/facturation-modeles?debut=YYYY-MM-DD&fin=YYYY-MM-DD
-router.get('/', authMiddleware, adminOnly, (req, res) => {
+router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { debut, fin } = req.query;
   if (!debut || !fin) {
-    return res.status(400).json({ error: 'debut et fin requis' });
+    throw new ApiError(400, 'debut et fin requis');
   }
 
   // Taux de change USD→EUR
@@ -122,6 +124,6 @@ router.get('/', authMiddleware, adminOnly, (req, res) => {
       nb_modeles: modeles.length,
     },
   });
-});
+}));
 
 module.exports = router;

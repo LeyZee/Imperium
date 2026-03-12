@@ -1,38 +1,36 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../database');
-const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/auth');
+const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
 // GET /api/chatteurs
-router.get('/', authMiddleware, (req, res) => {
-  try {
-    const chatteurs = db.prepare(`
-      SELECT c.*, u.username, u.email as user_email
-      FROM chatteurs c
-      LEFT JOIN users u ON u.id = c.user_id
-      WHERE c.statut != 'inactif'
-      ORDER BY c.prenom
-    `).all();
+router.get('/', authMiddleware, asyncHandler((req, res) => {
+  const chatteurs = db.prepare(`
+    SELECT c.*, u.username, u.email as user_email
+    FROM chatteurs c
+    LEFT JOIN users u ON u.id = c.user_id
+    WHERE c.actif = 1
+    ORDER BY c.prenom
+  `).all();
 
-    // Strip sensitive fields for non-admin users
-    if (req.user.role !== 'admin') {
-      return res.json(chatteurs.map(({ iban, adresse, code_postal, ville, taux_commission, taux_net_equipe, taux_horaire, user_id, user_email, ...safe }) => safe));
-    }
-    res.json(chatteurs);
-  } catch (err) {
-    console.error('GET /api/chatteurs error:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
+  // Strip sensitive fields for non-admin/manager users
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    return res.json(chatteurs.map(({ iban, adresse, code_postal, ville, taux_commission, taux_net_equipe, taux_horaire, user_id, user_email, ...safe }) => safe));
   }
-});
+  res.json(chatteurs);
+}));
 
 // GET /api/chatteurs/classement — leaderboard with prime data (accessible by chatteurs)
-router.get('/classement', authMiddleware, (req, res) => {
+router.get('/classement', authMiddleware, asyncHandler((req, res) => {
   const { periode_debut, periode_fin } = req.query;
 
   if (!periode_debut || !periode_fin) {
-    return res.status(400).json({ error: 'periode_debut et periode_fin requis' });
+    throw new ApiError(400, 'periode_debut et periode_fin requis');
   }
 
   // Get ranking from paies (net_ht-based, excludes managers and VAs)
@@ -68,44 +66,39 @@ router.get('/classement', authMiddleware, (req, res) => {
     total_net_ht_equipe,
     prime_rates,
   });
-});
+}));
 
 // GET /api/chatteurs/classement/historique-cagnotte — historical prime pool data for gamification
-router.get('/classement/historique-cagnotte', authMiddleware, (req, res) => {
-  try {
-    const nb = Math.min(Math.max(parseInt(req.query.nb_periodes, 10) || 6, 1), 52);
+router.get('/classement/historique-cagnotte', authMiddleware, asyncHandler((req, res) => {
+  const nb = Math.min(Math.max(parseInt(req.query.nb_periodes, 10) || 6, 1), 52);
 
-    const periodes = db.prepare(`
-      SELECT periode_debut, periode_fin,
-        COALESCE(SUM(net_ht_eur), 0) as total_net_ht_equipe,
-        COALESCE(SUM(prime), 0) as total_prime_pool
-      FROM paies
-      WHERE plateforme_id IS NOT NULL
-      GROUP BY periode_debut, periode_fin
-      ORDER BY periode_debut DESC
-      LIMIT ?
-    `).all(nb);
+  const periodes = db.prepare(`
+    SELECT periode_debut, periode_fin,
+      COALESCE(SUM(net_ht_eur), 0) as total_net_ht_equipe,
+      COALESCE(SUM(prime), 0) as total_prime_pool
+    FROM paies
+    WHERE plateforme_id IS NOT NULL
+    GROUP BY periode_debut, periode_fin
+    ORDER BY periode_debut DESC
+    LIMIT ?
+  `).all(nb);
 
-    const moyenne_prime_pool = periodes.length > 0
-      ? periodes.reduce((s, p) => s + p.total_prime_pool, 0) / periodes.length
-      : 0;
+  const moyenne_prime_pool = periodes.length > 0
+    ? periodes.reduce((s, p) => s + p.total_prime_pool, 0) / periodes.length
+    : 0;
 
-    res.json({
-      periodes: periodes.reverse(), // chronological order
-      moyenne_prime_pool,
-    });
-  } catch (err) {
-    console.error('historique-cagnotte error:', err);
-    res.status(500).json({ error: 'Erreur serveur' });
-  }
-});
+  res.json({
+    periodes: periodes.reverse(), // chronological order
+    moyenne_prime_pool,
+  });
+}));
 
 // GET /api/chatteurs/:id
-router.get('/:id', authMiddleware, (req, res) => {
+router.get('/:id', authMiddleware, asyncHandler((req, res) => {
   const { id } = req.params;
   // Chatteur can only see themselves
   if (req.user.role === 'chatteur' && req.user.chatteur_id !== parseInt(id, 10)) {
-    return res.status(403).json({ error: 'Accès refusé' });
+    throw new ApiError(403, 'Accès refusé');
   }
 
   const chatteur = db.prepare(`
@@ -115,32 +108,37 @@ router.get('/:id', authMiddleware, (req, res) => {
     WHERE c.id = ?
   `).get(id);
 
-  if (!chatteur) return res.status(404).json({ error: 'Chatteur introuvable' });
+  if (!chatteur) throw new ApiError(404, 'Chatteur introuvable');
   res.json(chatteur);
-});
+}));
 
 // POST /api/chatteurs
-router.post('/', authMiddleware, adminOnly, (req, res) => {
+router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const {
     prenom, email, adresse, code_postal, ville, pays,
     iban, taux_commission, is_nouveau, role, taux_net_equipe, taux_horaire, couleur,
     password, photo // optional: create associated user account (email = login ID)
   } = req.body;
 
-  if (!prenom) return res.status(400).json({ error: 'Prénom requis' });
+  if (!prenom) throw new ApiError(400, 'Prénom requis');
+
+  // Manager can only create chatteurs, not other managers
+  if (req.user.role === 'manager' && role === 'manager') {
+    throw new ApiError(403, 'Un manager ne peut pas créer d\'autres managers');
+  }
 
   let user_id = null;
 
   // Create user account if email + password provided
   if (email && password) {
-    if (password.length < 8) return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères' });
+    if (password.length < 8) throw new ApiError(400, 'Le mot de passe doit contenir au moins 8 caractères');
     const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (exists) return res.status(409).json({ error: 'Cet email est déjà utilisé' });
+    if (exists) throw new ApiError(409, 'Cet email est déjà utilisé');
 
     const hash = bcrypt.hashSync(password, 10);
     const userResult = db.prepare(
       'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
-    ).run(email, hash, 'chatteur', email);
+    ).run(email, hash, role === 'manager' ? 'manager' : 'chatteur', email);
     user_id = userResult.lastInsertRowid;
   }
 
@@ -155,21 +153,33 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
   );
 
   res.status(201).json({ id: result.lastInsertRowid, prenom });
-});
+}));
 
 // PUT /api/chatteurs/:id
-router.put('/:id', authMiddleware, adminOnly, (req, res) => {
+router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;
+
+  // Manager restrictions
+  if (req.user.role === 'manager') {
+    // Cannot change own commission rates
+    if (req.user.chatteur_id === parseInt(id, 10)) {
+      delete req.body.taux_commission;
+      delete req.body.taux_net_equipe;
+    }
+    // Cannot change roles or deactivate chatteurs
+    delete req.body.role;
+    delete req.body.actif;
+  }
+
   const {
     prenom, email, adresse, code_postal, ville, pays,
-    iban, taux_commission, is_nouveau, actif, role, taux_net_equipe, taux_horaire, couleur, statut, photo
+    iban, taux_commission, is_nouveau, actif, role, taux_net_equipe, taux_horaire, couleur, photo
   } = req.body;
 
   const existing = db.prepare('SELECT id FROM chatteurs WHERE id = ?').get(id);
-  if (!existing) return res.status(404).json({ error: 'Chatteur introuvable' });
+  if (!existing) throw new ApiError(404, 'Chatteur introuvable');
 
-  // Sync actif from statut
-  const effectiveActif = statut ? (statut === 'actif' ? 1 : 0) : (actif !== undefined ? (actif ? 1 : 0) : null);
+  const effectiveActif = actif !== undefined ? (actif ? 1 : 0) : null;
 
   db.prepare(`
     UPDATE chatteurs SET
@@ -187,7 +197,6 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
       taux_net_equipe = COALESCE(?, taux_net_equipe),
       taux_horaire = COALESCE(?, taux_horaire),
       couleur = COALESCE(?, couleur),
-      statut = COALESCE(?, statut),
       photo = COALESCE(?, photo)
     WHERE id = ?
   `).run(
@@ -197,37 +206,39 @@ router.put('/:id', authMiddleware, adminOnly, (req, res) => {
     is_nouveau !== undefined ? (is_nouveau ? 1 : 0) : null,
     effectiveActif,
     role ?? null, taux_net_equipe ?? null, taux_horaire ?? null,
-    couleur ?? null, statut ?? null, photo ?? null,
+    couleur ?? null, photo ?? null,
     id
   );
 
   res.json({ message: 'Chatteur mis à jour' });
-});
+}));
 
 // PUT /api/chatteurs/:id/account — admin manages chatteur's user account (email-based)
-router.put('/:id/account', authMiddleware, adminOnly, (req, res) => {
+router.put('/:id/account', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const { id } = req.params;
   const { email, new_password, confirm_password } = req.body;
 
   if (!email || !email.trim()) {
-    return res.status(400).json({ error: 'Email requis' });
+    throw new ApiError(400, 'Email requis');
   }
   if (new_password && new_password !== confirm_password) {
-    return res.status(400).json({ error: 'Les mots de passe ne correspondent pas' });
+    throw new ApiError(400, 'Les mots de passe ne correspondent pas');
   }
   if (new_password && new_password.length < 8) {
-    return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères' });
+    throw new ApiError(400, 'Le mot de passe doit contenir au moins 8 caractères');
   }
 
-  const chatteur = db.prepare('SELECT id, user_id, email FROM chatteurs WHERE id = ?').get(id);
-  if (!chatteur) return res.status(404).json({ error: 'Chatteur introuvable' });
+  const chatteur = db.prepare('SELECT id, user_id, email, role FROM chatteurs WHERE id = ?').get(id);
+  if (!chatteur) throw new ApiError(404, 'Chatteur introuvable');
 
   if (chatteur.user_id) {
     // Update existing user account
     const conflict = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email.trim(), chatteur.user_id);
-    if (conflict) return res.status(409).json({ error: 'Cet email est déjà utilisé' });
+    if (conflict) throw new ApiError(409, 'Cet email est déjà utilisé');
 
-    db.prepare('UPDATE users SET email = ?, username = ? WHERE id = ?').run(email.trim(), email.trim(), chatteur.user_id);
+    // Sync role from chatteur profile to user account
+    const userRole = chatteur.role === 'manager' ? 'manager' : 'chatteur';
+    db.prepare('UPDATE users SET email = ?, username = ?, role = ? WHERE id = ?').run(email.trim(), email.trim(), userRole, chatteur.user_id);
     // Also sync email on the chatteur profile
     db.prepare('UPDATE chatteurs SET email = ? WHERE id = ?').run(email.trim(), id);
 
@@ -240,35 +251,50 @@ router.put('/:id/account', authMiddleware, adminOnly, (req, res) => {
   } else {
     // Create new user account for this chatteur
     if (!new_password) {
-      return res.status(400).json({ error: 'Mot de passe requis pour créer un compte' });
+      throw new ApiError(400, 'Mot de passe requis pour créer un compte');
     }
 
     const conflict = db.prepare('SELECT id FROM users WHERE email = ?').get(email.trim());
-    if (conflict) return res.status(409).json({ error: 'Cet email est déjà utilisé' });
+    if (conflict) throw new ApiError(409, 'Cet email est déjà utilisé');
 
     const hash = bcrypt.hashSync(new_password, 10);
+    const chatteurData = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
+    const userRole = chatteurData?.role === 'manager' ? 'manager' : 'chatteur';
     const userResult = db.prepare(
       'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
-    ).run(email.trim(), hash, 'chatteur', email.trim());
+    ).run(email.trim(), hash, userRole, email.trim());
 
     db.prepare('UPDATE chatteurs SET user_id = ?, email = ? WHERE id = ?').run(userResult.lastInsertRowid, email.trim(), id);
 
     res.status(201).json({ message: 'Compte utilisateur créé et lié', user_id: userResult.lastInsertRowid });
   }
-});
+}));
 
 // DELETE /api/chatteurs/:id (soft delete)
-router.delete('/:id', authMiddleware, adminOnly, (req, res) => {
+router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;
-  db.prepare("UPDATE chatteurs SET actif = 0, statut = 'inactif' WHERE id = ?").run(id);
+
+  if (req.user.role === 'manager') {
+    // Manager cannot deactivate themselves
+    if (req.user.chatteur_id === parseInt(id)) {
+      throw new ApiError(403, 'Vous ne pouvez pas vous désactiver vous-même');
+    }
+    // Manager cannot deactivate other managers (admin only)
+    const target = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
+    if (target && target.role === 'manager') {
+      throw new ApiError(403, 'Seul un admin peut désactiver un manager');
+    }
+  }
+
+  db.prepare("UPDATE chatteurs SET actif = 0 WHERE id = ?").run(id);
   res.json({ message: 'Chatteur désactivé' });
-});
+}));
 
 // GET /api/chatteurs/:id/kpis
-router.get('/:id/kpis', authMiddleware, (req, res) => {
+router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
   const { id } = req.params;
   if (req.user.role === 'chatteur' && req.user.chatteur_id !== parseInt(id, 10)) {
-    return res.status(403).json({ error: 'Accès refusé' });
+    throw new ApiError(403, 'Accès refusé');
   }
 
   const { periode_debut, periode_fin } = req.query;
@@ -318,15 +344,76 @@ router.get('/:id/kpis', authMiddleware, (req, res) => {
     ${periode_debut && periode_fin ? 'AND periode >= ? AND periode <= ?' : ''}
   `).get(id, ...(periode_debut && periode_fin ? [periode_debut, periode_fin] : []));
 
-  res.json({ ventes, paies, rang, nb_chatteurs: classement.length, malus_total: malusTotal.total });
-});
+  // Primes manuelles
+  let primesTotal = 0;
+  try {
+    const primesRow = db.prepare(`
+      SELECT COALESCE(SUM(montant), 0) as total FROM primes_manuelles
+      WHERE chatteur_id = ? AND actif = 1
+      ${periode_debut && periode_fin ? 'AND periode_debut >= ? AND periode_fin <= ?' : ''}
+    `).get(id, ...(periode_debut && periode_fin ? [periode_debut, periode_fin] : []));
+    primesTotal = primesRow?.total || 0;
+  } catch { /* table may not exist yet */ }
+
+  // Moyenne par période (from paies)
+  const moyenneRow = db.prepare(`
+    SELECT AVG(sub.total) as moyenne FROM (
+      SELECT SUM(total_chatteur) as total
+      FROM paies WHERE chatteur_id = ? AND plateforme_id IS NOT NULL
+      GROUP BY periode_debut, periode_fin
+    ) sub
+  `).get(id);
+  const moyenne_par_periode = moyenneRow?.moyenne || 0;
+
+  // Meilleure période
+  const bestRow = db.prepare(`
+    SELECT periode_debut, periode_fin, SUM(total_chatteur) as total
+    FROM paies WHERE chatteur_id = ? AND plateforme_id IS NOT NULL
+    GROUP BY periode_debut, periode_fin
+    ORDER BY total DESC LIMIT 1
+  `).get(id);
+
+  // Nombre de shifts
+  const shiftsRow = db.prepare(`
+    SELECT COUNT(*) as nb FROM shifts WHERE chatteur_id = ?
+    ${periode_debut && periode_fin ? 'AND date >= ? AND date <= ?' : ''}
+  `).get(id, ...(periode_debut && periode_fin ? [periode_debut, periode_fin] : []));
+
+  // Ventes par plateforme (for PieChart)
+  const ventesParPlateforme = db.prepare(`
+    SELECT p.nom as plateforme, SUM(v.montant_brut) as total_brut, COUNT(*) as nb_ventes
+    FROM ventes v
+    JOIN plateformes p ON p.id = v.plateforme_id
+    WHERE v.chatteur_id = ? ${dateFilter}
+    GROUP BY v.plateforme_id
+    ORDER BY total_brut DESC
+  `).all(...params);
+
+  // Commission totale
+  const commissionRow = db.prepare(`
+    SELECT COALESCE(SUM(commission_chatteur), 0) as total
+    FROM paies WHERE chatteur_id = ?
+    ${periode_debut && periode_fin ? 'AND periode_debut >= ? AND periode_fin <= ?' : ''}
+  `).get(id, ...(periode_debut && periode_fin ? [periode_debut, periode_fin] : []));
+
+  res.json({
+    ventes, paies, rang, nb_chatteurs: classement.length,
+    malus_total: malusTotal.total,
+    primes_total: primesTotal,
+    moyenne_par_periode,
+    meilleure_periode: bestRow || null,
+    nb_shifts: shiftsRow?.nb || 0,
+    ventes_par_plateforme: ventesParPlateforme,
+    commission_totale: commissionRow?.total || 0,
+  });
+}));
 
 // GET /api/chatteurs/:id/historique — performance history over last N periods
-router.get('/:id/historique', authMiddleware, (req, res) => {
+router.get('/:id/historique', authMiddleware, asyncHandler((req, res) => {
   const { id } = req.params;
   // Chatteur can only see their own
   if (req.user.role === 'chatteur' && req.user.chatteur_id !== parseInt(id, 10)) {
-    return res.status(403).json({ error: 'Accès refusé' });
+    throw new ApiError(403, 'Accès refusé');
   }
 
   // Get all paies for this chatteur, grouped by period
@@ -348,6 +435,6 @@ router.get('/:id/historique', authMiddleware, (req, res) => {
   `).all(id);
 
   res.json(historique.reverse()); // chronological order
-});
+}));
 
 module.exports = router;

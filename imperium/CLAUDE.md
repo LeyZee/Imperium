@@ -3,7 +3,7 @@
 ## Stack technique
 - **Frontend**: React + Vite (port 5173), custom CSS inline (PAS de Tailwind), design marble white / navy blue / gold
 - **Backend**: Node.js + Express (port 3001), SQLite via `node-sqlite3-wasm` (PAS better-sqlite3)
-- **Auth**: JWT (admin / admin123), bcryptjs
+- **Auth**: JWT httpOnly cookies + bcryptjs (CSRF via X-Requested-With header)
 - **DB wrapper**: `compatDb` dans `database.js` normalise les args pour node-sqlite3-wasm — utiliser `?? null` pour undefined
 - **Preview servers**: configurés dans `.claude/launch.json` → `imperium-backend` (3001), `imperium-frontend` (5173)
 - **Repo GitHub**: https://github.com/LeyZee/Imperium.git (branche `master`)
@@ -49,6 +49,26 @@
 - `PAYS_ISO` map: `{ 'France': 'fr', 'Benin': 'bj', 'Madagascar': 'mg' }`
 - Creneaux: 1=08h-14h, 2=14h-20h, 3=20h-02h, 4=02h-08h
 - `seed.js`: script pour peupler la DB depuis le Google Sheets (139 shifts, 11 chatteurs, 5 modeles)
+
+## Utils backend
+- `backend/utils/asyncHandler.js` — Wrapper pour catch sync/async des routes
+- `backend/utils/ApiError.js` — Classe erreur avec statusCode
+- `backend/utils/validation.js` — validatePassword, validateEmail, validatePhoto, validateDate
+- `backend/utils/constants.js` — TIMEZONES, CRENEAUX, ROLES, PAIE_STATUTS
+- `backend/utils/pagination.js` — parsePagination, paginatedResponse
+- `backend/utils/logger.js` — Structured JSON logger (error/warn/info/debug)
+
+## Utils frontend
+- `frontend/src/utils/validators.js` — validateEmail, validateRequired, validatePassword, validatePositiveNumber
+- `frontend/src/utils/apiCache.js` — Cache Map avec TTL 30s
+
+## Tests
+- **Backend**: Jest — `cd backend && npm test`
+- **Frontend**: Vitest + @testing-library/react — `cd frontend && npm test`
+
+## Migrations
+- Table `migrations` dans database.js — `runMigration(name, fn)` track les migrations appliquées
+- Utiliser `actif` (INTEGER) comme source de vérité pour soft delete (pas `statut`)
 
 ## Google Sheets de reference
 https://docs.google.com/spreadsheets/d/1FNR6Yj_k1jt5-2a2zUSYrjZJb6VzQBGSarVrdbU4NTA/edit

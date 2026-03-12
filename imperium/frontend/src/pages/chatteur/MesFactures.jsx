@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
-import { Download, FileText, AlertTriangle, ChevronDown, ChevronUp, Calculator } from 'lucide-react';
+import { Download, FileText, AlertTriangle, ChevronDown, ChevronUp, Calculator, BookOpen } from 'lucide-react';
 
 const STATUT_STYLES = {
   'calculé': { background: 'rgba(245,183,49,0.12)', color: '#b8860b' },
@@ -122,19 +122,22 @@ export default function MesFactures() {
   const [expandedId, setExpandedId] = useState(null);
   const [malusList, setMalusList] = useState([]);
   const [downloadingPeriod, setDownloadingPeriod] = useState(null);
+  const [showExplain, setShowExplain] = useState(false);
 
   useEffect(() => {
+    const controller = new AbortController();
     Promise.all([
-      api.get('/api/paies/mes-paies'),
-      api.get('/api/malus').catch(() => ({ data: [] })),
+      api.get('/api/paies/mes-paies', { signal: controller.signal }),
+      api.get('/api/malus', { signal: controller.signal }).catch(() => ({ data: [] })),
     ]).then(([paiesRes, malusRes]) => {
       const data = paiesRes.data;
       setPaies(Array.isArray(data.paies) ? data.paies : Array.isArray(data) ? data : []);
       setTauxCommission(data.taux_commission || 0);
       setMalusList(Array.isArray(malusRes.data) ? malusRes.data : []);
     })
-    .catch(() => setError('Impossible de charger les factures.'))
-    .finally(() => setLoading(false));
+    .catch((err) => { if (!controller.signal.aborted) setError('Impossible de charger les factures.'); })
+    .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [user]);
 
   async function handleDownloadPdf(paie) {
@@ -190,6 +193,64 @@ export default function MesFactures() {
           <span style={{ fontSize: '0.78rem', color: '#4338ca' }}>
             Clique sur une ligne pour voir le détail complet du calcul.
           </span>
+        </div>
+      )}
+
+      {/* Pedagogical explanation */}
+      {!loading && (
+        <div style={{
+          borderRadius: '10px', marginBottom: '1rem', overflow: 'hidden',
+          border: '1px solid rgba(99,102,241,0.15)', background: '#fff',
+        }}>
+          <button
+            onClick={() => setShowExplain(!showExplain)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem',
+              padding: '0.7rem 1rem', background: 'none', border: 'none',
+              cursor: 'pointer', textAlign: 'left',
+            }}
+          >
+            <BookOpen size={16} color="#6366f1" style={{ flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: '0.82rem', fontWeight: 600, color: '#1b2e4b' }}>
+              Comment est calculée ta paie ?
+            </span>
+            {showExplain ? <ChevronUp size={16} color="#94a3b8" /> : <ChevronDown size={16} color="#94a3b8" />}
+          </button>
+          {showExplain && (
+            <div style={{
+              padding: '0 1rem 1rem', borderTop: '1px solid rgba(99,102,241,0.1)',
+              display: 'flex', flexDirection: 'column', gap: '0.6rem', paddingTop: '0.75rem',
+            }}>
+              {[
+                { num: '1', title: 'Ventes brutes', desc: 'Le total que tu g\u00e9n\u00e8res sur la plateforme (OnlyFans en USD, Reveal en EUR).' },
+                { num: '2', title: 'Conversion devise', desc: 'Si la plateforme est en USD, on convertit en euros au taux du jour.' },
+                { num: '3', title: 'D\u00e9ductions', desc: 'On retire la TVA (20%) puis la commission plateforme (20%) pour obtenir le \u00ab\u00a0Net HT\u00a0\u00bb.' },
+                { num: '4', title: 'Ta commission', desc: `Tu re\u00e7ois ${pct(tauxCommission)}% du Net HT. C\u2019est ton taux de commission personnel.` },
+                { num: '5', title: 'Primes & Malus', desc: 'Les 3 meilleurs vendeurs de la p\u00e9riode re\u00e7oivent un bonus (0.50%, 0.25%, 0.12% du net total \u00e9quipe). Les malus \u00e9ventuels sont soustraits.' },
+              ].map(step => (
+                <div key={step.num} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
+                  <span style={{
+                    width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                    background: 'rgba(99,102,241,0.1)', color: '#6366f1',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '0.7rem', fontWeight: 700, marginTop: '0.1rem',
+                  }}>{step.num}</span>
+                  <div>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1b2e4b' }}>{step.title}</span>
+                    <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0.1rem 0 0', lineHeight: 1.4 }}>{step.desc}</p>
+                  </div>
+                </div>
+              ))}
+              <div style={{
+                marginTop: '0.25rem', padding: '0.5rem 0.75rem', borderRadius: '8px',
+                background: 'rgba(245,183,49,0.08)', border: '1px solid rgba(245,183,49,0.15)',
+              }}>
+                <p style={{ fontSize: '0.75rem', fontWeight: 600, color: '#1b2e4b', margin: 0 }}>
+                  Formule finale : Total = (Net HT {"\u00d7"} ton taux) + Prime {"\u2212"} Malus
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -282,8 +343,7 @@ export default function MesFactures() {
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                             transition: 'all 200ms ease',
                           }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; e.currentTarget.style.transform = 'scale(1.1)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.transform = 'scale(1)'; }}
+                          className="hover-icon"
                         >
                           {downloadingPeriod === `${p.periode_debut}-${p.periode_fin}`
                             ? <span className="spinner" style={{ width: 14, height: 14 }} />

@@ -13,6 +13,7 @@ export default function Modeles() {
   const [plateformes, setPlateformes] = useState([]);
   const [modelPlatforms, setModelPlatforms] = useState({});
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
@@ -25,6 +26,7 @@ export default function Modeles() {
 
   async function fetchAll() {
     try {
+      setFetchError(null);
       const [mRes, pRes] = await Promise.all([
         api.get('/api/modeles'),
         api.get('/api/plateformes'),
@@ -38,6 +40,8 @@ export default function Modeles() {
         map[m.id] = data.map(p => p.id);
       }));
       setModelPlatforms(map);
+    } catch (err) {
+      setFetchError(err.response?.data?.error || 'Erreur lors du chargement des modèles');
     } finally { setLoading(false); }
   }
 
@@ -123,7 +127,12 @@ export default function Modeles() {
         <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
       </div>
 
-      {loading ? <TableSkeleton rows={5} cols={4} /> : (
+      {fetchError ? (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {fetchError}
+          <button onClick={fetchAll} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
+        </div>
+      ) : loading ? <TableSkeleton rows={5} cols={4} /> : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto' }}>
             <table>

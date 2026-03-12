@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import api from '../../api/index';
-import { ChevronLeft, ChevronRight, X, Clock, CalendarPlus, Repeat } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Clock, CalendarPlus, Repeat, Download, AlertTriangle } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors';
+import { useToast } from '../../components/Toast.jsx';
+import { TableSkeleton } from '../../components/Skeleton.jsx';
 
 const CRENEAUX = [
   { id: 1, label: '08h–14h', short: '08-14', startH: 8, endH: 14 },
@@ -72,11 +74,14 @@ export default function Shifts() {
   const [selChatteur, setSelChatteur] = useState('');
   const [existingShift, setExistingShift] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [bulkModal, setBulkModal] = useState(false);
   const [hasTemplates, setHasTemplates] = useState(false);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateMsg, setTemplateMsg] = useState('');
+  const [conflits, setConflits] = useState(null);
   const timerRef = useRef(null);
+  const toast = useToast();
 
   // Real-time clock for selected timezone
   useEffect(() => {
@@ -103,6 +108,7 @@ export default function Shifts() {
 
   async function fetchShifts() {
     setLoading(true);
+    setFetchError(null);
     try {
       const { data } = await api.get(`/api/shifts/semaine?date=${toISO(weekStart)}`);
       setShifts(data.shifts || []);
@@ -116,6 +122,14 @@ export default function Shifts() {
       if (data.has_templates !== undefined) {
         setHasTemplates(data.has_templates);
       }
+      // Fetch conflict alerts for the week
+      const d0 = toISO(weekStart);
+      const d6 = toISO(addDays(weekStart, 6));
+      api.get(`/api/shifts/conflits?date_debut=${d0}&date_fin=${d6}`)
+        .then(r => setConflits(r.data))
+        .catch(() => setConflits(null));
+    } catch (err) {
+      setFetchError(err.response?.data?.error || 'Erreur lors du chargement des shifts');
     } finally { setLoading(false); }
   }
 
@@ -168,7 +182,7 @@ export default function Shifts() {
       });
       setModal(null);
       fetchShifts();
-    } catch (err) { console.error(err); }
+    } catch (err) { toast.error(err.response?.data?.error || 'Erreur lors de l\'assignation'); }
   }
 
   async function handleDelete() {
@@ -204,6 +218,14 @@ export default function Shifts() {
           )}
           <button onClick={saveAsTemplate} disabled={savingTemplate} className="btn-secondary" style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', padding: '0.4rem 0.85rem' }}>
             <Repeat size={14} /> {savingTemplate ? 'Sauvegarde...' : (hasTemplates ? 'Mettre à jour récurrence' : 'Définir comme récurrent')}
+          </button>
+          <button className="btn-secondary" style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', padding: '0.4rem 0.85rem' }}
+            onClick={() => {
+              const d = toISO(weekStart);
+              const f = toISO(addDays(weekStart, 6));
+              window.open(`/api/shifts/export-csv?date_debut=${d}&date_fin=${f}`, '_blank');
+            }}>
+            <Download size={14} /> CSV
           </button>
           <button onClick={() => setBulkModal(true)} className="btn-primary" style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
             <CalendarPlus size={16} /> Planifier
@@ -264,8 +286,73 @@ export default function Shifts() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-center text-slate-400 py-12">Chargement...</div>
+      {/* Conflict alerts */}
+      {conflits && (conflits.doublons?.length > 0 || conflits.non_couverts?.length > 0) && (
+        <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {conflits.doublons?.length > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+              padding: '0.75rem 1rem', borderRadius: '10px',
+              background: '#fffbeb', border: '1px solid #fde68a',
+            }}>
+              <AlertTriangle size={16} color="#d97706" style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+              <div>
+                <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#92400e', marginBottom: '0.25rem' }}>
+                  {conflits.doublons.length} doublon{conflits.doublons.length > 1 ? 's' : ''} détecté{conflits.doublons.length > 1 ? 's' : ''}
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {conflits.doublons.slice(0, 5).map((d, i) => (
+                    <span key={i} style={{
+                      fontSize: '0.7rem', background: '#fef3c7', color: '#b45309',
+                      padding: '0.15rem 0.5rem', borderRadius: '12px',
+                    }}>
+                      {d.date} Créneau {d.creneau} — {d.modele} ({d.count}x)
+                    </span>
+                  ))}
+                  {conflits.doublons.length > 5 && (
+                    <span style={{ fontSize: '0.7rem', color: '#92400e' }}>+{conflits.doublons.length - 5} autres</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {conflits.non_couverts?.length > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
+              padding: '0.75rem 1rem', borderRadius: '10px',
+              background: '#fef2f2', border: '1px solid #fecaca',
+            }}>
+              <AlertTriangle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '0.1rem' }} />
+              <div>
+                <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#991b1b', marginBottom: '0.25rem' }}>
+                  {conflits.non_couverts.length} créneau{conflits.non_couverts.length > 1 ? 'x' : ''} non couvert{conflits.non_couverts.length > 1 ? 's' : ''}
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
+                  {conflits.non_couverts.slice(0, 5).map((d, i) => (
+                    <span key={i} style={{
+                      fontSize: '0.7rem', background: '#fee2e2', color: '#991b1b',
+                      padding: '0.15rem 0.5rem', borderRadius: '12px',
+                    }}>
+                      {d.date} Créneau {d.creneau} — {d.modele}
+                    </span>
+                  ))}
+                  {conflits.non_couverts.length > 5 && (
+                    <span style={{ fontSize: '0.7rem', color: '#991b1b' }}>+{conflits.non_couverts.length - 5} autres</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {fetchError ? (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {fetchError}
+          <button onClick={fetchShifts} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>R\u00e9essayer</button>
+        </div>
+      ) : loading ? (
+        <div className="card" style={{ padding: '1rem' }}><TableSkeleton rows={6} cols={8} /></div>
       ) : (
         <>
           {/* Model cards */}

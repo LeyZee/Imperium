@@ -70,6 +70,7 @@ export default function FacturationModeles() {
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [hoveredRow, setHoveredRow] = useState(null);
   const [expandedRow, setExpandedRow] = useState(null);
 
@@ -89,13 +90,16 @@ export default function FacturationModeles() {
 
   async function fetchData() {
     setLoading(true);
+    setFetchError(null);
     try {
       const { data: result } = await api.get(
         `/api/facturation-modeles?debut=${selectedPeriod.debut}&fin=${selectedPeriod.fin}`
       );
       setData(result);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Erreur chargement');
+      const msg = err.response?.data?.error || 'Erreur chargement';
+      setFetchError(msg);
+      toast.error(msg);
     } finally {
       setLoading(false);
     }
@@ -126,8 +130,7 @@ export default function FacturationModeles() {
               boxShadow: '0 2px 8px rgba(245,183,49,0.25)',
               transition: 'all 200ms ease',
             }}
-            onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(245,183,49,0.35)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(245,183,49,0.25)'; }}
+            className="hover-lift"
           >
             {selectedPeriod.label}
             <ChevronDown size={16} style={{ transform: dropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }} />
@@ -158,8 +161,7 @@ export default function FacturationModeles() {
                       transition: 'all 150ms ease',
                       borderLeft: active ? '3px solid #f5b731' : '3px solid transparent',
                     }}
-                    onMouseEnter={e => { if (!active) { e.currentTarget.style.background = 'rgba(245,183,49,0.04)'; e.currentTarget.style.paddingLeft = '1.15rem'; } }}
-                    onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.paddingLeft = '1rem'; } }}
+                    className={!active ? 'hover-row' : ''}
                   >
                     {p.label}
                   </button>
@@ -305,7 +307,12 @@ export default function FacturationModeles() {
       })()}
 
       {/* Table */}
-      {loading ? (
+      {fetchError ? (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {fetchError}
+          <button onClick={fetchData} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
+        </div>
+      ) : loading ? (
         <TableSkeleton rows={5} cols={6} />
       ) : modeles.length === 0 ? (
         <div className="card" style={{ padding: '3rem', textAlign: 'center' }}>
@@ -424,8 +431,7 @@ export default function FacturationModeles() {
                               border: `1px solid ${(p.couleur_fond || '#cbd5e1') + '80'}`,
                               transition: 'transform 150ms ease',
                             }}
-                            onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
-                            onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                            className="hover-scale"
                             >
                               {p.plateforme_nom}
                             </span>

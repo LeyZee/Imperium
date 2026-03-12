@@ -3,7 +3,7 @@ import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
-import { Trophy, TrendingUp, Euro, AlertTriangle, Target, Pencil, Check, BarChart3 } from 'lucide-react';
+import { Trophy, TrendingUp, Euro, AlertTriangle, Target, Pencil, Check, BarChart3, Megaphone } from 'lucide-react';
 
 const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
 
@@ -248,6 +248,8 @@ export default function ChatteurDashboard() {
   const [prevKpis, setPrevKpis] = useState(null);
   const [ventes, setVentes] = useState([]);
   const [ventesParModele, setVentesParModele] = useState([]);
+  const [annonces, setAnnonces] = useState([]);
+  const [objectifsProgress, setObjectifsProgress] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const periode = getPeriodeCourante();
@@ -258,24 +260,30 @@ export default function ChatteurDashboard() {
       setLoading(false);
       return;
     }
+    const controller = new AbortController();
     setLoading(true);
     Promise.all([
-      api.get(`/api/chatteurs/${user.chatteur_id}/kpis?periode_debut=${periode.debut}&periode_fin=${periode.fin}`),
-      api.get(`/api/ventes?chatteur_id=${user.chatteur_id}&periode_debut=${periode.debut}&periode_fin=${periode.fin}`)
+      api.get(`/api/chatteurs/${user.chatteur_id}/kpis?periode_debut=${periode.debut}&periode_fin=${periode.fin}`, { signal: controller.signal }),
+      api.get(`/api/ventes?chatteur_id=${user.chatteur_id}&periode_debut=${periode.debut}&periode_fin=${periode.fin}`, { signal: controller.signal })
         .catch(() => ({ data: [] })),
-      api.get(`/api/chatteurs/${user.chatteur_id}/kpis?periode_debut=${prevPeriode.debut}&periode_fin=${prevPeriode.fin}`)
+      api.get(`/api/chatteurs/${user.chatteur_id}/kpis?periode_debut=${prevPeriode.debut}&periode_fin=${prevPeriode.fin}`, { signal: controller.signal })
         .catch(() => ({ data: null })),
-      api.get(`/api/ventes/par-modele?periode_debut=${periode.debut}&periode_fin=${periode.fin}`)
+      api.get(`/api/ventes/par-modele?periode_debut=${periode.debut}&periode_fin=${periode.fin}`, { signal: controller.signal })
         .catch(() => ({ data: [] })),
-    ]).then(([k, v, pk, vm]) => {
+      api.get('/api/annonces', { signal: controller.signal }).catch(() => ({ data: [] })),
+      api.get(`/api/objectifs/progress?periode_debut=${periode.debut}&periode_fin=${periode.fin}`, { signal: controller.signal }).catch(() => ({ data: [] })),
+    ]).then(([k, v, pk, vm, ann, objP]) => {
       setKpis(k.data);
       setPrevKpis(pk.data);
       const ventesData = v.data?.ventes || v.data || [];
       setVentes(Array.isArray(ventesData) ? ventesData.slice(0, 5) : []);
       setVentesParModele(Array.isArray(vm.data) ? vm.data : []);
+      setAnnonces(Array.isArray(ann.data) ? ann.data.filter(a => a.actif) : []);
+      setObjectifsProgress(Array.isArray(objP.data) ? objP.data : []);
     })
-    .catch(() => setError('Impossible de charger les donn\u00e9es.'))
-    .finally(() => setLoading(false));
+    .catch(() => { if (!controller.signal.aborted) setError('Impossible de charger les donn\u00e9es.'); })
+    .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [user?.chatteur_id, periode.debut, periode.fin, prevPeriode.debut, prevPeriode.fin]);
 
   const paieEstimee = kpis?.paies?.[0]?.total_chatteur || 0;
@@ -349,6 +357,61 @@ export default function ChatteurDashboard() {
             icon={TrendingUp}
             color="#10b981"
           />
+        </div>
+      )}
+
+      {/* Annonces */}
+      {!loading && annonces.length > 0 && (
+        <div style={{ display: 'grid', gap: '0.75rem' }}>
+          {annonces.map(a => (
+            <div key={a.id} style={{
+              background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+              borderRadius: '12px', padding: '1rem 1.25rem',
+              border: '1px solid rgba(245,183,49,0.3)',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.25rem' }}>
+                <Megaphone size={16} color="#b8860b" />
+                <span style={{ fontWeight: 700, color: '#92400e', fontSize: '0.9rem' }}>{a.title}</span>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: '#78350f', lineHeight: 1.4, whiteSpace: 'pre-wrap' }}>{a.content}</p>
+              <p style={{ fontSize: '0.65rem', color: '#a16207', marginTop: '0.35rem' }}>
+                {a.author_prenom || ''} · {new Date(a.created_at).toLocaleDateString('fr-FR')}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Objectifs progression */}
+      {!loading && objectifsProgress.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <Target size={16} color="#f5b731" />
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Mes Objectifs</h3>
+          </div>
+          <div style={{ padding: '0.75rem 1.25rem', display: 'grid', gap: '0.75rem' }}>
+            {objectifsProgress.map(obj => {
+              const pct = obj.progress;
+              const color = pct >= 100 ? '#f5b731' : pct >= 80 ? '#22c55e' : pct >= 50 ? '#f59e0b' : '#ef4444';
+              return (
+                <div key={obj.id}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem', fontSize: '0.8rem' }}>
+                    <span style={{ fontWeight: 600, color: '#1a1f2e' }}>
+                      {obj.chatteur_prenom || 'Global'}{obj.modele_pseudo ? ` (${obj.modele_pseudo})` : ''}
+                    </span>
+                    <span style={{ fontWeight: 700, color }}>{pct}%</span>
+                  </div>
+                  <div style={{ background: '#f1f5f9', borderRadius: '999px', height: '8px' }}>
+                    <div style={{ width: `${Math.min(pct, 100)}%`, height: '100%', background: color, borderRadius: '999px', transition: 'width 500ms ease' }} />
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.15rem' }}>
+                    <span>{obj.actual.toFixed(0)} €</span>
+                    <span>{obj.montant_cible.toFixed(0)} €</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 

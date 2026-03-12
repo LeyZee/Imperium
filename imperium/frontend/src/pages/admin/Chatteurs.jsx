@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/index';
-import { UserPlus, Edit, UserX, X, KeyRound, Camera, Search } from 'lucide-react';
+import { UserPlus, Edit, UserX, X, KeyRound, Camera, Search, MessageSquare, Trash2, Send, Eye } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors';
 import { STATUTS, STATUT_MAP } from '../../constants/statuses';
 import { useToast } from '../../components/Toast.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
 
@@ -31,8 +33,13 @@ const COMMISSION_PRESETS = [
 ];
 
 export default function Chatteurs() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const isManager = user?.role === 'manager';
+  const basePath = user?.role === 'manager' ? '/manager' : '/admin';
   const [chatteurs, setChatteurs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
@@ -58,8 +65,11 @@ export default function Chatteurs() {
 
   async function fetchChatteurs() {
     try {
+      setFetchError(null);
       const { data } = await api.get('/api/chatteurs');
       setChatteurs(data);
+    } catch (err) {
+      setFetchError(err.response?.data?.error || 'Erreur lors du chargement des chatteurs');
     } finally { setLoading(false); }
   }
 
@@ -136,6 +146,7 @@ export default function Chatteurs() {
     }
   }
 
+  const isEditingSelf = isManager && editId && user?.chatteur_id === editId;
   const commissionCustom = !COMMISSION_PRESETS.some(p => p.value === form.taux_commission);
 
   return (
@@ -159,7 +170,12 @@ export default function Chatteurs() {
         />
       </div>
 
-      {loading ? (
+      {fetchError ? (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {fetchError}
+          <button onClick={fetchChatteurs} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
+        </div>
+      ) : loading ? (
         <div className="card" style={{ padding: '1rem' }}><TableSkeleton rows={8} cols={6} /></div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -263,8 +279,9 @@ export default function Chatteurs() {
                       </td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
+                          <button onClick={() => navigate(`${basePath}/chatteurs/${c.id}`)} className="btn-ghost" title="Voir d\u00e9tail"><Eye size={16} /></button>
                           <button onClick={() => openEdit(c)} className="btn-ghost"><Edit size={16} /></button>
-                          {c.statut !== 'inactif' && <button onClick={() => setConfirmDel({ id: c.id, prenom: c.prenom })} className="btn-ghost" style={{ color: '#ef4444' }}><UserX size={16} /></button>}
+                          {c.statut !== 'inactif' && !(isManager && (c.id === user?.chatteur_id || c.role === 'manager')) && <button onClick={() => setConfirmDel({ id: c.id, prenom: c.prenom })} className="btn-ghost" style={{ color: '#ef4444' }}><UserX size={16} /></button>}
                         </div>
                       </td>
                     </tr>
@@ -320,17 +337,45 @@ export default function Chatteurs() {
                 <label className="label">Prénom *</label>
                 <input className="input-field" value={form.prenom} onChange={e => setForm({...form, prenom: e.target.value})} required />
               </div>
-              <div className="form-group">
-                <label className="label">Rôle</label>
-                <select className="input-field" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
-                  <option value="chatteur">Chatteur</option>
-                  <option value="manager">Manager</option>
-                  <option value="va">VA</option>
-                </select>
-              </div>
+              {!isManager && (
+                <div className="form-group">
+                  <label className="label">Rôle</label>
+                  <select className="input-field" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
+                    <option value="chatteur">Chatteur</option>
+                    <option value="manager">Manager</option>
+                    <option value="va">VA</option>
+                  </select>
+                </div>
+              )}
 
               {/* Role-specific compensation */}
-              {form.role === 'va' ? (
+              {isEditingSelf && (
+                <div className="form-group">
+                  <label className="label">Commission personnelle</label>
+                  <div style={{
+                    padding: '0.5rem 0.75rem', borderRadius: '8px',
+                    background: '#f1f5f9', border: '1px solid #e2e8f0',
+                    fontSize: '0.85rem', color: '#64748b',
+                  }}>
+                    {(form.taux_commission * 100).toFixed(1).replace('.0', '')}%
+                    <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: '#94a3b8' }}>(non modifiable)</span>
+                  </div>
+                  {form.role === 'manager' && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <label className="label">Commission équipe</label>
+                      <div style={{
+                        padding: '0.5rem 0.75rem', borderRadius: '8px',
+                        background: '#f1f5f9', border: '1px solid #e2e8f0',
+                        fontSize: '0.85rem', color: '#64748b',
+                      }}>
+                        {(form.taux_net_equipe * 100).toFixed(0)}%
+                        <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: '#94a3b8' }}>(non modifiable)</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {isEditingSelf ? null : form.role === 'va' ? (
                 <div className="form-group">
                   <label className="label">Taux horaire (€/h)</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -521,8 +566,8 @@ export default function Chatteurs() {
                 </div>
               )}
 
-              {/* Account section — edit mode */}
-              {editId && (
+              {/* Account section — edit mode (admin only) */}
+              {editId && !isManager && (
                 <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #e2e8f0' }}>
                   <div style={{
                     fontSize: '0.8rem', fontWeight: 700, color: 'var(--navy)',
@@ -564,6 +609,9 @@ export default function Chatteurs() {
                 </div>
               )}
 
+              {/* Notes section (edit mode only) */}
+              {editId && <NotesSection chatteurId={editId} />}
+
               <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>{editId ? 'Enregistrer' : 'Créer'}</button>
             </form>
           </div>
@@ -577,6 +625,100 @@ export default function Chatteurs() {
         onConfirm={() => confirmDel && handleDeactivate(confirmDel.id)}
         onCancel={() => setConfirmDel(null)}
       />
+    </div>
+  );
+}
+
+function NotesSection({ chatteurId }) {
+  const [notes, setNotes] = useState([]);
+  const [newNote, setNewNote] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  const fetchNotes = async () => {
+    try {
+      const { data } = await api.get(`/api/notes?chatteur_id=${chatteurId}`);
+      setNotes(data);
+    } catch { /* empty */ }
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchNotes(); }, [chatteurId]);
+
+  const addNote = async () => {
+    if (!newNote.trim()) return;
+    try {
+      await api.post('/api/notes', { chatteur_id: chatteurId, content: newNote.trim() });
+      setNewNote('');
+      fetchNotes();
+    } catch { /* empty */ }
+  };
+
+  const deleteNote = async (id) => {
+    try {
+      await api.delete(`/api/notes/${id}`);
+      fetchNotes();
+    } catch { /* empty */ }
+  };
+
+  return (
+    <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #e2e8f0' }}>
+      <div style={{
+        fontSize: '0.8rem', fontWeight: 700, color: 'var(--navy)',
+        textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem',
+        display: 'flex', alignItems: 'center', gap: '0.4rem',
+      }}>
+        <MessageSquare size={14} /> Notes ({notes.length})
+      </div>
+
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <textarea
+          value={newNote}
+          onChange={e => setNewNote(e.target.value)}
+          placeholder="Ajouter une note..."
+          style={{
+            flex: 1, padding: '0.5rem 0.75rem', borderRadius: '8px',
+            border: '1px solid #e2e8f0', fontSize: '0.8rem',
+            minHeight: '40px', resize: 'vertical', fontFamily: 'inherit',
+          }}
+          onKeyDown={e => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote(); }
+          }}
+        />
+        <button type="button" onClick={addNote}
+          style={{
+            background: '#f5b731', border: 'none', borderRadius: '8px',
+            padding: '0.5rem', cursor: 'pointer', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', alignSelf: 'flex-end',
+          }}>
+          <Send size={16} color="#1a1f2e" />
+        </button>
+      </div>
+
+      {loading ? (
+        <p style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Chargement...</p>
+      ) : notes.length === 0 ? (
+        <p style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>Aucune note</p>
+      ) : (
+        <div style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          {notes.map(n => (
+            <div key={n.id} style={{
+              background: '#f8fafc', borderRadius: '8px', padding: '0.5rem 0.75rem',
+              fontSize: '0.8rem', border: '1px solid #f1f5f9',
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <p style={{ color: '#334155', lineHeight: 1.4, whiteSpace: 'pre-wrap', flex: 1 }}>{n.content}</p>
+                <button type="button" onClick={() => deleteNote(n.id)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.1rem', flexShrink: 0 }}>
+                  <Trash2 size={12} />
+                </button>
+              </div>
+              <p style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '0.25rem' }}>
+                {n.author_prenom || n.author_email || '-'} · {new Date(n.created_at).toLocaleDateString('fr-FR')}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,17 +1,22 @@
 const express = require('express');
 const archiver = require('archiver');
 const db = require('../database');
-const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/auth');
 const { recalculatePaies } = require('../services/paie-calculator');
 const { generateFacture } = require('../services/facture-generator');
+const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const logger = require('../utils/logger');
+const { logActivity } = require('../utils/activityLogger');
+const { notifyChatteur } = require('../utils/notifier');
 
 const router = express.Router();
 
 // GET /api/paies?debut=YYYY-MM-DD&fin=YYYY-MM-DD
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, asyncHandler((req, res) => {
   const { debut, fin } = req.query;
   if (!debut || !fin) {
-    return res.status(400).json({ error: 'debut et fin requis' });
+    throw new ApiError(400, 'debut et fin requis');
   }
 
   // Fetch paie rows with chatteur + plateforme info
@@ -88,38 +93,47 @@ router.get('/', authMiddleware, (req, res) => {
       top_chatteurs: topChatteurs,
     },
   });
-});
+}));
 
 // POST /api/paies/recalculer — force recalculate for a period
-router.post('/recalculer', authMiddleware, adminOnly, (req, res) => {
+router.post('/recalculer', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const { debut, fin } = req.body;
   if (!debut || !fin) {
-    return res.status(400).json({ error: 'debut et fin requis' });
+    throw new ApiError(400, 'debut et fin requis');
   }
 
-  try {
-    const result = recalculatePaies(debut, fin);
-    res.json(result);
-  } catch (err) {
-    console.error('Erreur recalcul paies:', err.message);
-    res.status(500).json({ error: 'Erreur lors du recalcul des paies' });
-  }
-});
+  const result = recalculatePaies(debut, fin);
+  res.json(result);
+}));
 
 // PUT /api/paies/:id/statut — change status (calculé → validé → payé)
-router.put('/:id/statut', authMiddleware, adminOnly, (req, res) => {
+router.put('/:id/statut', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { statut } = req.body;
   if (!['calculé', 'validé', 'payé'].includes(statut)) {
-    return res.status(400).json({ error: 'Statut invalide' });
+    throw new ApiError(400, 'Statut invalide');
   }
+  // Manager cannot mark paies as paid
+  if (req.user.role === 'manager' && statut === 'payé') {
+    throw new ApiError(403, 'Seul un administrateur peut marquer une paie comme payée');
+  }
+  const paie = db.prepare('SELECT chatteur_id FROM paies WHERE id = ?').get(req.params.id);
   db.prepare('UPDATE paies SET statut = ? WHERE id = ?').run(statut, req.params.id);
+
+  logActivity(req.user.id, 'update_paie_statut', 'paie', parseInt(req.params.id), statut);
+
+  // Notify chatteur when paie is validated or paid
+  if (paie && (statut === 'validé' || statut === 'payé')) {
+    const label = statut === 'validé' ? 'validée' : 'payée';
+    notifyChatteur(paie.chatteur_id, 'paie_statut', `Paie ${label}`, `Votre paie a été ${label}.`, '/chatteur/factures');
+  }
+
   res.json({ message: 'Statut mis à jour' });
-});
+}));
 
 // GET /api/paies/mes-paies — chatteur: get own paies with full calculation details
-router.get('/mes-paies', authMiddleware, (req, res) => {
+router.get('/mes-paies', authMiddleware, asyncHandler((req, res) => {
   if (req.user.role !== 'chatteur' || !req.user.chatteur_id) {
-    return res.status(403).json({ error: 'Accès réservé aux chatteurs' });
+    throw new ApiError(403, 'Accès réservé aux chatteurs');
   }
 
   const chatteur = db.prepare('SELECT taux_commission, role, taux_net_equipe FROM chatteurs WHERE id = ?')
@@ -141,10 +155,10 @@ router.get('/mes-paies', authMiddleware, (req, res) => {
     taux_commission: chatteur?.taux_commission || 0,
     role: chatteur?.role || 'chatteur',
   });
-});
+}));
 
 // GET /api/paies/periodes — list available periods
-router.get('/periodes', authMiddleware, (req, res) => {
+router.get('/periodes', authMiddleware, asyncHandler((req, res) => {
   const periodes = db.prepare(`
     SELECT DISTINCT periode_debut, periode_fin
     FROM paies
@@ -152,13 +166,13 @@ router.get('/periodes', authMiddleware, (req, res) => {
     LIMIT 20
   `).all();
   res.json(periodes);
-});
+}));
 
 // GET /api/paies/factures-zip?debut=YYYY-MM-DD&fin=YYYY-MM-DD — ZIP of all invoices for a period
-router.get('/factures-zip', authMiddleware, adminOnly, (req, res) => {
+router.get('/factures-zip', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { debut, fin } = req.query;
   if (!debut || !fin) {
-    return res.status(400).json({ error: 'debut et fin requis' });
+    throw new ApiError(400, 'debut et fin requis');
   }
 
   // Find all unique chatteurs with paies for this period
@@ -170,7 +184,7 @@ router.get('/factures-zip', authMiddleware, adminOnly, (req, res) => {
   `).all(debut, fin);
 
   if (rows.length === 0) {
-    return res.status(404).json({ error: 'Aucune paie pour cette période' });
+    throw new ApiError(404, 'Aucune paie pour cette période');
   }
 
   // Setup ZIP stream
@@ -180,7 +194,7 @@ router.get('/factures-zip', authMiddleware, adminOnly, (req, res) => {
 
   const archive = archiver('zip', { zlib: { level: 9 } });
   archive.on('error', (err) => {
-    console.error('Erreur ZIP:', err.message);
+    logger.error('Erreur ZIP', { error: err.message });
     if (!res.headersSent) res.status(500).json({ error: 'Erreur génération ZIP' });
   });
   archive.pipe(res);
@@ -191,34 +205,107 @@ router.get('/factures-zip', authMiddleware, adminOnly, (req, res) => {
       const { stream, filename } = generateFacture(row.chatteur_id, debut, fin);
       archive.append(stream, { name: filename });
     } catch (err) {
-      console.error(`Erreur facture ${row.prenom}:`, err.message);
+      logger.error(`Erreur facture ${row.prenom}`, { error: err.message });
     }
   }
 
   archive.finalize();
-});
+}));
 
 // GET /api/paies/facture?chatteur_id=X&debut=YYYY-MM-DD&fin=YYYY-MM-DD — generate PDF invoice
-router.get('/facture', authMiddleware, (req, res) => {
+router.get('/facture', authMiddleware, asyncHandler((req, res) => {
   const { chatteur_id, debut, fin } = req.query;
   if (!chatteur_id || !debut || !fin) {
-    return res.status(400).json({ error: 'chatteur_id, debut et fin requis' });
+    throw new ApiError(400, 'chatteur_id, debut et fin requis');
   }
 
-  // Admins can generate any invoice; chatteurs only their own
-  if (req.user.role !== 'admin' && req.user.chatteur_id !== parseInt(chatteur_id)) {
-    return res.status(403).json({ error: 'Acc\u00e8s refus\u00e9' });
+  // Admins and managers can generate any invoice; chatteurs only their own
+  if (req.user.role !== 'admin' && req.user.role !== 'manager' && req.user.chatteur_id !== parseInt(chatteur_id)) {
+    throw new ApiError(403, 'Accès refusé');
   }
 
-  try {
-    const { stream, filename } = generateFacture(parseInt(chatteur_id), debut, fin);
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    stream.pipe(res);
-  } catch (err) {
-    console.error('Erreur g\u00e9n\u00e9ration facture:', err.message);
-    res.status(400).json({ error: err.message });
+  const { stream, filename } = generateFacture(parseInt(chatteur_id), debut, fin);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  stream.pipe(res);
+}));
+
+// GET /api/paies/previsionnel?debut=&fin= — forecast for current period
+router.get('/previsionnel', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { debut, fin } = req.query;
+  if (!debut || !fin) throw new ApiError(400, 'debut et fin requis');
+
+  const now = new Date();
+  const startDate = new Date(debut);
+  const endDate = new Date(fin);
+  const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+  const elapsedDays = Math.min(Math.ceil((now - startDate) / (1000 * 60 * 60 * 24)), totalDays);
+
+  if (elapsedDays <= 0) {
+    return res.json({ elapsed_days: 0, total_days: totalDays, ratio: 0, actuals: {}, forecasts: {} });
   }
-});
+
+  const ratio = totalDays / Math.max(elapsedDays, 1);
+
+  // Get actual totals
+  const actual = db.prepare(`
+    SELECT
+      COALESCE(SUM(ventes_brutes), 0) as total_brut,
+      COALESCE(SUM(net_ht_eur), 0) as total_net_ht,
+      COALESCE(SUM(commission_chatteur), 0) as total_commission,
+      COALESCE(SUM(total_chatteur), 0) as total_paie
+    FROM paies
+    WHERE periode_debut = ? AND periode_fin = ?
+  `).get(debut, fin);
+
+  const forecasts = {
+    total_brut: actual.total_brut * ratio,
+    total_net_ht: actual.total_net_ht * ratio,
+    total_commission: actual.total_commission * ratio,
+    total_paie: actual.total_paie * ratio,
+  };
+
+  res.json({
+    elapsed_days: elapsedDays,
+    total_days: totalDays,
+    ratio,
+    actuals: actual,
+    forecasts,
+  });
+}));
+
+// GET /api/paies/export-csv?debut=&fin=
+router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { debut, fin } = req.query;
+  if (!debut || !fin) throw new ApiError(400, 'debut et fin requis');
+
+  const { sendCSV } = require('../utils/csvExport');
+
+  const paies = db.prepare(`
+    SELECT c.prenom as chatteur, pl.nom as plateforme,
+      p.ventes_brutes, p.taux_change, p.ventes_ttc_eur, p.ventes_ht_eur,
+      p.net_ht_eur, p.commission_chatteur, p.malus_total, p.prime, p.total_chatteur, p.statut
+    FROM paies p
+    JOIN chatteurs c ON c.id = p.chatteur_id
+    LEFT JOIN plateformes pl ON pl.id = p.plateforme_id
+    WHERE p.periode_debut = ? AND p.periode_fin = ?
+    ORDER BY c.prenom, pl.nom
+  `).all(debut, fin);
+
+  sendCSV(res, `paies_${debut}_${fin}.csv`, paies, [
+    { key: 'chatteur', label: 'Chatteur' },
+    { key: 'plateforme', label: 'Plateforme' },
+    { key: 'ventes_brutes', label: 'Ventes brutes' },
+    { key: 'taux_change', label: 'Taux change' },
+    { key: 'ventes_ttc_eur', label: 'Ventes TTC €' },
+    { key: 'ventes_ht_eur', label: 'Ventes HT €' },
+    { key: 'net_ht_eur', label: 'Net HT €' },
+    { key: 'commission_chatteur', label: 'Commission' },
+    { key: 'malus_total', label: 'Malus' },
+    { key: 'prime', label: 'Prime' },
+    { key: 'total_chatteur', label: 'Total' },
+    { key: 'statut', label: 'Statut' },
+  ]);
+}));
 
 module.exports = router;

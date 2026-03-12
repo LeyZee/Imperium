@@ -37,6 +37,16 @@ const ROLE_LABELS = {
 // ──────────────────────────────────────────────
 // Sequential invoice numbering with DB tracking
 // ──────────────────────────────────────────────
+/**
+ * Get or create a sequential invoice record in the database.
+ * Ensures unique invoice numbers per chatteur+period.
+ *
+ * @param {number} chatteurId - Chatteur ID
+ * @param {string} debut - Period start date (YYYY-MM-DD)
+ * @param {string} fin - Period end date (YYYY-MM-DD)
+ * @param {number} montantHT - Invoice HT amount in EUR
+ * @returns {{ invoiceNum: string, seqNum: number, isDuplicate: boolean }}
+ */
 function getOrCreateInvoice(chatteurId, debut, fin, montantHT) {
   // Check if invoice already exists for this chatteur+period
   const existing = db.prepare(
@@ -65,6 +75,12 @@ function getOrCreateInvoice(chatteurId, debut, fin, montantHT) {
 /**
  * Generate a compact, single-page, French-compliant invoice PDF.
  * Features: logo, sequential numbering, USD/EUR conversion, Original/Duplicata.
+ *
+ * @param {number} chatteurId - Chatteur ID to generate invoice for
+ * @param {string} debut - Period start date (YYYY-MM-DD)
+ * @param {string} fin - Period end date (YYYY-MM-DD)
+ * @returns {{ stream: PDFDocument, filename: string }} PDF stream and suggested filename
+ * @throws {Error} If chatteur has no paies for the period
  */
 function generateFacture(chatteurId, debut, fin) {
   // ── Fetch data ──

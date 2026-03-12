@@ -3,7 +3,7 @@ import api from '../../api/index';
 import StatCard from '../../components/StatCard.jsx';
 import {
   Plus, Euro, ShoppingBag, Trophy, BarChart3, X, Pencil, Trash2,
-  ChevronDown, PackageOpen, Calendar
+  ChevronDown, PackageOpen, Calendar, Download
 } from 'lucide-react';
 
 /* ─── Period auto-calc (mirrors backend utils/period.js) ─── */
@@ -315,8 +315,7 @@ export default function Ventes() {
                       color: selectedPeriod?.debut === p.debut ? '#b8860b' : '#1a1f2e',
                       transition: 'background 150ms ease',
                     }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.03)'}
-                    onMouseLeave={e => e.currentTarget.style.background = selectedPeriod?.debut === p.debut ? 'rgba(245,183,49,0.1)' : 'transparent'}
+                    className={selectedPeriod?.debut !== p.debut ? 'hover-row' : ''}
                   >
                     {formatPeriodLabel(p.debut, p.fin)}
                   </div>
@@ -324,6 +323,13 @@ export default function Ventes() {
               </div>
             )}
           </div>
+
+          {selectedPeriod && (
+            <button className="btn-secondary" style={{ fontSize: '0.8rem' }}
+              onClick={() => window.open(`/api/ventes/export-csv?periode_debut=${selectedPeriod.debut}&periode_fin=${selectedPeriod.fin}`, '_blank')}>
+              <Download size={14} /> CSV
+            </button>
+          )}
 
           <button className="btn-primary" onClick={openAddModal}>
             <Plus size={16} /> Nouvelle vente
@@ -463,26 +469,12 @@ export default function Ventes() {
                 return (
                   <tr
                     key={v.id}
+                    className={!isRemoving ? 'hover-gold-row' : ''}
                     style={{
                       transition: 'all 250ms ease',
-                      borderLeft: '3px solid transparent',
                       opacity: isRemoving ? 0 : 1,
                       transform: isRemoving ? 'translateX(30px)' : 'translateX(0)',
                       maxHeight: isRemoving ? 0 : '200px',
-                    }}
-                    onMouseEnter={e => {
-                      if (!isRemoving) {
-                        e.currentTarget.style.borderLeftColor = '#f5b731';
-                        e.currentTarget.style.background = 'rgba(245,183,49,0.03)';
-                        e.currentTarget.style.transform = 'translateY(-1px)';
-                        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.04)';
-                      }
-                    }}
-                    onMouseLeave={e => {
-                      e.currentTarget.style.borderLeftColor = 'transparent';
-                      e.currentTarget.style.background = 'transparent';
-                      e.currentTarget.style.transform = 'translateX(0)';
-                      e.currentTarget.style.boxShadow = 'none';
                     }}
                   >
                     <td style={{ fontSize: '0.82rem', color: '#64748b', whiteSpace: 'nowrap' }}>

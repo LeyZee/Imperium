@@ -32,6 +32,7 @@ export default function TelegramBot() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const intervalRef = useRef(null);
+  const timerRef = useRef(null);
 
   async function fetchStatus() {
     try {
@@ -48,7 +49,7 @@ export default function TelegramBot() {
   useEffect(() => {
     fetchStatus();
     intervalRef.current = setInterval(fetchStatus, 15000);
-    return () => clearInterval(intervalRef.current);
+    return () => { clearInterval(intervalRef.current); if (timerRef.current) clearTimeout(timerRef.current); };
   }, []);
 
   async function handleStart() {
@@ -56,7 +57,7 @@ export default function TelegramBot() {
     try {
       await api.post('/api/telegram/start');
       setSuccess('Bot Telegram démarré');
-      setTimeout(() => setSuccess(''), 3000);
+      timerRef.current = setTimeout(() => setSuccess(''), 3000);
       await fetchStatus();
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur au démarrage du bot');
@@ -70,7 +71,7 @@ export default function TelegramBot() {
     try {
       await api.post('/api/telegram/stop');
       setSuccess('Bot Telegram arrêté');
-      setTimeout(() => setSuccess(''), 3000);
+      timerRef.current = setTimeout(() => setSuccess(''), 3000);
       await fetchStatus();
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur à l\'arrêt du bot');

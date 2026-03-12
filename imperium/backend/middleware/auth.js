@@ -1,33 +1,53 @@
 const jwt = require('jsonwebtoken');
+const ApiError = require('../utils/ApiError');
+const logger = require('../utils/logger');
 
 if (!process.env.JWT_SECRET) {
-  console.error('❌ FATAL: JWT_SECRET non défini dans les variables d\'environnement');
-  console.error('   Créez un fichier backend/.env avec : JWT_SECRET=votre-secret-ici');
+  logger.error('FATAL: JWT_SECRET non défini dans les variables d\'environnement');
+  logger.error('Créez un fichier backend/.env avec : JWT_SECRET=votre-secret-ici');
   process.exit(1);
 }
 const JWT_SECRET = process.env.JWT_SECRET;
 
 function authMiddleware(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  if (!authHeader) return res.status(401).json({ error: 'Token manquant' });
+  // Priority: httpOnly cookie > Authorization header (backward compat)
+  let token = req.cookies?.token;
 
-  const token = authHeader.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Token manquant' });
+  if (!token) {
+    const authHeader = req.headers['authorization'];
+    if (authHeader) token = authHeader.split(' ')[1];
+  }
+
+  if (!token) throw new ApiError(401, 'Token manquant');
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.user = decoded;
     next();
   } catch (err) {
-    return res.status(401).json({ error: 'Token invalide ou expiré' });
+    throw new ApiError(401, 'Token invalide ou expiré');
   }
 }
 
 function adminOnly(req, res, next) {
   if (req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Accès réservé aux administrateurs' });
+    throw new ApiError(403, 'Accès réservé aux administrateurs');
   }
   next();
 }
 
-module.exports = { authMiddleware, adminOnly, JWT_SECRET };
+function adminOrManager(req, res, next) {
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+    throw new ApiError(403, 'Accès réservé aux administrateurs et managers');
+  }
+  next();
+}
+
+/**
+ * Sign a JWT token. Centralizes token creation so JWT_SECRET stays private.
+ */
+function signToken(payload, options = {}) {
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h', ...options });
+}
+
+module.exports = { authMiddleware, adminOnly, adminOrManager, signToken };

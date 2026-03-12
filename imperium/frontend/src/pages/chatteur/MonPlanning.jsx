@@ -71,19 +71,23 @@ export default function MonPlanning() {
 
   useEffect(() => {
     if (!user?.chatteur_id) return;
-    api.get(`/api/chatteurs/${user.chatteur_id}`).then(({ data }) => {
+    const controller = new AbortController();
+    api.get(`/api/chatteurs/${user.chatteur_id}`, { signal: controller.signal }).then(({ data }) => {
       setChatteurPays(data.pays || 'France');
     }).catch(() => {});
+    return () => controller.abort();
   }, [user]);
 
   const chatteurTz = PAYS_TZ[chatteurPays] || 'Europe/Paris';
 
   useEffect(() => {
+    const controller = new AbortController();
     setLoading(true);
-    api.get(`/api/shifts/semaine?date=${toISO(weekStart)}`).then(({ data }) => {
+    api.get(`/api/shifts/semaine?date=${toISO(weekStart)}`, { signal: controller.signal }).then(({ data }) => {
       const all = data.shifts || data;
       setShifts(Array.isArray(all) ? all.filter(s => s.chatteur_id === user?.chatteur_id) : []);
-    }).finally(() => setLoading(false));
+    }).catch(() => {}).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
   }, [weekStart, user]);
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));

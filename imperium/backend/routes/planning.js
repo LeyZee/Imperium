@@ -1,20 +1,14 @@
 const express = require('express');
 const db = require('../database');
-const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/auth');
+const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/ApiError');
+const { TIMEZONES, CRENEAUX } = require('../utils/constants');
 
 const router = express.Router();
 
-const CRENEAUX = {
-  1: { label: '08h–14h', start: '08:00', end: '14:00' },
-  2: { label: '14h–20h', start: '14:00', end: '20:00' },
-  3: { label: '20h–02h', start: '20:00', end: '02:00' },
-  4: { label: '02h–08h', start: '02:00', end: '08:00' }
-};
-
-const FUSEAUX = ['Europe/Paris', 'Africa/Porto-Novo', 'Indian/Antananarivo'];
-
 // GET /api/shifts?date_debut=&date_fin=&chatteur_id=&plateforme_id=
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, asyncHandler((req, res) => {
   const { date_debut, date_fin, chatteur_id, plateforme_id } = req.query;
 
   let where = [];
@@ -55,21 +49,21 @@ router.get('/', authMiddleware, (req, res) => {
   }));
 
   res.json(enriched);
-});
+}));
 
 // POST /api/shifts
-router.post('/', authMiddleware, adminOnly, (req, res) => {
+router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { chatteur_id, modele_id, plateforme_id, date, creneau, fuseau_horaire, notes } = req.body;
 
   if (!chatteur_id || !date || !creneau) {
-    return res.status(400).json({ error: 'chatteur_id, date et creneau requis' });
+    throw new ApiError(400, 'chatteur_id, date et creneau requis');
   }
 
   if (![1, 2, 3, 4].includes(Number(creneau))) {
-    return res.status(400).json({ error: 'Créneau invalide (1-4)' });
+    throw new ApiError(400, 'Créneau invalide (1-4)');
   }
 
-  const fuseau = FUSEAUX.includes(fuseau_horaire) ? fuseau_horaire : 'Europe/Paris';
+  const fuseau = TIMEZONES.includes(fuseau_horaire) ? fuseau_horaire : 'Europe/Paris';
 
   // Conflict check: one model per platform per slot
   if (modele_id) {
@@ -78,7 +72,7 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
     ).get([modele_id, plateforme_id || 0, date, creneau]);
 
     if (conflict) {
-      return res.status(409).json({ error: 'Ce modèle a déjà un chatteur assigné sur ce créneau pour cette plateforme' });
+      throw new ApiError(409, 'Ce modèle a déjà un chatteur assigné sur ce créneau pour cette plateforme');
     }
   }
 
@@ -87,18 +81,18 @@ router.post('/', authMiddleware, adminOnly, (req, res) => {
   ).run([chatteur_id, modele_id || null, plateforme_id || null, date, creneau, fuseau, notes || null]);
 
   res.status(201).json({ id: result.lastInsertRowid });
-});
+}));
 
 // DELETE /api/shifts/:id
-router.delete('/:id', authMiddleware, adminOnly, (req, res) => {
+router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   db.prepare('DELETE FROM shifts WHERE id = ?').run([req.params.id]);
   res.json({ message: 'Shift supprimé' });
-});
+}));
 
 // --- Shift Templates (recurring weekly schedule) ---
 
 // GET /api/shifts/template — get all templates
-router.get('/template', authMiddleware, (req, res) => {
+router.get('/template', authMiddleware, asyncHandler((req, res) => {
   const templates = db.prepare(`
     SELECT t.*, c.prenom as chatteur_prenom,
       m.pseudo as modele_pseudo, p.nom as plateforme_nom
@@ -109,12 +103,12 @@ router.get('/template', authMiddleware, (req, res) => {
     ORDER BY t.day_of_week, t.creneau
   `).all();
   res.json(templates);
-});
+}));
 
 // POST /api/shifts/template/save — save current week as recurring template
-router.post('/template/save', authMiddleware, adminOnly, (req, res) => {
+router.post('/template/save', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { date } = req.body;
-  if (!date) return res.status(400).json({ error: 'date requise' });
+  if (!date) throw new ApiError(400, 'date requise');
 
   const refDate = new Date(date);
   const day = refDate.getDay();
@@ -149,10 +143,10 @@ router.post('/template/save', authMiddleware, adminOnly, (req, res) => {
 
   saveTpl();
   res.json({ message: 'Planning récurrent sauvegardé', count: shifts.length });
-});
+}));
 
 // GET /api/shifts/semaine?date= — get week view (merges templates for empty slots)
-router.get('/semaine', authMiddleware, (req, res) => {
+router.get('/semaine', authMiddleware, asyncHandler((req, res) => {
   const { date } = req.query;
   const refDate = date ? new Date(date) : new Date();
 
@@ -257,23 +251,23 @@ router.get('/semaine', authMiddleware, (req, res) => {
     date_debut: dateDebut,
     date_fin: dateFin,
     creneaux: CRENEAUX,
-    fuseaux: FUSEAUX,
+    fuseaux: TIMEZONES,
     plateformes,
     modeles_plateformes,
     shifts: enriched,
     has_templates: (hasTemplates?.c || 0) > 0,
   });
-});
+}));
 
 // POST /api/shifts/bulk — create multiple shifts at once (with optional replace)
-router.post('/bulk', authMiddleware, adminOnly, (req, res) => {
+router.post('/bulk', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { chatteur_id, modele_id, plateforme_id, dates, creneaux, fuseau_horaire, replace } = req.body;
 
   if (!chatteur_id || !dates?.length || !creneaux?.length) {
-    return res.status(400).json({ error: 'chatteur_id, dates[] et creneaux[] requis' });
+    throw new ApiError(400, 'chatteur_id, dates[] et creneaux[] requis');
   }
 
-  const fuseau = FUSEAUX.includes(fuseau_horaire) ? fuseau_horaire : 'Europe/Paris';
+  const fuseau = TIMEZONES.includes(fuseau_horaire) ? fuseau_horaire : 'Europe/Paris';
   let created = 0, replaced = 0;
 
   const insertBulk = db.transaction(() => {
@@ -307,6 +301,136 @@ router.post('/bulk', authMiddleware, adminOnly, (req, res) => {
   insertBulk();
 
   res.status(201).json({ created, replaced });
-});
+}));
+
+// GET /api/shifts/en-ligne — who is currently online based on today's shifts
+router.get('/en-ligne', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+  const shifts = db.prepare(`
+    SELECT s.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+      m.pseudo as modele_pseudo, p.nom as plateforme_nom
+    FROM shifts s
+    JOIN chatteurs c ON c.id = s.chatteur_id
+    LEFT JOIN modeles m ON m.id = s.modele_id
+    LEFT JOIN plateformes p ON p.id = s.plateforme_id
+    WHERE s.date = ?
+    ORDER BY s.creneau, c.prenom
+  `).all(today);
+
+  // Determine current creneau based on France timezone
+  const frHour = parseInt(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hour12: false }).format(now));
+  let currentCreneau;
+  if (frHour >= 8 && frHour < 14) currentCreneau = 1;
+  else if (frHour >= 14 && frHour < 20) currentCreneau = 2;
+  else if (frHour >= 20 || frHour < 2) currentCreneau = 3;
+  else currentCreneau = 4;
+
+  const enLigne = shifts.filter(s => s.creneau === currentCreneau);
+
+  res.json({
+    en_ligne: enLigne,
+    creneau_actuel: currentCreneau,
+    creneau_label: CRENEAUX[currentCreneau]?.label || '',
+    total_shifts_today: shifts.length,
+  });
+}));
+
+// GET /api/shifts/conflits?date_debut=&date_fin= — detect scheduling conflicts
+router.get('/conflits', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { date_debut, date_fin } = req.query;
+  if (!date_debut || !date_fin) throw new ApiError(400, 'date_debut et date_fin requis');
+
+  // Get all modeles_plateformes associations (expected coverage)
+  const modPlats = db.prepare(`
+    SELECT mp.modele_id, mp.plateforme_id, m.pseudo as modele_pseudo, p.nom as plateforme_nom
+    FROM modeles_plateformes mp
+    JOIN modeles m ON m.id = mp.modele_id AND m.actif = 1
+    JOIN plateformes p ON p.id = mp.plateforme_id AND p.actif = 1
+  `).all();
+
+  // Get all shifts in the date range
+  const shifts = db.prepare(`
+    SELECT s.*, c.prenom as chatteur_prenom
+    FROM shifts s
+    JOIN chatteurs c ON c.id = s.chatteur_id
+    WHERE s.date >= ? AND s.date <= ?
+  `).all(date_debut, date_fin);
+
+  // Build set of covered slots: "date|creneau|modele_id|plateforme_id"
+  const covered = {};
+  const doublons = [];
+
+  for (const s of shifts) {
+    const key = `${s.date}|${s.creneau}|${s.modele_id}|${s.plateforme_id}`;
+    if (covered[key]) {
+      doublons.push({
+        date: s.date, creneau: s.creneau,
+        modele_id: s.modele_id, plateforme_id: s.plateforme_id,
+        chatteurs: [covered[key], s.chatteur_prenom],
+      });
+    } else {
+      covered[key] = s.chatteur_prenom;
+    }
+  }
+
+  // Find uncovered slots (for each date × creneau × modele × plateforme)
+  const nonCouverts = [];
+  const startDate = new Date(date_debut);
+  const endDate = new Date(date_fin);
+  const padN = n => String(n).padStart(2, '0');
+
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    const dateStr = `${d.getFullYear()}-${padN(d.getMonth() + 1)}-${padN(d.getDate())}`;
+    for (const creneau of [1, 2, 3, 4]) {
+      for (const mp of modPlats) {
+        const key = `${dateStr}|${creneau}|${mp.modele_id}|${mp.plateforme_id}`;
+        if (!covered[key]) {
+          nonCouverts.push({
+            date: dateStr, creneau, creneau_label: CRENEAUX[creneau]?.label || '',
+            modele_pseudo: mp.modele_pseudo, plateforme_nom: mp.plateforme_nom,
+          });
+        }
+      }
+    }
+  }
+
+  res.json({ doublons, non_couverts: nonCouverts });
+}));
+
+// GET /api/shifts/export-csv?date_debut=&date_fin=
+router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { date_debut, date_fin } = req.query;
+  if (!date_debut || !date_fin) throw new ApiError(400, 'date_debut et date_fin requis');
+
+  const { sendCSV } = require('../utils/csvExport');
+
+  const shifts = db.prepare(`
+    SELECT s.date, c.prenom as chatteur, m.pseudo as modele, p.nom as plateforme,
+      s.creneau, s.fuseau_horaire
+    FROM shifts s
+    JOIN chatteurs c ON c.id = s.chatteur_id
+    LEFT JOIN modeles m ON m.id = s.modele_id
+    LEFT JOIN plateformes p ON p.id = s.plateforme_id
+    WHERE s.date >= ? AND s.date <= ?
+    ORDER BY s.date, s.creneau, c.prenom
+  `).all(date_debut, date_fin);
+
+  const enriched = shifts.map(s => ({
+    ...s,
+    creneau_label: CRENEAUX[s.creneau]?.label || `Créneau ${s.creneau}`,
+  }));
+
+  sendCSV(res, `shifts_${date_debut}_${date_fin}.csv`, enriched, [
+    { key: 'date', label: 'Date' },
+    { key: 'chatteur', label: 'Chatteur' },
+    { key: 'modele', label: 'Modèle' },
+    { key: 'plateforme', label: 'Plateforme' },
+    { key: 'creneau_label', label: 'Créneau' },
+    { key: 'fuseau_horaire', label: 'Fuseau horaire' },
+  ]);
+}));
 
 module.exports = router;

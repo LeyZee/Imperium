@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import api from '../../api/index.js';
 import StatCard from '../../components/StatCard.jsx';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
+import { useAuth } from '../../context/AuthContext.jsx';
 import {
   Euro, TrendingUp, Building2, ArrowLeftRight,
   Trophy, RefreshCw, ChevronDown, Crown, Users,
@@ -84,7 +85,9 @@ const PODIUM_ICONS = [
 
 /* ═══════════════════════════════════════════ */
 export default function Paies() {
-  const periods = generatePeriods();
+  const { user } = useAuth();
+  const isManager = user?.role === 'manager';
+  const periods = useMemo(() => generatePeriods(), []);
   const [selectedIdx, setSelectedIdx] = useState(0);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -96,7 +99,7 @@ export default function Paies() {
 
   const period = periods[selectedIdx];
 
-  async function fetchPaies() {
+  const fetchPaies = useCallback(async () => {
     if (!period) return;
     setLoading(true);
     setError('');
@@ -109,11 +112,11 @@ export default function Paies() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [period]);
 
   useEffect(() => {
     fetchPaies();
-  }, [selectedIdx]);
+  }, [fetchPaies]);
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -243,17 +246,26 @@ export default function Paies() {
             </button>
           )}
 
-          {/* Recalculate button */}
-          <button
-            className="btn-secondary"
-            onClick={handleRecalculate}
-            disabled={recalculating || loading}
-            title="Recalculer les paies"
-            style={{ padding: '0.5rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
-          >
-            <RefreshCw size={15} style={{ animation: recalculating ? 'spin 1s linear infinite' : 'none' }} />
-            {recalculating ? 'Recalcul...' : 'Recalculer'}
-          </button>
+          {/* Recalculate button (admin only) */}
+          {!isManager && (
+            <button
+              className="btn-secondary"
+              onClick={handleRecalculate}
+              disabled={recalculating || loading}
+              title="Recalculer les paies"
+              style={{ padding: '0.5rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              <RefreshCw size={15} style={{ animation: recalculating ? 'spin 1s linear infinite' : 'none' }} />
+              {recalculating ? 'Recalcul...' : 'Recalculer'}
+            </button>
+          )}
+
+          {period && (
+            <button className="btn-secondary" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              onClick={() => window.open(`/api/paies/export-csv?debut=${period.debut}&fin=${period.fin}`, '_blank')}>
+              <Download size={14} /> CSV
+            </button>
+          )}
 
           {/* Period selector */}
           <div ref={dropdownRef} style={{ position: 'relative' }}>
@@ -289,8 +301,7 @@ export default function Paies() {
                       fontWeight: i === selectedIdx ? 600 : 400,
                       borderLeft: i === selectedIdx ? '3px solid #f5b731' : '3px solid transparent',
                     }}
-                    onMouseEnter={e => { if (i !== selectedIdx) { e.currentTarget.style.background = 'rgba(0,0,0,0.03)'; } }}
-                    onMouseLeave={e => { if (i !== selectedIdx) { e.currentTarget.style.background = 'transparent'; } }}
+                    className={i !== selectedIdx ? 'hover-row' : ''}
                   >
                     {p.label}
                   </button>
@@ -356,8 +367,7 @@ export default function Paies() {
                       border: `1px solid ${PODIUM_ICONS[i].color}25`,
                       transition: 'transform 200ms ease, box-shadow 200ms ease',
                     }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
+                    className="hover-lift"
                   >
                     <span style={{ fontSize: '1.5rem' }}>{PODIUM_ICONS[i].emoji}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -436,17 +446,8 @@ export default function Paies() {
                       return (
                         <tr
                           key={p.id}
-                          style={{ transition: 'all 200ms ease', cursor: 'default' }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.transform = 'translateY(-1px)';
-                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
-                            e.currentTarget.style.borderLeft = '3px solid #f5b731';
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = 'none';
-                            e.currentTarget.style.borderLeft = '3px solid transparent';
-                          }}
+                          className="hover-gold-row"
+                          style={{ cursor: 'default' }}
                         >
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -520,7 +521,7 @@ export default function Paies() {
                             >
                               <option value="calculé">Calculé</option>
                               <option value="validé">Validé</option>
-                              <option value="payé">Payé</option>
+                              {!isManager && <option value="payé">Payé</option>}
                             </select>
                           </td>
                           <td style={{ textAlign: 'center' }}>
@@ -535,8 +536,7 @@ export default function Paies() {
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 transition: 'all 200ms ease',
                               }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; e.currentTarget.style.transform = 'scale(1.1)'; }}
-                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.transform = 'scale(1)'; }}
+                              className="hover-icon"
                             >
                               {downloadingId === p.chatteur_id
                                 ? <span className="spinner" style={{ width: 14, height: 14 }} />
@@ -581,17 +581,7 @@ export default function Paies() {
                       return (
                         <tr
                           key={m.id}
-                          style={{ transition: 'all 200ms ease' }}
-                          onMouseEnter={e => {
-                            e.currentTarget.style.transform = 'translateY(-1px)';
-                            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.06)';
-                            e.currentTarget.style.borderLeft = '3px solid #f5b731';
-                          }}
-                          onMouseLeave={e => {
-                            e.currentTarget.style.transform = 'translateY(0)';
-                            e.currentTarget.style.boxShadow = 'none';
-                            e.currentTarget.style.borderLeft = '3px solid transparent';
-                          }}
+                          className="hover-gold-row"
                         >
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -639,7 +629,7 @@ export default function Paies() {
                             >
                               <option value="calculé">Calculé</option>
                               <option value="validé">Validé</option>
-                              <option value="payé">Payé</option>
+                              {!isManager && <option value="payé">Payé</option>}
                             </select>
                           </td>
                           <td style={{ textAlign: 'center' }}>
@@ -654,8 +644,7 @@ export default function Paies() {
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 transition: 'all 200ms ease',
                               }}
-                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.16)'; e.currentTarget.style.transform = 'scale(1.1)'; }}
-                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(99,102,241,0.08)'; e.currentTarget.style.transform = 'scale(1)'; }}
+                              className="hover-icon"
                             >
                               {downloadingId === m.chatteur_id
                                 ? <span className="spinner" style={{ width: 14, height: 14 }} />
@@ -691,8 +680,7 @@ export default function Paies() {
                     background: `${item.color}08`, border: `1px solid ${item.color}20`,
                     transition: 'transform 200ms',
                   }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.02)'; }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; }}
+                    className="hover-scale-sm"
                   >
                     <p style={{ fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', margin: '0 0 0.3rem' }}>{item.label}</p>
                     <p style={{ fontWeight: 700, fontSize: '1.1rem', color: item.color, margin: 0 }}>{item.value}</p>

@@ -10,6 +10,10 @@ const db = require('../database');
  *   Top 3 primes: 0.5%, 0.25%, 0.12% of total_net_ht_equipe
  *   Manager: taux_net_equipe × total_net_ht_equipe
  *   Total = commission + prime - malus
+ *
+ * @param {string} periode_debut - Start date (YYYY-MM-DD)
+ * @param {string} periode_fin - End date (YYYY-MM-DD)
+ * @returns {{ periode_debut: string, periode_fin: string, taux_change: number, total_net_ht_equipe: number, nb_paies: number, top3: Array }}
  */
 function recalculatePaies(periode_debut, periode_fin) {
   // Get exchange rate USD→EUR
@@ -50,6 +54,16 @@ function recalculatePaies(periode_debut, periode_fin) {
   `).all(periode_debut, periode_fin);
   const malusByChatteur = {};
   for (const m of allMalus) malusByChatteur[m.chatteur_id] = m.total;
+
+  // Batch fetch: all primes manuelles grouped by chatteur (1 query instead of N)
+  const allPrimesManuelles = db.prepare(`
+    SELECT chatteur_id, COALESCE(SUM(montant), 0) as total
+    FROM primes_manuelles
+    WHERE actif = 1 AND periode_debut >= ? AND periode_fin <= ?
+    GROUP BY chatteur_id
+  `).all(periode_debut, periode_fin);
+  const primesManuByChatteur = {};
+  for (const pm of allPrimesManuelles) primesManuByChatteur[pm.chatteur_id] = pm.total;
 
   // Group ventes by chatteur_id
   const ventesByChatteur = {};
@@ -127,12 +141,14 @@ function recalculatePaies(periode_debut, periode_fin) {
     primeById[ranked[i].id] = totalNetHTEquipe * primeRates[i];
   }
 
-  // Distribute prime across platforms proportionally
+  // Distribute prime (cagnotte + manuelles) across platforms proportionally
   for (const row of paieRows) {
-    const chatteurPrime = primeById[row.chatteur_id] || 0;
-    if (chatteurPrime > 0) {
+    const chatteurPrimeCagnotte = primeById[row.chatteur_id] || 0;
+    const chatteurPrimeManuelle = primesManuByChatteur[row.chatteur_id] || 0;
+    const chatteurPrimeTotal = chatteurPrimeCagnotte + chatteurPrimeManuelle;
+    if (chatteurPrimeTotal > 0) {
       const chatteurTotal = chatteurNetHT[row.chatteur_id] || 1;
-      row.prime = chatteurPrime * (row.net_ht_eur / chatteurTotal);
+      row.prime = chatteurPrimeTotal * (row.net_ht_eur / chatteurTotal);
     }
     row.total_chatteur = row.commission_chatteur + row.prime - row.malus_total;
   }

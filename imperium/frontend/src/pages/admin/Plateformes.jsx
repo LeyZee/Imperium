@@ -12,6 +12,7 @@ export default function Plateformes() {
   const toast = useToast();
   const [plateformes, setPlateformes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [editId, setEditId] = useState(null);
@@ -21,8 +22,13 @@ export default function Plateformes() {
   useEffect(() => { fetchPlateformes(); }, []);
 
   async function fetchPlateformes() {
-    try { const { data } = await api.get('/api/plateformes'); setPlateformes(data); }
-    finally { setLoading(false); }
+    try {
+      setFetchError(null);
+      const { data } = await api.get('/api/plateformes');
+      setPlateformes(data);
+    } catch (err) {
+      setFetchError(err.response?.data?.error || 'Erreur lors du chargement des plateformes');
+    } finally { setLoading(false); }
   }
 
   function openAdd() { setForm(emptyForm); setEditId(null); setModal(true); setError(''); }
@@ -65,7 +71,12 @@ export default function Plateformes() {
         <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
       </div>
 
-      {loading ? <TableSkeleton rows={3} cols={6} /> : (
+      {fetchError ? (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {fetchError}
+          <button onClick={fetchPlateformes} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
+        </div>
+      ) : loading ? <TableSkeleton rows={3} cols={6} /> : (
         <div className="card" style={{ padding: 0, overflow: 'auto' }}>
           <table>
             <thead>

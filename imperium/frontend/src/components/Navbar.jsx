@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LogOut, User, Menu } from 'lucide-react';
+import NotificationPanel from './NotificationPanel.jsx';
 
 export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth();
@@ -8,6 +9,7 @@ export default function Navbar({ onMenuClick }) {
 
   return (
     <header
+      role="banner"
       style={{
         height: '64px',
         background: '#ffffff',
@@ -25,6 +27,7 @@ export default function Navbar({ onMenuClick }) {
       {/* Left side - mobile menu button */}
       <button
         onClick={onMenuClick}
+        aria-label="Ouvrir le menu"
         className="mobile-menu-btn"
         style={{
           background: 'transparent',
@@ -45,9 +48,10 @@ export default function Navbar({ onMenuClick }) {
 
       {/* Right side */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        {user && <NotificationPanel />}
         {user && (
           <button
-            onClick={() => navigate(user.role === 'admin' ? '/admin/settings' : '/chatteur/profil')}
+            onClick={() => navigate(user.role === 'admin' ? '/admin/settings' : user.role === 'manager' ? '/manager/settings' : '/chatteur/profil')}
             title="Paramètres"
             style={{
               display: 'flex',
@@ -60,8 +64,7 @@ export default function Navbar({ onMenuClick }) {
               borderRadius: '24px',
               transition: 'background 200ms',
             }}
-            onMouseEnter={e => e.currentTarget.style.background = 'rgba(245,183,49,0.08)'}
-            onMouseLeave={e => e.currentTarget.style.background = 'none'}
+            className="hover-profile"
           >
             {user.photo ? (
               <img src={user.photo} alt="" style={{
@@ -111,6 +114,7 @@ export default function Navbar({ onMenuClick }) {
           onClick={logout}
           className="btn-ghost"
           title="Se déconnecter"
+          aria-label="Se déconnecter"
           style={{ padding: '0.4rem 0.6rem' }}
         >
           <LogOut size={16} />

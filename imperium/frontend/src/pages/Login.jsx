@@ -29,6 +29,8 @@ export default function Login() {
       const user = await login(email.trim(), password);
       if (user.role === 'admin') {
         navigate('/admin/dashboard', { replace: true });
+      } else if (user.role === 'manager') {
+        navigate('/manager/dashboard', { replace: true });
       } else {
         navigate('/chatteur/dashboard', { replace: true });
       }
@@ -166,9 +168,9 @@ export default function Login() {
               <label className="label" htmlFor="email">Email</label>
               <input
                 id="email"
-                type="email"
+                type="text"
                 className="input-field"
-                placeholder="Votre adresse email"
+                placeholder="Votre identifiant ou email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"

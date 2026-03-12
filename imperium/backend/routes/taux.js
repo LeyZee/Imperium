@@ -2,28 +2,30 @@ const express = require('express');
 const fetch = require('node-fetch');
 const db = require('../database');
 const { authMiddleware, adminOnly } = require('../middleware/auth');
+const asyncHandler = require('../utils/asyncHandler');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
 // GET /api/taux — get current rates
-router.get('/', authMiddleware, (req, res) => {
+router.get('/', authMiddleware, asyncHandler((req, res) => {
   const rates = db.prepare(
     'SELECT * FROM taux_change ORDER BY date_maj DESC, devise_base'
   ).all();
   res.json(rates);
-});
+}));
 
 // GET /api/taux/current?from=USD&to=EUR
-router.get('/current', authMiddleware, (req, res) => {
+router.get('/current', authMiddleware, asyncHandler((req, res) => {
   const { from = 'USD', to = 'EUR' } = req.query;
   const rate = db.prepare(
     'SELECT * FROM taux_change WHERE devise_base = ? AND devise_cible = ? ORDER BY date_maj DESC LIMIT 1'
   ).get(from, to);
   res.json(rate || { taux: 0.92 });
-});
+}));
 
 // POST /api/taux/refresh — fetch latest rates from frankfurter.app
-router.post('/refresh', authMiddleware, adminOnly, async (req, res) => {
+router.post('/refresh', authMiddleware, adminOnly, asyncHandler(async (req, res) => {
   try {
     const response = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR');
     if (!response.ok) throw new Error('API unavailable');
@@ -49,10 +51,10 @@ router.post('/refresh', authMiddleware, adminOnly, async (req, res) => {
       fallback: true
     });
   }
-});
+}));
 
 // Check if refresh is needed (1st or 15th of month)
-router.post('/check', authMiddleware, async (req, res) => {
+router.post('/check', authMiddleware, asyncHandler(async (req, res) => {
   const today = new Date();
   const day = today.getDate();
   const todayStr = today.toISOString().split('T')[0];
@@ -67,6 +69,6 @@ router.post('/check', authMiddleware, async (req, res) => {
   }
 
   res.json({ needed: true, message: `Mise à jour du ${day}` });
-});
+}));
 
 module.exports = router;

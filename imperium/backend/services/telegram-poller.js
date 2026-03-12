@@ -67,14 +67,25 @@ async function apiCall(method, params = {}, signal) {
  */
 function handleUpdate(update) {
   const msg = update.message;
-  if (!msg || !msg.text) return;
+  if (!msg) return;
 
   const chatId = String(msg.chat.id);
+  const chatTitle = msg.chat.title || 'DM';
+  const senderName = msg.from?.first_name || '';
+
+  // Log ALL incoming messages for debugging
+  const hasText = !!msg.text;
+  const preview = hasText ? msg.text.substring(0, 60).replace(/\n/g, ' ') : '[no text]';
+  console.log(`📨 Telegram [${chatTitle}] from "${senderName}": ${preview}`);
+
+  if (!hasText) return;
 
   // Only process messages from configured groups
-  if (!GROUP_PLATFORM[chatId]) return;
+  if (!GROUP_PLATFORM[chatId]) {
+    console.log(`   ↳ Groupe ignoré (chat_id: ${chatId})`);
+    return;
+  }
 
-  const senderName = msg.from?.first_name || '';
   const text = msg.text;
 
   const result = processMessage({
@@ -83,16 +94,18 @@ function handleUpdate(update) {
     message: text,
   });
 
-  if (result.skipped) return; // Not a report message, ignore silently
+  if (result.skipped) {
+    console.log(`   ↳ Message ignoré (pas de "montant brut")`);
+    return;
+  }
 
   if (result.success) {
     messagesProcessed++;
     lastMessageAt = new Date();
     console.log(`✅ Vente importée: ${result.chatteur} — ${result.montant_brut}€ (plateforme ${result.plateforme_id}) [${result.date_rapport}]`);
   } else if (result.error) {
-    // Only log actual errors, not duplicates
     if (result.existing_id) {
-      // Duplicate — silent
+      console.log(`   ↳ Doublon ignoré (vente #${result.existing_id})`);
     } else {
       console.warn(`⚠️  Telegram: ${result.error} (sender: "${senderName}", group: ${chatId})`);
     }

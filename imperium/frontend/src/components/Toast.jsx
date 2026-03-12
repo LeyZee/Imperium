@@ -46,16 +46,21 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={toastApi}>
       {children}
       {/* Toast container */}
-      <div style={{
-        position: 'fixed',
-        top: '1rem',
-        right: '1rem',
-        zIndex: 9999,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: '0.5rem',
-        pointerEvents: 'none',
-      }}>
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="false"
+        style={{
+          position: 'fixed',
+          top: '1rem',
+          right: '1rem',
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.5rem',
+          pointerEvents: 'none',
+        }}
+      >
         {toasts.map(t => {
           const { Icon, color, bg, border } = ICONS[t.type] || ICONS.info;
           const isExiting = exiting.has(t.id);
@@ -80,13 +85,13 @@ export function ToastProvider({ children }) {
               <span style={{ fontSize: '0.85rem', color: '#1a1f2e', flex: 1 }}>{t.message}</span>
               <button
                 onClick={() => removeToast(t.id)}
+                aria-label="Fermer la notification"
                 style={{
                   background: 'none', border: 'none', cursor: 'pointer',
                   padding: '2px', color: '#94a3b8', flexShrink: 0,
                   transition: 'color 150ms ease',
                 }}
-                onMouseEnter={e => e.currentTarget.style.color = '#64748b'}
-                onMouseLeave={e => e.currentTarget.style.color = '#94a3b8'}
+                className="hover-gold-btn"
               >
                 <X size={14} />
               </button>
