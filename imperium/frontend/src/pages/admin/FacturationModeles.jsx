@@ -121,7 +121,7 @@ export default function FacturationModeles() {
         <div ref={dropdownRef} style={{ position: 'relative' }}>
           <button
             onClick={() => setDropdownOpen(!dropdownOpen)}
-            className="haptic"
+            className="haptic hover-lift"
             style={{
               display: 'flex', alignItems: 'center', gap: '0.5rem',
               background: 'linear-gradient(135deg, #f5b731, #e5a520)',
@@ -130,7 +130,6 @@ export default function FacturationModeles() {
               boxShadow: '0 2px 8px rgba(245,183,49,0.25)',
               transition: 'all 200ms ease',
             }}
-            className="hover-lift"
           >
             {selectedPeriod.label}
             <ChevronDown size={16} style={{ transform: dropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 200ms' }} />
@@ -149,7 +148,7 @@ export default function FacturationModeles() {
                   <button
                     key={i}
                     onClick={() => { setSelectedPeriod(p); setDropdownOpen(false); }}
-                    className="haptic"
+                    className={`haptic${!active ? ' hover-row' : ''}`}
                     style={{
                       display: 'flex', alignItems: 'center', width: '100%', textAlign: 'left',
                       padding: '0.6rem 1rem', border: 'none',
@@ -161,7 +160,6 @@ export default function FacturationModeles() {
                       transition: 'all 150ms ease',
                       borderLeft: active ? '3px solid #f5b731' : '3px solid transparent',
                     }}
-                    className={!active ? 'hover-row' : ''}
                   >
                     {p.label}
                   </button>

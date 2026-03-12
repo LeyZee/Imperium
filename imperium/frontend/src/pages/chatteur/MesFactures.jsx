@@ -333,7 +333,7 @@ export default function MesFactures() {
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <button
-                          className="haptic"
+                          className="haptic hover-icon"
                           onClick={(e) => { e.stopPropagation(); handleDownloadPdf(p); }}
                           disabled={downloadingPeriod === `${p.periode_debut}-${p.periode_fin}`}
                           title="Télécharger la facture PDF"
@@ -343,7 +343,6 @@ export default function MesFactures() {
                             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                             transition: 'all 200ms ease',
                           }}
-                          className="hover-icon"
                         >
                           {downloadingPeriod === `${p.periode_debut}-${p.periode_fin}`
                             ? <span className="spinner" style={{ width: 14, height: 14 }} />

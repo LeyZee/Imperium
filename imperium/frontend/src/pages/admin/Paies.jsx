@@ -526,7 +526,7 @@ export default function Paies() {
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <button
-                              className="haptic"
+                              className="haptic hover-icon"
                               onClick={(e) => { e.stopPropagation(); handleDownloadFacture(p.chatteur_id, p.chatteur_prenom); }}
                               disabled={downloadingId === p.chatteur_id}
                               title={`T\u00e9l\u00e9charger la facture de ${p.chatteur_prenom}`}
@@ -536,7 +536,6 @@ export default function Paies() {
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 transition: 'all 200ms ease',
                               }}
-                              className="hover-icon"
                             >
                               {downloadingId === p.chatteur_id
                                 ? <span className="spinner" style={{ width: 14, height: 14 }} />
@@ -634,7 +633,7 @@ export default function Paies() {
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <button
-                              className="haptic"
+                              className="haptic hover-icon"
                               onClick={(e) => { e.stopPropagation(); handleDownloadFacture(m.chatteur_id, m.chatteur_prenom); }}
                               disabled={downloadingId === m.chatteur_id}
                               title={`Télécharger la facture de ${m.chatteur_prenom}`}
@@ -644,7 +643,6 @@ export default function Paies() {
                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                                 transition: 'all 200ms ease',
                               }}
-                              className="hover-icon"
                             >
                               {downloadingId === m.chatteur_id
                                 ? <span className="spinner" style={{ width: 14, height: 14 }} />

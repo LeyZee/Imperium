@@ -134,7 +134,6 @@ export default function Sidebar({ role, mobileOpen, onMobileClose }) {
           )}
           <button
             onClick={() => setCollapsed((c) => !c)}
-            className="sidebar-collapse-btn"
             style={{
               background: 'transparent',
               border: 'none',
