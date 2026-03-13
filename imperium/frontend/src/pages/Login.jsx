@@ -143,7 +143,7 @@ export default function Login() {
               textTransform: 'uppercase',
             }}
           >
-            Agency Management Platform
+            Tableau de bord
           </p>
         </div>
 

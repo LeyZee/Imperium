@@ -113,7 +113,9 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
     it('should authenticate admin successfully', async () => {
       const hash = bcrypt.hashSync('Admin123!', 10);
       db.prepare
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue(null) })) // checkLockout: no lockout entry
         .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ id: 1, email: 'admin@test.com', password_hash: hash, role: 'admin' }) })) // SELECT user
+        .mockReturnValueOnce(mockStmt({ run: jest.fn() })) // resetAttempts: DELETE lockout
         .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue(null) })); // SELECT chatteur
 
       const res = await request(app)
@@ -126,9 +128,11 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
     });
 
     it('should reject wrong password', async () => {
-      db.prepare.mockReturnValue(mockStmt({
-        get: jest.fn().mockReturnValue({ id: 1, email: 'admin@test.com', password_hash: bcrypt.hashSync('correct', 10), role: 'admin' }),
-      }));
+      db.prepare
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue(null) })) // checkLockout
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ id: 1, email: 'admin@test.com', password_hash: bcrypt.hashSync('correct', 10), role: 'admin' }) })) // SELECT user
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue(null) })) // recordFailedAttempt: SELECT attempts
+        .mockReturnValueOnce(mockStmt({ run: jest.fn() })); // recordFailedAttempt: INSERT OR REPLACE
 
       const res = await request(app)
         .post('/api/auth/login')
@@ -149,10 +153,13 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
   // ─── Step 2: Create Vente ───
   describe('Step 2: Create Vente', () => {
     it('should create a vente and trigger paie recalculation', async () => {
-      // Mock modele-plateforme association check
+      // Mock shift lookup + modele-plateforme association check + insert + notifications
       db.prepare
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ id: 1, chatteur_id: 1, modele_id: 1, plateforme_id: 1 }) })) // shift
         .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ '1': 1 }) })) // link exists
-        .mockReturnValueOnce(mockStmt({ run: jest.fn().mockReturnValue({ lastInsertRowid: 42 }) })); // INSERT
+        .mockReturnValueOnce(mockStmt({ run: jest.fn().mockReturnValue({ lastInsertRowid: 42 }) })) // INSERT
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ prenom: 'Test' }) })) // chatteur name
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ nom: 'OF', devise: 'USD' }) })); // plateforme
 
       const res = await request(app)
         .post('/api/ventes')
@@ -164,6 +171,7 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
           montant_brut: 500,
           periode_debut: '2026-03-01',
           periode_fin: '2026-03-15',
+          shift_id: 1,
         });
 
       expect(res.status).toBe(201);
@@ -182,6 +190,7 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
           montant_brut: -50,
           periode_debut: '2026-03-01',
           periode_fin: '2026-03-15',
+          shift_id: 1,
         });
 
       expect(res.status).toBe(400);
@@ -293,6 +302,9 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
   // ─── Step 5: Generate Facture PDF ───
   describe('Step 5: Generate Facture PDF', () => {
     it('should generate facture for admin', async () => {
+      // Mock pending ventes check → 0 pending
+      db.prepare.mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ cnt: 0 }) }));
+
       const res = await request(app)
         .get('/api/paies/facture?chatteur_id=1&debut=2026-03-01&fin=2026-03-15')
         .set('x-test-role', 'admin');
@@ -310,6 +322,9 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
     });
 
     it('should allow chatteur to access own facture', async () => {
+      // Mock pending ventes check → 0 pending
+      db.prepare.mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ cnt: 0 }) }));
+
       await request(app)
         .get('/api/paies/facture?chatteur_id=20&debut=2026-03-01&fin=2026-03-15')
         .set('x-test-role', 'chatteur');

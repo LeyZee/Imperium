@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Euro, Trophy, AlertCircle, Calendar, Minus, Plus, MessageSquare, Trash2, Send } from 'lucide-react';
-import { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 import api from '../../api/index.js';
 import { CHATTEUR_COLORS } from '../../constants/colors';
 import StatCard from '../../components/StatCard.jsx';
+import DonutChart from '../../components/DonutChart.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
 
 const PAYS_ISO = { 'France': 'fr', 'Benin': 'bj', 'Bénin': 'bj', 'Madagascar': 'mg' };
@@ -90,6 +91,7 @@ export default function ChatteurDetail() {
         <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
           <AlertCircle size={40} color="#ef4444" style={{ margin: '0 auto 1rem' }} />
           <p style={{ color: '#64748b' }}>{error || 'Chatteur introuvable'}</p>
+          {error && <button onClick={fetchAll} className="btn-ghost" style={{ marginTop: '0.75rem', fontSize: '0.8rem' }}>Réessayer</button>}
         </div>
       </div>
     );
@@ -286,77 +288,23 @@ export default function ChatteurDetail() {
         </div>
 
         {/* Pie: Modeles */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{'Ventes par modèle'}</h3>
-          </div>
-          <div style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-            {modelesPie.length > 0 ? (
-              <>
-                <div style={{ width: 140, height: 140, flexShrink: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={modelesPie} cx="50%" cy="50%" innerRadius={35} outerRadius={60}
-                        paddingAngle={2} dataKey="total_brut" stroke="none">
-                        {modelesPie.map((d, i) => <Cell key={i} fill={d.color} />)}
-                      </Pie>
-                      <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} €`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  {modelesPie.map((d, i) => (
-                    <div key={d.pseudo + i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.75rem', flex: 1 }}>{d.pseudo}</span>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700 }}>{d.percentage.toFixed(0)}%</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p style={{ color: '#94a3b8', fontSize: '0.82rem' }}>Aucune vente</p>
-            )}
-          </div>
-        </div>
+        <DonutChart
+          data={modelesPie.map(d => ({ label: d.pseudo, value: d.total_brut, color: d.color }))}
+          title="Ventes par modèle"
+          valueLabel="€"
+          emptyText="Aucune vente"
+        />
       </div>
 
       {/* Plateforme Pie + Notes */}
       <div className="detail-charts-grid">
         {/* Pie: Plateformes */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Ventes par plateforme</h3>
-          </div>
-          <div style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-            {platPie.length > 0 ? (
-              <>
-                <div style={{ width: 140, height: 140, flexShrink: 0 }}>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={platPie} cx="50%" cy="50%" innerRadius={35} outerRadius={60}
-                        paddingAngle={2} dataKey="total_brut" stroke="none">
-                        {platPie.map((d, i) => <Cell key={i} fill={d.color} />)}
-                      </Pie>
-                      <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} €`} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div style={{ flex: 1, minWidth: 120, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-                  {platPie.map((d, i) => (
-                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <div style={{ width: 8, height: 8, borderRadius: 2, background: d.color, flexShrink: 0 }} />
-                      <span style={{ fontSize: '0.75rem', flex: 1 }}>{d.name}</span>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700 }}>{d.total_brut.toLocaleString('fr-FR')} €</span>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <p style={{ color: '#94a3b8', fontSize: '0.82rem' }}>{'Aucune donnée'}</p>
-            )}
-          </div>
-        </div>
+        <DonutChart
+          data={platPie.map(d => ({ label: d.name, value: d.total_brut, color: d.color }))}
+          title="Ventes par plateforme"
+          valueLabel="€"
+          emptyText="Aucune donnée"
+        />
 
         {/* Notes */}
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>

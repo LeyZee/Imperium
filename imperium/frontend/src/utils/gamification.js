@@ -66,17 +66,17 @@ export function computeStreaksAndRecords(historique) {
   // Rising Star: current prime > previous prime (both > 0)
   if (current && previous && (current.total_prime || 0) > 0 && (previous.total_prime || 0) > 0
       && (current.total_prime || 0) > (previous.total_prime || 0)) {
-    badges.push({ id: 'rising', emoji: '\u2B50', label: 'Rising Star', earned: true });
+    badges.push({ id: 'rising', emoji: '\u2B50', label: 'En progression', earned: true });
   } else {
-    badges.push({ id: 'rising', emoji: '\u2B50', label: 'Rising Star', earned: false });
+    badges.push({ id: 'rising', emoji: '\u2B50', label: 'En progression', earned: false });
   }
 
   // R\u00e9gulier: streak >= 3
   badges.push({ id: 'regulier', emoji: '\uD83C\uDFC6', label: 'R\u00e9gulier', earned: streak >= 3 });
 
-  // Newcomer: first time on podium (totalPodiums === 1 and current has prime)
+  // Recrue: first time on podium (totalPodiums === 1 and current has prime)
   const isNewcomer = totalPodiums === 1 && (current?.total_prime || 0) > 0;
-  badges.push({ id: 'newcomer', emoji: '\uD83C\uDF1F', label: 'Newcomer', earned: isNewcomer });
+  badges.push({ id: 'newcomer', emoji: '\uD83C\uDF1F', label: 'Recrue', earned: isNewcomer });
 
   return { streak, bestPrime, bestPaie, totalPodiums, badges };
 }

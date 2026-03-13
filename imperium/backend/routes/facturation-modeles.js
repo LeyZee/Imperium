@@ -31,7 +31,7 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     FROM ventes v
     JOIN modeles m ON m.id = v.modele_id
     JOIN plateformes pl ON pl.id = v.plateforme_id
-    WHERE v.periode_debut = ? AND v.periode_fin = ?
+    WHERE v.periode_debut = ? AND v.periode_fin = ? AND v.statut != 'rejetée'
     GROUP BY v.modele_id, v.plateforme_id
     ORDER BY m.pseudo, pl.nom
   `).all(debut, fin);

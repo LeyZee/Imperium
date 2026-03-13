@@ -1,4 +1,3 @@
-// Mock database to avoid SQLite lock issues
 jest.mock('../../database', () => ({
   prepare: jest.fn(() => ({
     all: jest.fn(() => []),
@@ -7,7 +6,22 @@ jest.mock('../../database', () => ({
   })),
 }));
 
-const { parseReport, isShiftReport, GROUP_PLATFORM } = require('../../services/telegram-parser');
+jest.mock('../../utils/period', () => ({
+  getPeriode: jest.fn((date) => ({ debut: '2026-03-01', fin: '2026-03-15' })),
+}));
+
+const db = require('../../database');
+const { parseReport, isShiftReport, GROUP_PLATFORM, findChatteur, isDuplicate, findShiftForVente, insertVente, processMessage } = require('../../services/telegram-parser');
+
+/** Helper: set up db.prepare to return different stmts based on SQL pattern */
+function mockPrepareBySQL(mapping) {
+  db.prepare.mockImplementation((sql) => {
+    for (const [pattern, stmt] of Object.entries(mapping)) {
+      if (sql.includes(pattern)) return stmt;
+    }
+    return { get: jest.fn(() => null), all: jest.fn(() => []), run: jest.fn(() => ({ lastInsertRowid: 1 })) };
+  });
+}
 
 describe('isShiftReport', () => {
   test('detects "montant brut" format', () => {
@@ -133,5 +147,225 @@ describe('GROUP_PLATFORM', () => {
 
   test('returns undefined for unknown group', () => {
     expect(GROUP_PLATFORM['unknown-id']).toBeUndefined();
+  });
+});
+
+describe('findChatteur', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('finds by telegram_user_id (exact match)', () => {
+    const chatteur = { id: 1, prenom: 'AXEL', telegram_user_id: 12345 };
+    mockPrepareBySQL({
+      'telegram_user_id': { get: jest.fn(() => chatteur), all: jest.fn(() => []), run: jest.fn() },
+    });
+    const result = findChatteur('Axel', 12345);
+    expect(result).toEqual(chatteur);
+  });
+
+  test('falls back to fuzzy name match', () => {
+    mockPrepareBySQL({
+      'telegram_user_id': { get: jest.fn(() => null), all: jest.fn(() => []), run: jest.fn() },
+      'SELECT * FROM chatteurs WHERE actif': { get: jest.fn(), all: jest.fn(() => [
+        { id: 1, prenom: 'AXEL', telegram_user_id: null },
+        { id: 2, prenom: 'CHARBEL', telegram_user_id: null },
+      ]), run: jest.fn() },
+      'UPDATE chatteurs': { get: jest.fn(), all: jest.fn(), run: jest.fn() },
+    });
+    const result = findChatteur('Axel', 99999);
+    expect(result.prenom).toBe('AXEL');
+  });
+
+  test('returns null when name is null and no ID', () => {
+    mockPrepareBySQL({
+      'telegram_user_id': { get: jest.fn(() => null), all: jest.fn(() => []), run: jest.fn() },
+    });
+    const result = findChatteur(null, null);
+    expect(result).toBeNull();
+  });
+
+  test('returns undefined when no match found', () => {
+    mockPrepareBySQL({
+      'telegram_user_id': { get: jest.fn(() => null), all: jest.fn(() => []), run: jest.fn() },
+      'SELECT * FROM chatteurs WHERE actif': { get: jest.fn(), all: jest.fn(() => [
+        { id: 1, prenom: 'AXEL', telegram_user_id: null },
+      ]), run: jest.fn() },
+    });
+    const result = findChatteur('UnknownPerson', 99999);
+    expect(result).toBeUndefined();
+  });
+
+  test('auto-saves telegram_user_id on name match', () => {
+    const runMock = jest.fn();
+    db.prepare.mockImplementation((sql) => {
+      if (sql.includes('UPDATE chatteurs SET')) return { get: jest.fn(), all: jest.fn(), run: runMock };
+      if (sql.includes('telegram_user_id = ?')) return { get: jest.fn(() => null), all: jest.fn(() => []), run: jest.fn() };
+      if (sql.includes('WHERE actif = 1')) return { get: jest.fn(), all: jest.fn(() => [
+        { id: 5, prenom: 'PIERRE', telegram_user_id: null },
+      ]), run: jest.fn() };
+      return { get: jest.fn(() => null), all: jest.fn(() => []), run: jest.fn() };
+    });
+    findChatteur('Pierre', 55555);
+    expect(runMock).toHaveBeenCalledWith(55555, 5);
+  });
+});
+
+describe('isDuplicate', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('detects existing duplicate', () => {
+    mockPrepareBySQL({
+      'SELECT id FROM ventes': { get: jest.fn(() => ({ id: 42 })), all: jest.fn(), run: jest.fn() },
+    });
+    const result = isDuplicate(1, 2, 100, '2026-03-01', '2026-03-15');
+    expect(result).toEqual({ id: 42 });
+  });
+
+  test('returns null when no duplicate', () => {
+    mockPrepareBySQL({
+      'SELECT id FROM ventes': { get: jest.fn(() => null), all: jest.fn(), run: jest.fn() },
+    });
+    const result = isDuplicate(1, 2, 100, '2026-03-01', '2026-03-15');
+    expect(result).toBeNull();
+  });
+});
+
+describe('findShiftForVente', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('finds shift within ±1 day window', () => {
+    const shift = { id: 10, modele_id: 3 };
+    mockPrepareBySQL({
+      'SELECT id, modele_id FROM shifts': { get: jest.fn(() => shift), all: jest.fn(), run: jest.fn() },
+    });
+    const result = findShiftForVente(1, 2, '2026-03-10');
+    expect(result).toEqual(shift);
+  });
+
+  test('returns null when no matching shift', () => {
+    mockPrepareBySQL({
+      'SELECT id, modele_id FROM shifts': { get: jest.fn(() => null), all: jest.fn(), run: jest.fn() },
+    });
+    const result = findShiftForVente(1, 2, '2026-03-10');
+    expect(result).toBeNull();
+  });
+});
+
+describe('insertVente', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('inserts with correct fields and validée status', () => {
+    const runMock = jest.fn(() => ({ lastInsertRowid: 99 }));
+    mockPrepareBySQL({
+      'INSERT INTO ventes': { get: jest.fn(), all: jest.fn(), run: runMock },
+    });
+    const result = insertVente(1, 2, 100, '2026-03-01', '2026-03-15', 'Import Telegram — test', 5, 3);
+    expect(result.lastInsertRowid).toBe(99);
+    expect(runMock).toHaveBeenCalledWith(1, 3, 2, 100, '2026-03-01', '2026-03-15', 'Import Telegram — test', 5);
+  });
+
+  test('handles null shift_id and modele_id', () => {
+    const runMock = jest.fn(() => ({ lastInsertRowid: 100 }));
+    mockPrepareBySQL({
+      'INSERT INTO ventes': { get: jest.fn(), all: jest.fn(), run: runMock },
+    });
+    const result = insertVente(1, 2, 50, '2026-03-01', '2026-03-15', 'Import Telegram — test', null, null);
+    expect(result.lastInsertRowid).toBe(100);
+    expect(runMock).toHaveBeenCalledWith(1, null, 2, 50, '2026-03-01', '2026-03-15', 'Import Telegram — test', null);
+  });
+});
+
+describe('processMessage', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  test('skips non-report messages', () => {
+    const result = processMessage({
+      group_id: '-1003327391292',
+      sender_name: 'Axel',
+      sender_id: 123,
+      message: 'Bonjour tout le monde',
+    });
+    expect(result.skipped).toBe(true);
+  });
+
+  test('returns error for unknown group', () => {
+    const result = processMessage({
+      group_id: '999999',
+      sender_name: 'Axel',
+      sender_id: 123,
+      message: 'Montant brut: 100€',
+    });
+    expect(result.error).toContain('Groupe non reconnu');
+  });
+
+  test('returns error when chatteur not found', () => {
+    mockPrepareBySQL({
+      'telegram_user_id': { get: jest.fn(() => null), all: jest.fn(() => []), run: jest.fn() },
+      'SELECT * FROM chatteurs WHERE actif': { get: jest.fn(), all: jest.fn(() => []), run: jest.fn() },
+    });
+    const result = processMessage({
+      group_id: '-1003327391292',
+      sender_name: 'Unknown',
+      sender_id: 123,
+      message: 'Montant brut: 100€',
+    });
+    expect(result.error).toContain('Chatteur non trouvé');
+  });
+
+  test('returns error for duplicate', () => {
+    mockPrepareBySQL({
+      'telegram_user_id': { get: jest.fn(() => ({ id: 1, prenom: 'AXEL', telegram_user_id: 123 })), all: jest.fn(() => []), run: jest.fn() },
+      'SELECT id FROM ventes': { get: jest.fn(() => ({ id: 42 })), all: jest.fn(), run: jest.fn() },
+    });
+    const result = processMessage({
+      group_id: '-1003327391292',
+      sender_name: 'Axel',
+      sender_id: 123,
+      message: 'Montant brut: 100€',
+    });
+    expect(result.error).toContain('Doublon');
+    expect(result.existing_id).toBe(42);
+  });
+
+  test('full success flow — creates vente', () => {
+    mockPrepareBySQL({
+      'telegram_user_id': { get: jest.fn(() => ({ id: 1, prenom: 'AXEL', telegram_user_id: 123 })), all: jest.fn(() => []), run: jest.fn() },
+      'SELECT id FROM ventes': { get: jest.fn(() => null), all: jest.fn(), run: jest.fn() },
+      'SELECT id, modele_id FROM shifts': { get: jest.fn(() => ({ id: 10, modele_id: 3 })), all: jest.fn(), run: jest.fn() },
+      'INSERT INTO ventes': { get: jest.fn(), all: jest.fn(), run: jest.fn(() => ({ lastInsertRowid: 99 })) },
+    });
+
+    const result = processMessage({
+      group_id: '-1003327391292',
+      sender_name: 'Axel',
+      sender_id: 123,
+      message: 'Montant brut: 150€',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.vente_id).toBe(99);
+    expect(result.chatteur).toBe('AXEL');
+    expect(result.montant_brut).toBe(150);
+    expect(result.plateforme_id).toBe(2); // Reveal
+    expect(result.shift_id).toBe(10);
+  });
+
+  test('success without matching shift', () => {
+    mockPrepareBySQL({
+      'telegram_user_id': { get: jest.fn(() => ({ id: 1, prenom: 'AXEL', telegram_user_id: 123 })), all: jest.fn(() => []), run: jest.fn() },
+      'SELECT id FROM ventes': { get: jest.fn(() => null), all: jest.fn(), run: jest.fn() },
+      'SELECT id, modele_id FROM shifts': { get: jest.fn(() => null), all: jest.fn(), run: jest.fn() },
+      'INSERT INTO ventes': { get: jest.fn(), all: jest.fn(), run: jest.fn(() => ({ lastInsertRowid: 100 })) },
+    });
+
+    const result = processMessage({
+      group_id: '-1003438053612', // OnlyFans
+      sender_name: 'Axel',
+      sender_id: 123,
+      message: 'Montant brut: 200$',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.shift_id).toBeNull();
+    expect(result.plateforme_id).toBe(1); // OnlyFans
   });
 });

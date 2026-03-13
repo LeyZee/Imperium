@@ -4,53 +4,49 @@ import {
   LayoutDashboard,
   CreditCard,
   Users,
-  Star,
-  Globe,
   Calendar,
   TrendingUp,
   ClipboardList,
   FileText,
   Menu,
   X,
-  MessageSquare,
   Activity,
   MinusCircle,
   Target,
+  User,
+  Send,
+  Settings,
 } from 'lucide-react';
 
 const adminItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/chatteurs', icon: Users, label: 'Équipe' },
-  { to: '/admin/modeles', icon: Star, label: 'Modèles' },
-  { to: '/admin/plateformes', icon: Globe, label: 'Plateformes' },
   { to: '/admin/shifts', icon: Calendar, label: 'Shifts' },
   { to: '/admin/ventes', icon: TrendingUp, label: 'Ventes' },
   { to: '/admin/paies', icon: CreditCard, label: 'Paies' },
   { to: '/admin/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
   { to: '/admin/malus', icon: MinusCircle, label: 'Malus & Primes' },
   { to: '/admin/objectifs', icon: Target, label: 'Objectifs' },
-  { to: '/admin/journal', icon: Activity, label: 'Journal' },
-  { to: '/admin/telegram', icon: MessageSquare, label: 'Telegram Bot' },
+  { to: '/admin/parametres', icon: Settings, label: 'Paramètres' },
 ];
 
 const managerItems = [
   { to: '/manager/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/manager/chatteurs', icon: Users, label: 'Équipe' },
   { to: '/manager/shifts', icon: Calendar, label: 'Shifts' },
   { to: '/manager/ventes', icon: TrendingUp, label: 'Ventes' },
   { to: '/manager/paies', icon: CreditCard, label: 'Paies' },
   { to: '/manager/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
   { to: '/manager/malus', icon: MinusCircle, label: 'Malus & Primes' },
   { to: '/manager/objectifs', icon: Target, label: 'Objectifs' },
-  { to: '/manager/journal', icon: Activity, label: 'Journal' },
+  { to: '/manager/parametres', icon: Settings, label: 'Paramètres' },
 ];
 
 const chatteurItems = [
   { to: '/chatteur/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/chatteur/planning', icon: ClipboardList, label: 'Mon Planning' },
   { to: '/chatteur/planning-general', icon: Calendar, label: 'Planning Général' },
-  { to: '/chatteur/factures', icon: FileText, label: 'Mes Factures' },
-  { to: '/chatteur/performance', icon: TrendingUp, label: 'Ma Performance' },
+  { to: '/chatteur/mes-ventes', icon: TrendingUp, label: 'Mes Ventes' },
+  { to: '/chatteur/factures', icon: CreditCard, label: 'Mes Paies' },
+  { to: '/chatteur/performance', icon: Activity, label: 'Ma Performance' },
 ];
 
 export default function Sidebar({ role, mobileOpen, onMobileClose }) {

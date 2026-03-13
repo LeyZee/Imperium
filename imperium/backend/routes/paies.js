@@ -201,6 +201,15 @@ router.get('/factures-zip', authMiddleware, adminOrManager, asyncHandler((req, r
     throw new ApiError(404, 'Aucune paie pour cette période');
   }
 
+  // Block if any ventes are pending validation
+  const pendingVentes = db.prepare(`
+    SELECT COUNT(*) as cnt FROM ventes
+    WHERE periode_debut >= ? AND periode_fin <= ? AND statut = 'en_attente'
+  `).get(debut, fin);
+  if (pendingVentes.cnt > 0) {
+    throw new ApiError(400, `Impossible de générer les factures : ${pendingVentes.cnt} vente(s) en attente de validation`);
+  }
+
   // Setup ZIP stream
   const zipFilename = `IMPERA_Factures_${debut}_${fin}.zip`;
   res.setHeader('Content-Type', 'application/zip');
@@ -236,6 +245,15 @@ router.get('/facture', authMiddleware, asyncHandler((req, res) => {
   // Admins and managers can generate any invoice; chatteurs only their own
   if (req.user.role !== 'admin' && req.user.role !== 'manager' && req.user.chatteur_id !== parseInt(chatteur_id)) {
     throw new ApiError(403, 'Accès refusé');
+  }
+
+  // Block facture if there are unvalidated ventes for this chatteur in this period
+  const pendingVentes = db.prepare(`
+    SELECT COUNT(*) as cnt FROM ventes
+    WHERE chatteur_id = ? AND periode_debut >= ? AND periode_fin <= ? AND statut = 'en_attente'
+  `).get(parseInt(chatteur_id), debut, fin);
+  if (pendingVentes.cnt > 0) {
+    throw new ApiError(400, `Impossible de générer la facture : ${pendingVentes.cnt} vente(s) en attente de validation`);
   }
 
   const { stream, filename } = generateFacture(parseInt(chatteur_id), debut, fin);

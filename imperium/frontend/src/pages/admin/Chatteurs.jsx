@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/index';
-import { UserPlus, Edit, UserX, X, KeyRound, Camera, Search, MessageSquare, Trash2, Send, Eye } from 'lucide-react';
+import { UserPlus, Edit, UserX, X, KeyRound, Camera, Search, MessageSquare, Trash2, Send, Eye, Clock, RefreshCw } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors';
 import { STATUTS, STATUT_MAP } from '../../constants/statuses';
 import { useToast } from '../../components/Toast.jsx';
@@ -13,8 +13,8 @@ const emptyForm = {
   prenom: '', email: '', code_postal: '',
   pays: 'Bénin', taux_commission: 0.15,
   role: 'chatteur', taux_net_equipe: 0.05, taux_horaire: 0, couleur: 0, statut: 'actif',
-  is_nouveau: false, password: '',
-  new_password: '', confirm_password: '', photo: null,
+  is_nouveau: false,
+  new_password: '', confirm_password: '', photo: null, telegram_user_id: '',
 };
 
 const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', directeur: 'Directeur', va: 'VA' };
@@ -39,7 +39,7 @@ const COMMISSION_PRESETS = [
   { label: 'Qualifié', value: 0.15, color: '#22c55e' },
 ];
 
-export default function Chatteurs() {
+export default function Chatteurs({ embedded = false }) {
   const { user } = useAuth();
   const navigate = useNavigate();
   const isManager = user?.role === 'manager';
@@ -163,13 +163,22 @@ export default function Chatteurs() {
   const commissionCustom = !COMMISSION_PRESETS.some(p => p.value === form.taux_commission);
 
   return (
-    <div className="page-enter">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
-        <h1 className="text-navy" style={{ fontWeight: 700 }}>Équipe</h1>
-        <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
-          <UserPlus size={16} /> Ajouter
-        </button>
-      </div>
+    <div className={embedded ? '' : 'page-enter'}>
+      {!embedded && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
+          <h1 className="text-navy" style={{ fontWeight: 700 }}>Équipe</h1>
+          <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
+            <UserPlus size={16} /> Ajouter
+          </button>
+        </div>
+      )}
+      {embedded && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+          <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
+            <UserPlus size={16} /> Ajouter
+          </button>
+        </div>
+      )}
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: '0.25rem', marginBottom: '1rem', borderBottom: '2px solid #e2e8f0', paddingBottom: '0' }}>
@@ -263,6 +272,16 @@ export default function Chatteurs() {
                             </span>
                           )}
                           <span style={{ fontWeight: 500 }}>{c.prenom}</span>
+                          {c.pending_invitation && (
+                            <span style={{
+                              fontSize: '0.6rem', fontWeight: 600, padding: '0.1rem 0.4rem',
+                              borderRadius: '10px', background: 'rgba(245,183,49,0.12)', color: '#92400e',
+                              marginLeft: '0.4rem', whiteSpace: 'nowrap',
+                            }}>
+                              <Clock size={10} style={{ verticalAlign: '-1px', marginRight: '0.15rem' }} />
+                              Invitation
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td>
@@ -599,13 +618,23 @@ export default function Chatteurs() {
                 <div><label className="label">Email</label><input className="input-field" type="email" value={form.email || ''} onChange={e => setForm({...form, email: e.target.value})} /></div>
                 <div><label className="label">Pays</label><input className="input-field" value={form.pays || ''} onChange={e => setForm({...form, pays: e.target.value})} /></div>
               </div>
+              <div className="form-row" style={{ marginBottom: '0.75rem' }}>
+                <div>
+                  <label className="label">Telegram User ID</label>
+                  <input className="input-field" type="number" placeholder="Ex: 123456789" value={form.telegram_user_id || ''} onChange={e => setForm({...form, telegram_user_id: e.target.value ? parseInt(e.target.value) : ''})} />
+                </div>
+              </div>
 
-              {/* Account section — create mode */}
-              {!editId && (
-                <div className="form-group">
-                  <label className="label">Mot de passe (compte login)</label>
-                  <input className="input-field" type="password" value={form.password || ''} onChange={e => setForm({...form, password: e.target.value})}
-                    placeholder="Minimum 8 caractères (utilise l'email comme identifiant)" />
+              {/* Account section — create mode: invitation info */}
+              {!editId && form.email && (
+                <div style={{
+                  marginTop: '0.5rem', padding: '0.65rem 0.85rem', borderRadius: '10px',
+                  background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)',
+                  display: 'flex', alignItems: 'center', gap: '0.5rem',
+                  fontSize: '0.78rem', color: '#065f46',
+                }}>
+                  <Send size={14} color="#10b981" style={{ flexShrink: 0 }} />
+                  Une invitation sera envoyée par email pour définir le mot de passe
                 </div>
               )}
 
@@ -620,6 +649,35 @@ export default function Chatteurs() {
                     <KeyRound size={14} /> Compte utilisateur
                   </div>
 
+                  {/* Pending invitation state */}
+                  {form.user_id && form.pending_invitation && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.65rem 0.85rem', borderRadius: '10px',
+                      background: 'rgba(245,183,49,0.06)', border: '1px solid rgba(245,183,49,0.15)',
+                      marginBottom: '0.75rem',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <Clock size={14} color="#f59e0b" />
+                        <span style={{ fontSize: '0.8rem', color: '#92400e', fontWeight: 600 }}>En attente d'activation</span>
+                      </div>
+                      <button type="button" className="btn-secondary haptic"
+                        style={{ fontSize: '0.72rem', padding: '0.35rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}
+                        onClick={async (ev) => {
+                          ev.preventDefault();
+                          try {
+                            await api.post(`/api/chatteurs/${editId}/resend-invite`);
+                            toast('Invitation renvoyée', 'success');
+                          } catch (err) {
+                            toast(err.response?.data?.error || 'Erreur', 'error');
+                          }
+                        }}>
+                        <RefreshCw size={12} /> Renvoyer
+                      </button>
+                    </div>
+                  )}
+
+                  {/* No account linked */}
                   {!form.user_id && (
                     <div style={{
                       background: 'rgba(245, 183, 49, 0.08)', border: '1px solid rgba(245, 183, 49, 0.2)',
@@ -637,18 +695,42 @@ export default function Chatteurs() {
                       onChange={e => setForm({...form, user_email: e.target.value, email: e.target.value})}
                       placeholder={form.user_id ? '' : 'Adresse email comme identifiant'} />
                   </div>
-                  <div className="form-group">
-                    <label className="label">{form.user_id ? 'Nouveau mot de passe (laisser vide pour ne pas changer)' : 'Mot de passe *'}</label>
-                    <input className="input-field" type="password" value={form.new_password || ''}
-                      onChange={e => setForm({...form, new_password: e.target.value})}
-                      placeholder={form.user_id ? '••••••••' : 'Minimum 8 caractères'} />
-                  </div>
-                  <div className="form-group">
-                    <label className="label">Confirmer le mot de passe</label>
-                    <input className="input-field" type="password" value={form.confirm_password || ''}
-                      onChange={e => setForm({...form, confirm_password: e.target.value})}
-                      placeholder="Retapez le mot de passe" />
-                  </div>
+
+                  {/* Only show password fields if account exists and is NOT pending invitation */}
+                  {form.user_id && !form.pending_invitation && (
+                    <>
+                      <div className="form-group">
+                        <label className="label">Nouveau mot de passe (laisser vide pour ne pas changer)</label>
+                        <input className="input-field" type="password" value={form.new_password || ''}
+                          onChange={e => setForm({...form, new_password: e.target.value})}
+                          placeholder="••••••••" />
+                      </div>
+                      <div className="form-group">
+                        <label className="label">Confirmer le mot de passe</label>
+                        <input className="input-field" type="password" value={form.confirm_password || ''}
+                          onChange={e => setForm({...form, confirm_password: e.target.value})}
+                          placeholder="Retapez le mot de passe" />
+                      </div>
+                    </>
+                  )}
+
+                  {/* No account: show password field for manual creation */}
+                  {!form.user_id && (
+                    <>
+                      <div className="form-group">
+                        <label className="label">Mot de passe *</label>
+                        <input className="input-field" type="password" value={form.new_password || ''}
+                          onChange={e => setForm({...form, new_password: e.target.value})}
+                          placeholder="Minimum 8 caractères" />
+                      </div>
+                      <div className="form-group">
+                        <label className="label">Confirmer le mot de passe</label>
+                        <input className="input-field" type="password" value={form.confirm_password || ''}
+                          onChange={e => setForm({...form, confirm_password: e.target.value})}
+                          placeholder="Retapez le mot de passe" />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 

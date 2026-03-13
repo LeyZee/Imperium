@@ -8,7 +8,7 @@ import { TableSkeleton } from '../../components/Skeleton.jsx';
 const DEVISE_SYMBOLS = { 'USD': '$', 'EUR': '€', 'GBP': '£' };
 const emptyForm = { nom: '', tva_rate: 0, commission_rate: 20, devise: 'USD', couleur_fond: '#1b2e4b', couleur_texte: '#ffffff' };
 
-export default function Plateformes() {
+export default function Plateformes({ embedded = false }) {
   const toast = useToast();
   const [plateformes, setPlateformes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -65,11 +65,17 @@ export default function Plateformes() {
   }
 
   return (
-    <div className="page-enter">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
-        <h1 style={{ fontWeight: 700 }}>Plateformes</h1>
-        <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
-      </div>
+    <div className={embedded ? '' : 'page-enter'}>
+      {!embedded ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
+          <h1 style={{ fontWeight: 700 }}>Plateformes</h1>
+          <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+          <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
+        </div>
+      )}
 
       {fetchError ? (
         <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>

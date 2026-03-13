@@ -4,6 +4,7 @@ import StatCard from '../../components/StatCard.jsx';
 import {
   MessageSquare, Clock, TrendingUp, Play, Square,
   AlertTriangle, CheckCircle, RefreshCw, Wifi, WifiOff,
+  Trash2, ExternalLink,
 } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
@@ -26,12 +27,14 @@ function formatDateTime(isoStr) {
   return `${date} à ${hours}h${minutes}`;
 }
 
-export default function TelegramBot() {
+export default function TelegramBot({ embedded = false }) {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { type: 'single'|'all', id?: number }
+  const [deleteInput, setDeleteInput] = useState('');
   const intervalRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -81,11 +84,36 @@ export default function TelegramBot() {
     }
   }
 
+  async function handleDeleteImport(id) {
+    try {
+      await api.delete(`/api/ventes/${id}`);
+      setSuccess('Import supprimé');
+      timerRef.current = setTimeout(() => setSuccess(''), 3000);
+      await fetchStatus();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur à la suppression');
+    }
+    setDeleteConfirm(null);
+  }
+
+  async function handleDeleteAllImports() {
+    try {
+      const { data } = await api.delete('/api/telegram/imports');
+      setSuccess(data.message || 'Imports supprimés');
+      timerRef.current = setTimeout(() => setSuccess(''), 3000);
+      await fetchStatus();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur à la suppression');
+    }
+    setDeleteConfirm(null);
+    setDeleteInput('');
+  }
+
   const isRunning = status?.running;
   const statusColor = isRunning ? '#10b981' : '#ef4444';
 
   return (
-    <div className="page-enter">
+    <div className={embedded ? '' : 'page-enter'}>
       {/* Toast */}
       {success && (
         <div className="toast-success" style={{
@@ -95,20 +123,22 @@ export default function TelegramBot() {
       )}
 
       {/* Header */}
-      <div style={{ marginBottom: '1.25rem' }}>
-        <h1 style={{ fontWeight: 700, margin: 0 }}>Telegram Bot</h1>
-        <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Monitoring et contrôle du bot d'import automatique</p>
-      </div>
+      {!embedded && (
+        <div style={{ marginBottom: '1.25rem' }}>
+          <h1 style={{ fontWeight: 700, margin: 0 }}>Telegram Bot</h1>
+          <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Monitoring et contrôle du bot d'import automatique</p>
+        </div>
+      )}
 
       {/* Stat Cards */}
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+        <div className="telegram-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
           {[...Array(4)].map((_, i) => (
             <div key={i} className="card" style={{ height: '100px', animation: 'pulse-soft 1.5s ease infinite', opacity: 0.5 }} />
           ))}
         </div>
       ) : status ? (
-        <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
+        <div className="stagger-children telegram-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
           <StatCard
             title="Statut"
             value={
@@ -255,11 +285,27 @@ export default function TelegramBot() {
           display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         }}>
           <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Imports récents</h3>
-          {status?.recentImports?.length > 0 && (
-            <span className="badge badge-navy" style={{ fontSize: '0.7rem' }}>
-              {status.recentImports.length} derniers
-            </span>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {status?.recentImports?.length > 0 && (
+              <span className="badge badge-navy" style={{ fontSize: '0.7rem' }}>
+                {status.recentImports.length} derniers
+              </span>
+            )}
+            <button onClick={fetchStatus} className="btn-ghost" title="Rafraîchir"
+              style={{ padding: '0.3rem', borderRadius: '0.3rem', border: 'none', cursor: 'pointer', background: 'transparent', color: '#64748b' }}>
+              <RefreshCw size={14} />
+            </button>
+            <a href="/admin/ventes" className="btn-ghost" title="Voir toutes les ventes"
+              style={{ padding: '0.3rem', borderRadius: '0.3rem', border: 'none', cursor: 'pointer', background: 'transparent', color: '#64748b', display: 'flex', alignItems: 'center' }}>
+              <ExternalLink size={14} />
+            </a>
+            {status?.recentImports?.length > 0 && (
+              <button onClick={() => setDeleteConfirm({ type: 'all' })} className="btn-ghost" title="Tout supprimer"
+                style={{ padding: '0.3rem', borderRadius: '0.3rem', border: 'none', cursor: 'pointer', background: 'transparent', color: '#ef4444' }}>
+                <Trash2 size={14} />
+              </button>
+            )}
+          </div>
         </div>
 
         <div style={{ overflowX: 'auto' }}>
@@ -271,6 +317,7 @@ export default function TelegramBot() {
                 <th>Plateforme</th>
                 <th style={{ textAlign: 'right' }}>Montant</th>
                 <th>Source</th>
+                <th style={{ width: 40 }}></th>
               </tr>
             </thead>
             <tbody className="stagger-rows">
@@ -308,11 +355,20 @@ export default function TelegramBot() {
                   <td style={{ fontSize: '0.75rem', color: '#94a3b8', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {imp.notes?.replace('Import Telegram — ', '') || '—'}
                   </td>
+                  <td>
+                    <button onClick={() => setDeleteConfirm({ type: 'single', id: imp.id })}
+                      title="Supprimer cet import"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.25rem', borderRadius: '0.25rem', opacity: 0.6 }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}>
+                      <Trash2 size={14} />
+                    </button>
+                  </td>
                 </tr>
               ))}
               {(!status?.recentImports || status.recentImports.length === 0) && (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
+                  <td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
                     <div style={{
                       width: 48, height: 48, borderRadius: '50%', margin: '0 auto 0.75rem',
                       background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -328,6 +384,55 @@ export default function TelegramBot() {
           </table>
         </div>
       </div>
+
+      {/* Delete confirmation modal */}
+      {deleteConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'fadeIn 0.2s ease',
+        }} onClick={() => { setDeleteConfirm(null); setDeleteInput(''); }}>
+          <div style={{
+            background: '#fff', borderRadius: '0.75rem', padding: '1.5rem', width: '100%', maxWidth: 420,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+          }} onClick={e => e.stopPropagation()}>
+            {deleteConfirm.type === 'single' ? (
+              <>
+                <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: '#1a1f2e' }}>Supprimer cet import ?</h3>
+                <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0 0 1.25rem' }}>
+                  Cette vente importée par Telegram sera définitivement supprimée et les paies seront recalculées.
+                </p>
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                  <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>Annuler</button>
+                  <button className="btn btn-danger" onClick={() => handleDeleteImport(deleteConfirm.id)}>Supprimer</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 style={{ margin: '0 0 0.5rem', fontSize: '1rem', color: '#ef4444' }}>Supprimer TOUS les imports Telegram ?</h3>
+                <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0 0 0.75rem' }}>
+                  Cette action est irréversible. Toutes les ventes importées via le bot Telegram seront supprimées et les paies recalculées.
+                </p>
+                <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0 0 1rem' }}>
+                  Tapez <strong>SUPPRIMER</strong> pour confirmer :
+                </p>
+                <input
+                  type="text" className="input-field" value={deleteInput}
+                  onChange={e => setDeleteInput(e.target.value)}
+                  placeholder="SUPPRIMER"
+                  style={{ marginBottom: '1.25rem', width: '100%' }}
+                />
+                <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+                  <button className="btn btn-secondary" onClick={() => { setDeleteConfirm(null); setDeleteInput(''); }}>Annuler</button>
+                  <button className="btn btn-danger" disabled={deleteInput !== 'SUPPRIMER'} onClick={handleDeleteAllImports}>
+                    Tout supprimer
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Error toast */}
       {error && !loading && (

@@ -8,6 +8,8 @@ const db = require('../database');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
+const { logActivity } = require('../utils/activityLogger');
+const { recalculatePaies } = require('../services/paie-calculator');
 
 const router = express.Router();
 
@@ -146,6 +148,29 @@ router.post('/stop', authMiddleware, adminOnly, controlLimiter, asyncHandler((re
   }
   telegramPoller.stop();
   res.json({ message: 'Bot Telegram arrêté', status: telegramPoller.getStatus() });
+}));
+
+/**
+ * DELETE /api/telegram/imports — Bulk delete all Telegram imports
+ */
+router.delete('/imports', authMiddleware, adminOnly, asyncHandler((req, res) => {
+  // Collect affected periods for recalculation
+  const periods = db.prepare(`
+    SELECT DISTINCT periode_debut, periode_fin FROM ventes
+    WHERE notes LIKE 'Import Telegram%'
+  `).all();
+
+  const result = db.prepare("DELETE FROM ventes WHERE notes LIKE 'Import Telegram%'").run();
+
+  // Recalculate paies for all affected periods
+  for (const p of periods) {
+    try { recalculatePaies(p.periode_debut, p.periode_fin); } catch (err) {
+      logger.error('Erreur recalcul paies après suppression imports', { error: err.message });
+    }
+  }
+
+  logActivity(req.user.id, 'delete_all_telegram_imports', 'vente', null, `${result.changes} imports supprimés`);
+  res.json({ message: `${result.changes} import(s) Telegram supprimé(s)`, count: result.changes });
 }));
 
 module.exports = router;

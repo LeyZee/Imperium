@@ -61,12 +61,14 @@ export default function StatCard({ title, value, subtitle, icon: Icon, color = '
           <p
             className={popping ? 'count-pop' : ''}
             style={{
-              fontSize: '1.75rem',
+              fontSize: 'clamp(1.2rem, 4.5vw, 1.75rem)',
               fontWeight: 700,
               color: hovered ? color : '#1a1f2e',
               lineHeight: 1.1,
               transition: 'color 200ms ease',
-              wordBreak: 'break-word',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
             }}
           >
             {value ?? '—'}

@@ -41,7 +41,7 @@ function recalculatePaies(periode_debut, periode_fin) {
         COUNT(*) as nb_ventes
       FROM ventes v
       JOIN plateformes p ON p.id = v.plateforme_id
-      WHERE v.periode_debut >= ? AND v.periode_fin <= ?
+      WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
       GROUP BY v.chatteur_id, v.plateforme_id
     `).all(periode_debut, periode_fin);
 

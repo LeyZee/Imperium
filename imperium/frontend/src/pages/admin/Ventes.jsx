@@ -3,7 +3,7 @@ import api from '../../api/index';
 import StatCard from '../../components/StatCard.jsx';
 import {
   Plus, Euro, ShoppingBag, Trophy, BarChart3, X, Pencil, Trash2,
-  ChevronDown, PackageOpen, Calendar, Download
+  ChevronDown, PackageOpen, Calendar, Download, Check, XCircle, Clock
 } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
@@ -54,7 +54,15 @@ const today = (() => {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`;
 })();
 
-const EMPTY_FORM = { chatteur_id: '', modele_id: '', plateforme_id: '', montant_brut: '', date: today, notes: '' };
+const STATUT_STYLES = {
+  'en_attente': { bg: 'rgba(245,158,11,0.1)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)', label: 'En attente' },
+  'validée': { bg: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)', label: 'Validée' },
+  'rejetée': { bg: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.2)', label: 'Rejetée' },
+};
+
+const CRENEAUX_LABELS = { 1: '08h-14h', 2: '14h-20h', 3: '20h-02h', 4: '02h-08h' };
+
+const EMPTY_FORM = { chatteur_id: '', modele_id: '', plateforme_id: '', montant_brut: '', date: today, notes: '', shift_id: '' };
 
 /* ─────────────────────────────────────────── */
 export default function Ventes() {
@@ -80,6 +88,9 @@ export default function Ventes() {
   const [modalClosing, setModalClosing] = useState(false);
   const [chatteurModeles, setChatteurModeles] = useState(null); // null = all models, [] = filtered
 
+  /* Shifts for vente */
+  const [availableShifts, setAvailableShifts] = useState([]);
+
   /* Delete confirmation */
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
@@ -87,6 +98,7 @@ export default function Ventes() {
   /* Feedback */
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [fetchError, setFetchError] = useState(null);
 
   /* ─── Data fetching ─── */
   const fetchVentes = useCallback(async (period, platId, chattId, modId) => {
@@ -120,27 +132,33 @@ export default function Ventes() {
     } catch { /* ignore */ }
   }, [selectedPeriod]);
 
+  async function initialFetch() {
+    setLoading(true);
+    setFetchError(null);
+    try {
+      // Load reference data + dashboard period in parallel
+      const [c, m, p, dash] = await Promise.all([
+        api.get('/api/chatteurs'),
+        api.get('/api/modeles'),
+        api.get('/api/plateformes'),
+        api.get('/api/dashboard'),
+      ]);
+      setChatteurs(c.data);
+      setModeles(m.data);
+      setPlateformes(p.data);
+      const initialPeriod = dash.data.periode || null;
+      if (dash.data.periodes) setPeriods(dash.data.periodes);
+      if (initialPeriod) setSelectedPeriod(initialPeriod);
+      // Now fetch ventes + summary with the correct period
+      await Promise.all([fetchVentes(initialPeriod), fetchSummary(initialPeriod)]);
+    } catch {
+      setFetchError('Impossible de charger les données.');
+    }
+    setLoading(false);
+  }
+
   useEffect(() => {
-    (async () => {
-      try {
-        // Load reference data + dashboard period in parallel
-        const [c, m, p, dash] = await Promise.all([
-          api.get('/api/chatteurs'),
-          api.get('/api/modeles'),
-          api.get('/api/plateformes'),
-          api.get('/api/dashboard'),
-        ]);
-        setChatteurs(c.data);
-        setModeles(m.data);
-        setPlateformes(p.data);
-        const initialPeriod = dash.data.periode || null;
-        if (dash.data.periodes) setPeriods(dash.data.periodes);
-        if (initialPeriod) setSelectedPeriod(initialPeriod);
-        // Now fetch ventes + summary with the correct period
-        await Promise.all([fetchVentes(initialPeriod), fetchSummary(initialPeriod)]);
-      } catch { /* ignore */ }
-      setLoading(false);
-    })();
+    initialFetch();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function refresh(period, platId, chattId, modId) {
@@ -175,9 +193,21 @@ export default function Ventes() {
     } catch { setChatteurModeles(null); }
   }
 
+  async function fetchShiftsForVente(chatteurId, modeleId, plateformeId) {
+    if (!chatteurId) { setAvailableShifts([]); return; }
+    try {
+      const params = new URLSearchParams({ chatteur_id: chatteurId, days: 14 });
+      if (modeleId) params.append('modele_id', modeleId);
+      if (plateformeId) params.append('plateforme_id', plateformeId);
+      const { data } = await api.get(`/api/shifts/for-vente?${params}`);
+      setAvailableShifts(data);
+    } catch { setAvailableShifts([]); }
+  }
+
   function openAddModal() {
     setForm(EMPTY_FORM);
     setChatteurModeles(null);
+    setAvailableShifts([]);
     setError('');
     setModal('add');
   }
@@ -190,9 +220,11 @@ export default function Ventes() {
       montant_brut: String(vente.montant_brut),
       date: vente.periode_debut || today,
       notes: vente.notes || '',
+      shift_id: vente.shift_id ? String(vente.shift_id) : '',
     });
     setError('');
     fetchChatteurModeles(vente.chatteur_id);
+    fetchShiftsForVente(vente.chatteur_id, vente.modele_id, vente.plateforme_id);
     setModal(vente);
   }
 
@@ -217,6 +249,7 @@ export default function Ventes() {
       setError('Le montant doit être un nombre positif'); return;
     }
     if (!form.date) { setError('Date requise'); return; }
+    if (!form.shift_id) { setError('Shift requis'); return; }
 
     setSubmitting(true);
     try {
@@ -229,6 +262,7 @@ export default function Ventes() {
         periode_fin: periode.fin,
         modele_id: form.modele_id ? Number(form.modele_id) : null,
         notes: form.notes || null,
+        shift_id: form.shift_id ? Number(form.shift_id) : undefined,
       };
 
       if (modal === 'add') {
@@ -261,6 +295,19 @@ export default function Ventes() {
       setTimeout(() => setSuccess(''), 3000);
       await refresh();
     }, 300);
+  }
+
+  /* ─── Validate / Reject ─── */
+  async function handleValider(venteId, statut) {
+    try {
+      await api.put(`/api/ventes/${venteId}/valider`, { statut });
+      setSuccess(statut === 'validée' ? 'Vente validée' : 'Vente rejetée');
+      setTimeout(() => setSuccess(''), 3000);
+      await refresh();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Erreur');
+      setTimeout(() => setError(''), 3000);
+    }
   }
 
   /* ─── Helpers ─── */
@@ -306,14 +353,28 @@ export default function Ventes() {
 
       {/* ─── Header ─── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
-        <h1 style={{ fontWeight: 700, margin: 0 }}>Ventes</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <h1 style={{ fontWeight: 700, margin: 0 }}>Ventes</h1>
+          {(() => {
+            const pendingCount = ventes.filter(v => v.statut === 'en_attente').length;
+            return pendingCount > 0 ? (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                padding: '0.2rem 0.6rem', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 600,
+                background: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.2)',
+              }}>
+                <Clock size={12} /> {pendingCount} en attente
+              </span>
+            ) : null;
+          })()}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {/* Period selector */}
           <div style={{ position: 'relative' }}>
             <button
               className="btn-secondary"
               onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
-              style={{ fontSize: '0.8rem', gap: '0.35rem' }}
+              style={{ fontSize: '0.8rem', gap: '0.35rem', padding: '0.5rem 1rem' }}
             >
               <Calendar size={14} />
               {selectedPeriod ? formatPeriodLabel(selectedPeriod.debut, selectedPeriod.fin) : 'Période'}
@@ -323,29 +384,37 @@ export default function Ventes() {
               }} />
             </button>
             {showPeriodDropdown && (
-              <div style={{
-                position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 30,
-                background: '#fff', border: '1px solid rgba(0,0,0,0.08)', borderRadius: '10px',
-                boxShadow: '0 8px 30px rgba(0,0,0,0.12)', minWidth: '200px',
-                animation: 'slideUp 0.2s ease', overflow: 'hidden',
-              }}>
-                {periods.map((p, i) => (
-                  <div
-                    key={i}
-                    onClick={() => selectPeriod(p)}
-                    style={{
-                      padding: '0.6rem 1rem', cursor: 'pointer', fontSize: '0.82rem',
-                      background: selectedPeriod?.debut === p.debut ? 'rgba(245,183,49,0.1)' : 'transparent',
-                      fontWeight: selectedPeriod?.debut === p.debut ? 600 : 400,
-                      color: selectedPeriod?.debut === p.debut ? '#b8860b' : '#1a1f2e',
-                      transition: 'background 150ms ease',
-                    }}
-                    className={selectedPeriod?.debut !== p.debut ? 'hover-row' : ''}
-                  >
-                    {formatPeriodLabel(p.debut, p.fin)}
-                  </div>
-                ))}
-              </div>
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setShowPeriodDropdown(false)} />
+                <div style={{
+                  position: 'absolute', top: '100%', marginTop: '0.35rem', right: 0, zIndex: 50,
+                  background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '12px',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.12)', minWidth: '220px',
+                  animation: 'modalCardIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)', overflow: 'hidden',
+                }}>
+                  {periods.map((p, i) => {
+                    const isActive = selectedPeriod?.debut === p.debut && selectedPeriod?.fin === p.fin;
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => selectPeriod(p)}
+                        style={{
+                          display: 'block', width: '100%', textAlign: 'left',
+                          padding: '0.6rem 1rem', border: 'none', cursor: 'pointer', fontSize: '0.82rem',
+                          background: isActive ? 'rgba(245,183,49,0.1)' : 'transparent',
+                          fontWeight: isActive ? 600 : 400,
+                          color: isActive ? '#f5b731' : 'var(--text-primary)',
+                          borderLeft: isActive ? '3px solid #f5b731' : '3px solid transparent',
+                          transition: 'background 150ms',
+                        }}
+                        className={!isActive ? 'hover-row' : ''}
+                      >
+                        {formatPeriodLabel(p.debut, p.fin)}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
             )}
           </div>
 
@@ -361,6 +430,14 @@ export default function Ventes() {
           </button>
         </div>
       </div>
+
+      {/* ─── Fetch error ─── */}
+      {fetchError && (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {fetchError}
+          <button onClick={initialFetch} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
+        </div>
+      )}
 
       {/* ─── StatCards ─── */}
       <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', marginBottom: '1.25rem' }}>
@@ -482,15 +559,22 @@ export default function Ventes() {
                 <th>Chatteur</th>
                 <th>Modèle</th>
                 <th>Plateforme</th>
+                <th>Shift</th>
                 <th style={{ textAlign: 'right' }}>Montant brut</th>
+                <th>Statut</th>
                 <th>Notes</th>
-                <th style={{ width: 80, textAlign: 'center' }}>Actions</th>
+                <th style={{ width: 180, textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody className="stagger-rows">
-              {ventes.map(v => {
+              {[...ventes].sort((a, b) => {
+                if (a.statut === 'en_attente' && b.statut !== 'en_attente') return -1;
+                if (a.statut !== 'en_attente' && b.statut === 'en_attente') return 1;
+                return 0;
+              }).map(v => {
                 const devise = getDevise(v.plateforme_id);
                 const isRemoving = deletingId === v.id;
+                const isPending = v.statut === 'en_attente';
                 return (
                   <tr
                     key={v.id}
@@ -500,6 +584,8 @@ export default function Ventes() {
                       opacity: isRemoving ? 0 : 1,
                       transform: isRemoving ? 'translateX(30px)' : 'translateX(0)',
                       maxHeight: isRemoving ? 0 : '200px',
+                      background: isPending ? 'rgba(245,158,11,0.04)' : undefined,
+                      borderLeft: isPending ? '3px solid #f59e0b' : '3px solid transparent',
                     }}
                   >
                     <td style={{ fontSize: '0.82rem', color: '#64748b', whiteSpace: 'nowrap' }}>
@@ -541,14 +627,68 @@ export default function Ventes() {
                         {getPlatName(v.plateforme_id)}
                       </span>
                     </td>
+                    <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                      {v.shift_date ? (
+                        <span>
+                          {new Date(v.shift_date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                          {' — '}{CRENEAUX_LABELS[v.shift_creneau] || '?'}
+                        </span>
+                      ) : '—'}
+                    </td>
                     <td style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: '#f5b731', whiteSpace: 'nowrap' }}>
                       {v.montant_brut.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} {devise === 'USD' ? '$' : '€'}
+                    </td>
+                    <td>
+                      {(() => {
+                        const st = STATUT_STYLES[v.statut] || STATUT_STYLES['validée'];
+                        return (
+                          <span style={{
+                            display: 'inline-block', padding: '0.2rem 0.6rem', borderRadius: '20px',
+                            fontSize: '0.75rem', fontWeight: 600,
+                            background: st.bg, color: st.color, border: st.border,
+                          }}>
+                            {st.label}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td style={{ fontSize: '0.78rem', color: '#94a3b8', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {v.notes || '—'}
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: '0.25rem', justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center', alignItems: 'center' }}>
+                        {isPending && (
+                          <>
+                            <button
+                              onClick={() => handleValider(v.id, 'validée')}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+                                padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 600,
+                                background: 'rgba(16,185,129,0.1)', color: '#10b981',
+                                border: '1px solid rgba(16,185,129,0.25)', cursor: 'pointer',
+                                transition: 'all 150ms',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.2)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.1)'; }}
+                            >
+                              <Check size={13} /> Valider
+                            </button>
+                            <button
+                              onClick={() => handleValider(v.id, 'rejetée')}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+                                padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 600,
+                                background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                                border: '1px solid rgba(239,68,68,0.25)', cursor: 'pointer',
+                                transition: 'all 150ms',
+                              }}
+                              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
+                            >
+                              <XCircle size={13} /> Rejeter
+                            </button>
+                          </>
+                        )}
                         <button className="btn-ghost" onClick={() => openEditModal(v)} title="Modifier" style={{ padding: '0.3rem' }}>
                           <Pencil size={15} />
                         </button>
@@ -597,8 +737,9 @@ export default function Ventes() {
                   <label className="label">Chatteur *</label>
                   <select className="input-field" value={form.chatteur_id} onChange={e => {
                     const val = e.target.value;
-                    setForm({ ...form, chatteur_id: val, modele_id: '', plateforme_id: '' });
+                    setForm({ ...form, chatteur_id: val, modele_id: '', plateforme_id: '', shift_id: '' });
                     fetchChatteurModeles(val);
+                    fetchShiftsForVente(val, '', '');
                   }} required>
                     <option value="">Sélectionner...</option>
                     {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
@@ -622,7 +763,8 @@ export default function Ventes() {
                       } else if (newModeleId && modelePfs.length > 0 && !modelePfs.find(p => String(p.id) === form.plateforme_id)) {
                         newPfId = '';
                       }
-                      setForm({ ...form, modele_id: newModeleId, plateforme_id: newPfId });
+                      setForm({ ...form, modele_id: newModeleId, plateforme_id: newPfId, shift_id: '' });
+                      fetchShiftsForVente(form.chatteur_id, newModeleId, newPfId);
                     }}
                     required
                   >
@@ -662,7 +804,10 @@ export default function Ventes() {
                         : plateformes;
                     }
                     return (
-                      <select className="input-field" value={form.plateforme_id} onChange={e => setForm({ ...form, plateforme_id: e.target.value })} required>
+                      <select className="input-field" value={form.plateforme_id} onChange={e => {
+                        setForm({ ...form, plateforme_id: e.target.value, shift_id: '' });
+                        fetchShiftsForVente(form.chatteur_id, form.modele_id, e.target.value);
+                      }} required>
                         <option value="">Sélectionner...</option>
                         {availablePfs.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
                       </select>
@@ -709,6 +854,27 @@ export default function Ventes() {
                   </div>
                 )}
 
+                {/* Shift (optional for admin) */}
+                {form.chatteur_id && (
+                  <div>
+                    <label className="label">Shift *</label>
+                    <select className="input-field" value={form.shift_id} onChange={e => setForm({ ...form, shift_id: e.target.value })} required>
+                      <option value="">Sélectionner le shift...</option>
+                      {availableShifts.map(s => (
+                        <option key={s.id} value={s.id}>
+                          {new Date(s.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} — {CRENEAUX_LABELS[s.creneau] || '?'}
+                          {s.modele_pseudo ? ` (${s.modele_pseudo})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {form.chatteur_id && availableShifts.length === 0 && (
+                      <div style={{ fontSize: '0.75rem', color: '#f59e0b', marginTop: '0.3rem', padding: '0.4rem 0.6rem', background: 'rgba(245,158,11,0.08)', borderRadius: '0.3rem', border: '1px solid rgba(245,158,11,0.2)' }}>
+                        Aucun shift trouvé pour ce chatteur (14 derniers jours). Impossible d'ajouter une vente sans shift.
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Notes (optional) */}
                 <div>
                   <label className="label">Notes <span style={{ color: '#94a3b8', fontWeight: 400 }}>(optionnel)</span></label>
@@ -725,7 +891,7 @@ export default function Ventes() {
 
               <div style={{ marginTop: '1.25rem', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                 <button type="button" className="btn-secondary" onClick={closeModal}>Annuler</button>
-                <button type="submit" className="btn-primary" disabled={submitting}>
+                <button type="submit" className="btn-primary" disabled={submitting || (form.chatteur_id && availableShifts.length === 0)}>
                   {submitting ? (
                     <span className="spinner" style={{ width: 16, height: 16 }} />
                   ) : (

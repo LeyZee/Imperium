@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
-import { Download, FileText, AlertTriangle, ChevronDown, ChevronUp, Calculator, BookOpen } from 'lucide-react';
+import { FileText, AlertTriangle, ChevronDown, ChevronUp, Calculator, BookOpen, ArrowLeftRight, Euro, TrendingUp } from 'lucide-react';
 
 const STATUT_STYLES = {
   'calculé': { background: 'rgba(245,183,49,0.12)', color: '#b8860b' },
@@ -10,12 +10,22 @@ const STATUT_STYLES = {
   'payé': { background: 'rgba(16,185,129,0.1)', color: '#059669' },
 };
 
+function getPeriodeCourante() {
+  const now = new Date();
+  const y = now.getFullYear(), m = String(now.getMonth() + 1).padStart(2, '0');
+  const day = now.getDate();
+  if (day < 15) return { debut: `${y}-${m}-01`, fin: `${y}-${m}-15` };
+  const next = new Date(y, now.getMonth() + 1, 1);
+  const ny = next.getFullYear(), nm = String(next.getMonth() + 1).padStart(2, '0');
+  return { debut: `${y}-${m}-15`, fin: `${ny}-${nm}-01` };
+}
+
 function formatPeriod(debut, fin) {
   const d = new Date(debut + 'T00:00:00');
   const f = new Date(fin + 'T00:00:00');
   const dStr = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
   const fStr = f.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
-  return `${dStr} → ${fStr}`;
+  return `${dStr} \u2192 ${fStr}`;
 }
 
 function fmt(n) {
@@ -31,7 +41,7 @@ function PaieDetail({ paie, tauxCommission, malusForPeriod }) {
   const isUSD = paie.devise === 'USD';
   return (
     <tr style={{ animation: 'expandIn 300ms ease forwards' }}>
-      <td colSpan={6} style={{ padding: 0, background: '#fafaf8' }}>
+      <td colSpan={5} style={{ padding: 0, background: '#fafaf8' }}>
         <div style={{ padding: '1rem 1.25rem', borderTop: '1px dashed #e2e8f0' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
             <Calculator size={14} color="#64748b" />
@@ -39,7 +49,7 @@ function PaieDetail({ paie, tauxCommission, malusForPeriod }) {
               {"D\u00c9TAIL DU CALCUL"} — {paie.plateforme_nom || 'Global'}
             </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '0.5rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.5rem' }}>
             {/* Left column: conversion chain */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
               <Step label="Ventes brutes" value={`${fmt(paie.ventes_brutes)} ${isUSD ? '$' : '\u20ac'}`} />
@@ -65,7 +75,9 @@ function PaieDetail({ paie, tauxCommission, malusForPeriod }) {
                         padding: '0.2rem 0.5rem 0.2rem 1rem',
                       }}>
                         <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{m.raison || 'Malus'}</span>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ef4444', whiteSpace: 'nowrap' }}>{`\u2212${fmt(m.montant)} \u20ac`}</span>
+                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ef4444', whiteSpace: 'nowrap' }}>
+                          {m.type_malus === 'pourcentage' ? `\u2212${fmt(m.montant)}%` : `\u2212${fmt(m.montant)} \u20ac`}
+                        </span>
                       </div>
                     ))}
                     <div style={{
@@ -113,6 +125,79 @@ function Step({ label, value, op, highlight, color }) {
   );
 }
 
+function MalusHistory({ malusList }) {
+  const [expanded, setExpanded] = useState(false);
+  const totalMalus = malusList.reduce((sum, m) => sum + (m.type_malus === 'montant' ? m.montant : 0), 0);
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <button
+        className="haptic"
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem',
+          padding: '0.75rem 1.25rem', background: 'none', border: 'none',
+          cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        <AlertTriangle size={16} color="#ef4444" style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, fontSize: '0.85rem', fontWeight: 600, color: '#1b2e4b' }}>
+          Historique des malus
+        </span>
+        <span style={{
+          fontSize: '0.75rem', fontWeight: 700, padding: '0.15rem 0.5rem',
+          borderRadius: 20, background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+        }}>
+          {malusList.length}
+        </span>
+        {expanded ? <ChevronUp size={16} color="#94a3b8" /> : <ChevronDown size={16} color="#94a3b8" />}
+      </button>
+      {expanded && (
+        <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Période</th>
+                  <th>Raison</th>
+                  <th style={{ textAlign: 'right' }}>Montant</th>
+                </tr>
+              </thead>
+              <tbody>
+                {malusList
+                  .sort((a, b) => (b.periode || '').localeCompare(a.periode || ''))
+                  .map(m => (
+                    <tr key={m.id}>
+                      <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                        {m.periode ? new Date(m.periode + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' }) : '\u2014'}
+                      </td>
+                      <td style={{ fontSize: '0.82rem', color: '#1b2e4b' }}>
+                        {m.raison || 'Non précisé'}
+                      </td>
+                      <td style={{ textAlign: 'right', fontWeight: 600, color: '#ef4444', whiteSpace: 'nowrap' }}>
+                        {m.type_malus === 'pourcentage' ? `\u2212${fmt(m.montant)}%` : `\u2212${fmt(m.montant)} \u20ac`}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+          {totalMalus > 0 && (
+            <div style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              padding: '0.6rem 1.25rem', borderTop: '1px solid rgba(0,0,0,0.06)',
+              background: 'rgba(239,68,68,0.03)',
+            }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#64748b' }}>Total malus fixes</span>
+              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#ef4444' }}>{`\u2212${fmt(totalMalus)} \u20ac`}</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MesFactures() {
   const { user } = useAuth();
   const [paies, setPaies] = useState([]);
@@ -121,66 +206,110 @@ export default function MesFactures() {
   const [error, setError] = useState('');
   const [expandedId, setExpandedId] = useState(null);
   const [malusList, setMalusList] = useState([]);
-  const [downloadingPeriod, setDownloadingPeriod] = useState(null);
   const [showExplain, setShowExplain] = useState(false);
+  const [tauxChange, setTauxChange] = useState(null);
 
-  useEffect(() => {
+  const periodeCourante = useMemo(() => getPeriodeCourante(), []);
+
+  const fetchPaies = useCallback(() => {
     const controller = new AbortController();
+    setLoading(true);
+    setError('');
     Promise.all([
       api.get('/api/paies/mes-paies', { signal: controller.signal }),
       api.get('/api/malus', { signal: controller.signal }).catch(() => ({ data: [] })),
-    ]).then(([paiesRes, malusRes]) => {
+      api.get('/api/taux/current?from=USD&to=EUR', { signal: controller.signal }).catch(() => ({ data: null })),
+    ]).then(([paiesRes, malusRes, tauxRes]) => {
+      setTauxChange(tauxRes.data?.taux || null);
       const data = paiesRes.data;
       setPaies(Array.isArray(data.paies) ? data.paies : Array.isArray(data) ? data : []);
       setTauxCommission(data.taux_commission || 0);
       setMalusList(Array.isArray(malusRes.data) ? malusRes.data : []);
     })
-    .catch((err) => { if (!controller.signal.aborted) setError('Impossible de charger les factures.'); })
+    .catch(() => { if (!controller.signal.aborted) setError('Impossible de charger les paies.'); })
     .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [user]);
 
-  async function handleDownloadPdf(paie) {
-    const key = `${paie.periode_debut}-${paie.periode_fin}`;
-    setDownloadingPeriod(key);
-    try {
-      const resp = await api.get(
-        `/api/paies/facture?chatteur_id=${user.chatteur_id}&debut=${paie.periode_debut}&fin=${paie.periode_fin}`,
-        { responseType: 'blob' }
-      );
-      const url = window.URL.createObjectURL(new Blob([resp.data], { type: 'application/pdf' }));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Facture_${paie.periode_debut}_${paie.periode_fin}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Erreur lors du t\u00e9l\u00e9chargement de la facture');
-    } finally {
-      setDownloadingPeriod(null);
-    }
-  }
+  useEffect(() => {
+    fetchPaies();
+  }, [fetchPaies]);
+
+  // Group paies by period
+  const groupedPaies = useMemo(() => {
+    const groups = {};
+    paies.forEach(p => {
+      const key = `${p.periode_debut}|${p.periode_fin}`;
+      if (!groups[key]) groups[key] = { debut: p.periode_debut, fin: p.periode_fin, paies: [], total: 0 };
+      groups[key].paies.push(p);
+      groups[key].total += (p.total_chatteur || 0);
+    });
+    // Sort descending by debut date (most recent first)
+    return Object.values(groups).sort((a, b) => b.debut.localeCompare(a.debut));
+  }, [paies]);
 
   const totalPaye = paies.filter(p => p.statut === 'payé').reduce((sum, p) => sum + (p.total_chatteur || 0), 0);
-  const enAttente = paies.filter(p => p.statut !== 'payé').length;
+  const currentGroup = groupedPaies.find(g => g.debut === periodeCourante.debut && g.fin === periodeCourante.fin);
+  const currentTotal = currentGroup?.total || 0;
 
   return (
     <div className="page-enter">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
-        <div>
-          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Mes Factures</h1>
-          {!loading && paies.length > 0 && (
-            <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
-              {totalPaye > 0 && `${fmt(totalPaye)} € perçus`}
-              {totalPaye > 0 && enAttente > 0 && ' · '}
-              {enAttente > 0 && `${enAttente} en attente`}
-              {' · '} Commission : {pct(tauxCommission)}%
-            </p>
-          )}
-        </div>
+      <div style={{ marginBottom: '1rem' }}>
+        <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Mes Paies</h1>
+        {!loading && paies.length > 0 && (
+          <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
+            Commission : {pct(tauxCommission)}%
+          </p>
+        )}
       </div>
+
+      {/* Summary cards */}
+      {!loading && paies.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+          <div className="card" style={{
+            padding: '1rem 1.25rem',
+            borderLeft: '3px solid #f5b731',
+          }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', letterSpacing: '0.03em', marginBottom: '0.35rem' }}>
+              PÉRIODE EN COURS
+            </div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#f5b731' }}>
+              {fmt(currentTotal)} {"€"}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.15rem' }}>
+              {formatPeriod(periodeCourante.debut, periodeCourante.fin)}
+            </div>
+          </div>
+          <div className="card" style={{
+            padding: '1rem 1.25rem',
+            borderLeft: '3px solid #10b981',
+          }}>
+            <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', letterSpacing: '0.03em', marginBottom: '0.35rem' }}>
+              TOTAL PERÇU
+            </div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 700, color: '#10b981' }}>
+              {fmt(totalPaye)} {"€"}
+            </div>
+            <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '0.15rem' }}>
+              {paies.filter(p => p.statut === 'payé').length} paie{paies.filter(p => p.statut === 'payé').length > 1 ? 's' : ''} valid{paies.filter(p => p.statut === 'payé').length > 1 ? 'ées' : 'ée'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Taux de change */}
+      {!loading && tauxChange && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem',
+          padding: '0.6rem 1rem', borderRadius: '10px', marginBottom: '0.5rem',
+          background: 'rgba(99,102,241,0.06)', border: '1px solid rgba(99,102,241,0.1)',
+        }}>
+          <ArrowLeftRight size={14} color="#6366f1" />
+          <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
+            Taux de change actuel : <strong style={{ color: '#1b2e4b' }}>1 $ = {tauxChange.toFixed(4)} {"€"}</strong>
+          </span>
+        </div>
+      )}
 
       {/* Info */}
       {!loading && paies.length > 0 && (
@@ -203,6 +332,7 @@ export default function MesFactures() {
           border: '1px solid rgba(99,102,241,0.15)', background: '#fff',
         }}>
           <button
+            className="haptic"
             onClick={() => setShowExplain(!showExplain)}
             style={{
               width: '100%', display: 'flex', alignItems: 'center', gap: '0.6rem',
@@ -222,11 +352,11 @@ export default function MesFactures() {
               display: 'flex', flexDirection: 'column', gap: '0.6rem', paddingTop: '0.75rem',
             }}>
               {[
-                { num: '1', title: 'Ventes brutes', desc: 'Le total que tu g\u00e9n\u00e8res sur la plateforme (OnlyFans en USD, Reveal en EUR).' },
+                { num: '1', title: 'Ventes brutes', desc: 'Le total que tu génères sur la plateforme (OnlyFans en USD, Reveal en EUR).' },
                 { num: '2', title: 'Conversion devise', desc: 'Si la plateforme est en USD, on convertit en euros au taux du jour.' },
-                { num: '3', title: 'D\u00e9ductions', desc: 'On retire la TVA (20%) puis la commission plateforme (20%) pour obtenir le \u00ab\u00a0Net HT\u00a0\u00bb.' },
-                { num: '4', title: 'Ta commission', desc: `Tu re\u00e7ois ${pct(tauxCommission)}% du Net HT. C\u2019est ton taux de commission personnel.` },
-                { num: '5', title: 'Primes & Malus', desc: 'Les 3 meilleurs vendeurs de la p\u00e9riode re\u00e7oivent un bonus (0.50%, 0.25%, 0.12% du net total \u00e9quipe). Les malus \u00e9ventuels sont soustraits.' },
+                { num: '3', title: 'Déductions', desc: 'On retire la TVA (20%) puis la commission plateforme (20%) pour obtenir le « Net HT ».' },
+                { num: '4', title: 'Ta commission', desc: `Tu reçois ${pct(tauxCommission)}% du Net HT. C\u2019est ton taux de commission personnel.` },
+                { num: '5', title: 'Primes & Malus', desc: 'Les 3 meilleurs vendeurs de la période reçoivent un bonus (0.50%, 0.25%, 0.12% du net total équipe). Les malus éventuels sont soustraits.' },
               ].map(step => (
                 <div key={step.num} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
                   <span style={{
@@ -263,6 +393,7 @@ export default function MesFactures() {
         }}>
           <AlertTriangle size={18} color="#dc2626" style={{ flexShrink: 0 }} />
           <span style={{ fontSize: '0.82rem', color: '#991b1b' }}>{error}</span>
+          <button onClick={fetchPaies} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
         </div>
       )}
 
@@ -271,93 +402,119 @@ export default function MesFactures() {
       ) : paies.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '3rem 1rem' }}>
           <FileText size={40} color="#cbd5e1" style={{ margin: '0 auto 0.75rem' }} />
-          <p style={{ fontWeight: 600, color: 'var(--navy)', marginBottom: '0.25rem' }}>Aucune facture</p>
+          <p style={{ fontWeight: 600, color: 'var(--navy)', marginBottom: '0.25rem' }}>Aucune paie</p>
           <p style={{ fontSize: '0.82rem', color: '#94a3b8' }}>
-            Tes factures apparaîtront ici une fois tes paies calculées.
+            Tes paies apparaîtront ici une fois calculées.
           </p>
         </div>
       ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ overflowX: 'auto' }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Période</th>
-                  <th>Plateforme</th>
-                  <th style={{ textAlign: 'right' }}>Ventes brutes</th>
-                  <th style={{ textAlign: 'right' }}>Ma paie</th>
-                  <th>Statut</th>
-                  <th style={{ textAlign: 'center', width: '50px' }}>PDF</th>
-                </tr>
-              </thead>
-              <tbody className="stagger-rows">
-                {paies.map((p) => {
-                  const statutStyle = STATUT_STYLES[p.statut] || STATUT_STYLES['calculé'];
-                  const isExpanded = expandedId === p.id;
-                  const malusForPeriod = malusList.filter(m => m.periode >= p.periode_debut && m.periode <= p.periode_fin);
-                  return [
-                    <tr
-                      key={p.id}
-                      onClick={() => setExpandedId(isExpanded ? null : p.id)}
-                      style={{ cursor: 'pointer', background: isExpanded ? 'rgba(245,183,49,0.04)' : undefined }}
-                    >
-                      <td style={{ whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                          {isExpanded ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
-                          {formatPeriod(p.periode_debut, p.periode_fin)}
-                        </div>
-                      </td>
-                      <td>
-                        <span className="badge" style={{
-                          fontSize: '0.72rem',
-                          background: p.couleur_fond || '#1b2e4b',
-                          color: p.couleur_texte || '#ffffff',
-                        }}>
-                          {p.plateforme_nom || '—'}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        {fmt(p.ventes_brutes)} {p.devise === 'USD' ? '$' : '€'}
-                      </td>
-                      <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731' }}>
-                        {fmt(p.total_chatteur)} €
-                      </td>
-                      <td>
-                        <span style={{
-                          ...statutStyle,
-                          padding: '0.2rem 0.6rem', borderRadius: '20px',
-                          fontSize: '0.72rem', fontWeight: 600, textTransform: 'capitalize',
-                        }}>
-                          {p.statut}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <button
-                          className="haptic hover-icon"
-                          onClick={(e) => { e.stopPropagation(); handleDownloadPdf(p); }}
-                          disabled={downloadingPeriod === `${p.periode_debut}-${p.periode_fin}`}
-                          title="Télécharger la facture PDF"
-                          style={{
-                            background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)',
-                            borderRadius: '8px', padding: '0.35rem', cursor: 'pointer',
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            transition: 'all 200ms ease',
-                          }}
-                        >
-                          {downloadingPeriod === `${p.periode_debut}-${p.periode_fin}`
-                            ? <span className="spinner" style={{ width: 14, height: 14 }} />
-                            : <Download size={14} color="#6366f1" />}
-                        </button>
-                      </td>
-                    </tr>,
-                    isExpanded && (
-                      <PaieDetail key={`detail-${p.id}`} paie={p} tauxCommission={tauxCommission} malusForPeriod={malusForPeriod} />
-                    ),
-                  ];
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Malus history section */}
+          {malusList.length > 0 && (
+            <MalusHistory malusList={malusList} />
+          )}
+
+          {groupedPaies.map(group => {
+            const isCurrent = group.debut === periodeCourante.debut && group.fin === periodeCourante.fin;
+            return (
+              <div
+                key={`${group.debut}-${group.fin}`}
+                className="card"
+                style={{
+                  padding: 0, overflow: 'hidden',
+                  border: isCurrent ? '2px solid rgba(245,183,49,0.4)' : undefined,
+                }}
+              >
+                {/* Period header */}
+                <div style={{
+                  padding: '0.75rem 1.25rem',
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  background: isCurrent ? 'rgba(245,183,49,0.06)' : '#fafaf8',
+                  borderBottom: '1px solid rgba(0,0,0,0.06)',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1b2e4b' }}>
+                      {formatPeriod(group.debut, group.fin)}
+                    </span>
+                    {isCurrent && (
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.5rem',
+                        borderRadius: '20px', background: '#f5b731', color: '#fff',
+                        letterSpacing: '0.03em',
+                      }}>
+                        EN COURS
+                      </span>
+                    )}
+                  </div>
+                  <span style={{
+                    fontSize: '1rem', fontWeight: 700,
+                    color: isCurrent ? '#f5b731' : '#1b2e4b',
+                  }}>
+                    {fmt(group.total)} {"€"}
+                  </span>
+                </div>
+
+                {/* Paies table for this period */}
+                <div style={{ overflowX: 'auto' }}>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Plateforme</th>
+                        <th style={{ textAlign: 'right' }}>Ventes brutes</th>
+                        <th style={{ textAlign: 'right' }}>Ma paie</th>
+                        <th>Statut</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.paies.map((p) => {
+                        const statutStyle = STATUT_STYLES[p.statut] || STATUT_STYLES['calculé'];
+                        const isExpanded = expandedId === p.id;
+                        const malusForPeriod = malusList.filter(m => m.periode >= p.periode_debut && m.periode <= p.periode_fin);
+                        return [
+                          <tr
+                            key={p.id}
+                            onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                            style={{ cursor: 'pointer', background: isExpanded ? 'rgba(245,183,49,0.04)' : undefined }}
+                          >
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                                {isExpanded ? <ChevronUp size={14} color="#94a3b8" /> : <ChevronDown size={14} color="#94a3b8" />}
+                                <span className="badge" style={{
+                                  fontSize: '0.72rem',
+                                  background: p.couleur_fond || '#1b2e4b',
+                                  color: p.couleur_texte || '#ffffff',
+                                }}>
+                                  {p.plateforme_nom || '\u2014'}
+                                </span>
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              {fmt(p.ventes_brutes)} {p.devise === 'USD' ? '$' : '€'}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731' }}>
+                              {fmt(p.total_chatteur)} {"€"}
+                            </td>
+                            <td>
+                              <span style={{
+                                ...statutStyle,
+                                padding: '0.2rem 0.6rem', borderRadius: '20px',
+                                fontSize: '0.72rem', fontWeight: 600, textTransform: 'capitalize',
+                              }}>
+                                {p.statut}
+                              </span>
+                            </td>
+                          </tr>,
+                          isExpanded && (
+                            <PaieDetail key={`detail-${p.id}`} paie={p} tauxCommission={tauxCommission} malusForPeriod={malusForPeriod} />
+                          ),
+                        ];
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

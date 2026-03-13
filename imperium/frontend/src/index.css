@@ -443,6 +443,11 @@ tbody td {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes pulseGold {
+  0%, 100% { box-shadow: 0 2px 8px rgba(245,183,49,0.4); }
+  50% { box-shadow: 0 2px 16px rgba(245,183,49,0.7), 0 0 24px rgba(245,183,49,0.3); }
+}
+
 @keyframes staggerIn {
   from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
@@ -718,6 +723,26 @@ tbody td {
   transform: scale(0.998);
   transition: transform 100ms ease;
 }
+.card-clickable {
+  cursor: pointer;
+}
+.card-clickable:active {
+  transform: scale(0.97);
+  transition: transform 80ms ease;
+}
+
+/* ===== FOCUS-VISIBLE ===== */
+.btn-primary:focus-visible,
+.btn-secondary:focus-visible,
+.btn-danger:focus-visible,
+.btn-ghost:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
+.card:focus-visible {
+  outline: 2px solid var(--yellow);
+  outline-offset: 2px;
+}
 
 /* ===== ENHANCED CLOSE BUTTON ===== */
 .close-btn:active {
@@ -837,11 +862,60 @@ tbody td {
   .hide-sm {
     display: none !important;
   }
+
+  /* Parametres tabs: wrap on mobile so all tabs visible */
+  .parametres-tabs {
+    flex-wrap: wrap !important;
+    overflow-x: visible !important;
+    gap: 0.25rem !important;
+  }
+  .parametres-tabs button {
+    padding: 0.45rem 0.7rem !important;
+    font-size: 0.78rem !important;
+  }
+
+  /* ActivityLog filter bar: stack on mobile */
+  .activity-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  .activity-toolbar .activity-actions {
+    margin-left: 0 !important;
+    justify-content: flex-end;
+  }
+  .activity-toolbar select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* TelegramBot: compact stat cards */
+  .telegram-stats {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 0.5rem !important;
+  }
+  .telegram-imports-table {
+    font-size: 0.8rem;
+  }
 }
 
 @media (max-width: 480px) {
-  .stats-grid {
-    grid-template-columns: 1fr;
+  .stats-grid,
+  .telegram-stats {
+    grid-template-columns: 1fr !important;
+  }
+
+  .parametres-tabs button {
+    padding: 0.4rem 0.6rem !important;
+    font-size: 0.72rem !important;
+  }
+}
+
+@media (max-width: 360px) {
+  .main-content {
+    padding: 0.5rem;
+  }
+  .card {
+    padding: 0.75rem;
   }
 }
 

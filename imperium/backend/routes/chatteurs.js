@@ -1,17 +1,21 @@
 const express = require('express');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('../database');
 const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
+const { sendEmail, buildInvitationEmail } = require('../utils/email');
+
+const PENDING_HASH = '!PENDING_INVITATION!';
 
 const router = express.Router();
 
 // GET /api/chatteurs
 router.get('/', authMiddleware, asyncHandler((req, res) => {
   const chatteurs = db.prepare(`
-    SELECT c.*, u.username, u.email as user_email
+    SELECT c.*, u.username, u.email as user_email, u.password_hash
     FROM chatteurs c
     LEFT JOIN users u ON u.id = c.user_id
     WHERE c.actif = 1
@@ -20,9 +24,13 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 
   // Strip sensitive fields for non-admin/manager users
   if (req.user.role !== 'admin' && req.user.role !== 'manager') {
-    return res.json(chatteurs.map(({ iban, adresse, code_postal, ville, taux_commission, taux_net_equipe, taux_horaire, user_id, user_email, ...safe }) => safe));
+    return res.json(chatteurs.map(({ iban, adresse, code_postal, ville, taux_commission, taux_net_equipe, taux_horaire, user_id, user_email, password_hash, ...safe }) => safe));
   }
-  res.json(chatteurs);
+  // Add pending_invitation flag, remove password_hash
+  res.json(chatteurs.map(({ password_hash, ...c }) => ({
+    ...c,
+    pending_invitation: password_hash === PENDING_HASH,
+  })));
 }));
 
 // GET /api/chatteurs/classement — leaderboard with prime data (accessible by chatteurs)
@@ -61,10 +69,14 @@ router.get('/classement', authMiddleware, asyncHandler((req, res) => {
   const total_net_ht_equipe = totalRow?.total || 0;
   const prime_rates = [0.005, 0.0025, 0.0012]; // 0.5%, 0.25%, 0.12%
 
+  // Total active chatteurs (role=chatteur only, for display "sur X")
+  const nbChatteurs = db.prepare("SELECT COUNT(*) as cnt FROM chatteurs WHERE actif = 1 AND role = 'chatteur'").get();
+
   res.json({
     classement,
     total_net_ht_equipe,
     prime_rates,
+    nb_chatteurs: nbChatteurs.cnt,
   });
 }));
 
@@ -105,7 +117,7 @@ router.get('/:id', authMiddleware, asyncHandler((req, res) => {
   }
 
   const chatteur = db.prepare(`
-    SELECT c.*, u.username, u.email as user_email
+    SELECT c.*, u.username, u.email as user_email, u.password_hash
     FROM chatteurs c
     LEFT JOIN users u ON u.id = c.user_id
     WHERE c.id = ?
@@ -115,22 +127,31 @@ router.get('/:id', authMiddleware, asyncHandler((req, res) => {
 
   // Strip sensitive fields for chatteur role
   if (req.user.role === 'chatteur') {
-    const { iban, taux_commission, taux_net_equipe, taux_horaire, ...safe } = chatteur;
+    const { iban, taux_net_equipe, taux_horaire, password_hash, ...safe } = chatteur;
     return res.json(safe);
   }
 
-  res.json(chatteur);
+  // Add pending_invitation flag, remove password_hash
+  const { password_hash, ...safe } = chatteur;
+  res.json({ ...safe, pending_invitation: password_hash === PENDING_HASH });
 }));
 
 // POST /api/chatteurs
-router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+router.post('/', authMiddleware, adminOrManager, asyncHandler(async (req, res) => {
   const {
     prenom, email, adresse, code_postal, ville, pays,
     iban, taux_commission, is_nouveau, role, taux_net_equipe, taux_horaire, couleur,
-    password, photo // optional: create associated user account (email = login ID)
+    password, photo, telegram_user_id // optional: create associated user account (email = login ID)
   } = req.body;
 
   if (!prenom) throw new ApiError(400, 'Prénom requis');
+
+  // Validate commission rate (0 to 1, i.e. 0% to 100%)
+  if (taux_commission !== undefined && taux_commission !== null) {
+    if (typeof taux_commission !== 'number' || taux_commission < 0 || taux_commission > 1) {
+      throw new ApiError(400, 'Le taux de commission doit être entre 0 et 1 (ex: 0.15 pour 15%)');
+    }
+  }
 
   // Manager can only create chatteurs, not other managers/directeurs
   if (req.user.role === 'manager' && (role === 'manager' || role === 'directeur')) {
@@ -138,31 +159,86 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   }
 
   let user_id = null;
+  let invitation_sent = false;
 
-  // Create user account if email + password provided
-  if (email && password) {
-    if (password.length < 8) throw new ApiError(400, 'Le mot de passe doit contenir au moins 8 caractères');
+  if (email) {
     const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
     if (exists) throw new ApiError(409, 'Cet email est déjà utilisé');
 
-    const hash = bcrypt.hashSync(password, 10);
-    const userResult = db.prepare(
-      'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
-    ).run(email, hash, (role === 'manager' || role === 'directeur') ? 'manager' : 'chatteur', email);
-    user_id = userResult.lastInsertRowid;
+    const userRole = (role === 'manager' || role === 'directeur') ? 'manager' : 'chatteur';
+
+    if (password) {
+      // Legacy: admin provides password directly (backward compat for seed.js)
+      if (password.length < 8) throw new ApiError(400, 'Le mot de passe doit contenir au moins 8 caractères');
+      const hash = bcrypt.hashSync(password, 10);
+      const userResult = db.prepare(
+        'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
+      ).run(email, hash, userRole, email);
+      user_id = userResult.lastInsertRowid;
+    } else {
+      // New: invitation-based — create user with pending hash
+      const userResult = db.prepare(
+        'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
+      ).run(email, PENDING_HASH, userRole, email);
+      user_id = userResult.lastInsertRowid;
+    }
   }
 
   const result = db.prepare(`
-    INSERT INTO chatteurs (prenom, email, adresse, code_postal, ville, pays, iban, taux_commission, is_nouveau, role, taux_net_equipe, taux_horaire, couleur, user_id, photo)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO chatteurs (prenom, email, adresse, code_postal, ville, pays, iban, taux_commission, is_nouveau, role, taux_net_equipe, taux_horaire, couleur, user_id, photo, telegram_user_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     prenom, email || null, adresse || null, code_postal || null,
     ville || null, pays || 'France', iban || null,
     taux_commission ?? 0.15, is_nouveau ? 1 : 0,
-    role || 'chatteur', taux_net_equipe ?? 0, taux_horaire ?? 0, couleur ?? 0, user_id, photo ?? null
+    role || 'chatteur', taux_net_equipe ?? 0, taux_horaire ?? 0, couleur ?? 0, user_id, photo ?? null, telegram_user_id ?? null
   );
 
-  res.status(201).json({ id: result.lastInsertRowid, prenom });
+  // Send invitation email for passwordless creation
+  if (user_id && !password && email) {
+    try {
+      const token = crypto.randomBytes(32).toString('hex');
+      db.prepare(
+        'INSERT INTO invitation_tokens (user_id, token, expires_at) VALUES (?, ?, datetime(\'now\', \'+48 hours\'))'
+      ).run(user_id, token);
+      await sendEmail(email, 'Bienvenue sur Imperium — Définissez votre mot de passe', buildInvitationEmail(prenom, token));
+      invitation_sent = true;
+    } catch (err) {
+      logger.error('Failed to send invitation email', { email, error: err.message });
+    }
+  }
+
+  res.status(201).json({ id: result.lastInsertRowid, prenom, invitation_sent });
+}));
+
+// POST /api/chatteurs/:id/resend-invite — resend invitation email
+router.post('/:id/resend-invite', authMiddleware, adminOrManager, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const chatteur = db.prepare(`
+    SELECT c.*, u.id as uid, u.email as user_email, u.password_hash
+    FROM chatteurs c
+    JOIN users u ON u.id = c.user_id
+    WHERE c.id = ?
+  `).get(id);
+
+  if (!chatteur) throw new ApiError(404, 'Chatteur introuvable');
+  if (!chatteur.uid) throw new ApiError(400, 'Aucun compte utilisateur lié');
+  if (chatteur.password_hash !== PENDING_HASH) {
+    throw new ApiError(400, 'Ce compte a déjà un mot de passe défini');
+  }
+
+  // Invalidate previous tokens
+  db.prepare('UPDATE invitation_tokens SET used_at = datetime(\'now\') WHERE user_id = ? AND used_at IS NULL').run(chatteur.uid);
+
+  // Generate new token
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare(
+    'INSERT INTO invitation_tokens (user_id, token, expires_at) VALUES (?, ?, datetime(\'now\', \'+48 hours\'))'
+  ).run(chatteur.uid, token);
+
+  await sendEmail(chatteur.user_email, 'Imperium — Définissez votre mot de passe', buildInvitationEmail(chatteur.prenom, token));
+
+  res.json({ message: 'Invitation renvoyée' });
 }));
 
 // PUT /api/chatteurs/:id
@@ -183,8 +259,15 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 
   const {
     prenom, email, adresse, code_postal, ville, pays,
-    iban, taux_commission, is_nouveau, actif, role, taux_net_equipe, taux_horaire, couleur, photo
+    iban, taux_commission, is_nouveau, actif, role, taux_net_equipe, taux_horaire, couleur, photo, telegram_user_id
   } = req.body;
+
+  // Validate commission rate
+  if (taux_commission !== undefined && taux_commission !== null) {
+    if (typeof taux_commission !== 'number' || taux_commission < 0 || taux_commission > 1) {
+      throw new ApiError(400, 'Le taux de commission doit être entre 0 et 1 (ex: 0.15 pour 15%)');
+    }
+  }
 
   const existing = db.prepare('SELECT id FROM chatteurs WHERE id = ?').get(id);
   if (!existing) throw new ApiError(404, 'Chatteur introuvable');
@@ -207,7 +290,8 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
       taux_net_equipe = COALESCE(?, taux_net_equipe),
       taux_horaire = COALESCE(?, taux_horaire),
       couleur = COALESCE(?, couleur),
-      photo = COALESCE(?, photo)
+      photo = COALESCE(?, photo),
+      telegram_user_id = COALESCE(?, telegram_user_id)
     WHERE id = ?
   `).run(
     prenom ?? null, email ?? null, adresse ?? null,
@@ -216,7 +300,7 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     is_nouveau !== undefined ? (is_nouveau ? 1 : 0) : null,
     effectiveActif,
     role ?? null, taux_net_equipe ?? null, taux_horaire ?? null,
-    couleur ?? null, photo ?? null,
+    couleur ?? null, photo ?? null, telegram_user_id ?? null,
     id
   );
 
@@ -324,7 +408,7 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
       p.devise
     FROM ventes v
     JOIN plateformes p ON p.id = v.plateforme_id
-    WHERE v.chatteur_id = ? ${dateFilter}
+    WHERE v.chatteur_id = ? AND v.statut != 'rejetée' ${dateFilter}
     GROUP BY p.devise
   `).all(...params);
 
@@ -340,7 +424,8 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
   let rangQuery = `
     SELECT chatteur_id, SUM(montant_brut) as total
     FROM ventes
-    ${periode_debut && periode_fin ? 'WHERE periode_debut >= ? AND periode_fin <= ?' : ''}
+    WHERE statut != 'rejetée'
+    ${periode_debut && periode_fin ? 'AND periode_debut >= ? AND periode_fin <= ?' : ''}
     GROUP BY chatteur_id
     ORDER BY total DESC
   `;
@@ -394,7 +479,7 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
     SELECT p.nom as plateforme, SUM(v.montant_brut) as total_brut, COUNT(*) as nb_ventes
     FROM ventes v
     JOIN plateformes p ON p.id = v.plateforme_id
-    WHERE v.chatteur_id = ? ${dateFilter}
+    WHERE v.chatteur_id = ? AND v.statut != 'rejetée' ${dateFilter}
     GROUP BY v.plateforme_id
     ORDER BY total_brut DESC
   `).all(...params);
@@ -406,8 +491,11 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
     ${periode_debut && periode_fin ? 'AND periode_debut >= ? AND periode_fin <= ?' : ''}
   `).get(id, ...(periode_debut && periode_fin ? [periode_debut, periode_fin] : []));
 
+  // Count only active chatteurs (exclude manager/directeur/va)
+  const totalChatteurs = db.prepare("SELECT COUNT(*) as cnt FROM chatteurs WHERE actif = 1 AND role = 'chatteur'").get();
+
   res.json({
-    ventes, paies, rang, nb_chatteurs: classement.length,
+    ventes, paies, rang, nb_chatteurs: totalChatteurs.cnt,
     malus_total: malusTotal.total,
     primes_total: primesTotal,
     moyenne_par_periode,

@@ -30,14 +30,18 @@ function getPreviousPeriode(debut, fin) {
 }
 
 /**
- * List all available periods (last 6 periods)
+ * List all available periods (last 6 periods, no earlier than March 2026)
  */
+const APP_START_DATE = '2026-03-01';
+
 function getAvailablePeriods() {
   const periods = [];
   let current = new Date();
 
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 12; i++) {
     const p = getPeriode(current);
+    // Stop if period is before app launch
+    if (p.debut < APP_START_DATE) break;
     periods.push(p);
     // Move to previous period
     const d = new Date(p.debut);
@@ -56,7 +60,7 @@ function calcTotals(periodDebut, periodFin, taux) {
     SELECT v.montant_brut, p.tva_rate, p.commission_rate, p.devise
     FROM ventes v
     JOIN plateformes p ON v.plateforme_id = p.id
-    WHERE v.periode_debut >= ? AND v.periode_fin <= ?
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
   `).all([periodDebut, periodFin]);
 
   let totalBrutEur = 0, totalNetHt = 0;
@@ -113,7 +117,7 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     JOIN plateformes p ON v.plateforme_id = p.id
     JOIN chatteurs c ON v.chatteur_id = c.id
     LEFT JOIN modeles m ON v.modele_id = m.id
-    WHERE v.periode_debut >= ? AND v.periode_fin <= ?
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
     ORDER BY v.created_at DESC
     LIMIT 5
   `).all([periodDebut, periodFin]);
@@ -123,7 +127,7 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     SELECT c.prenom, SUM(v.montant_brut) as total
     FROM ventes v
     JOIN chatteurs c ON v.chatteur_id = c.id
-    WHERE v.periode_debut >= ? AND v.periode_fin <= ?
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
     GROUP BY v.chatteur_id
     ORDER BY total DESC
     LIMIT 1
@@ -133,7 +137,7 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const prevTopChatteur = db.prepare(`
     SELECT SUM(v.montant_brut) as total
     FROM ventes v
-    WHERE v.periode_debut >= ? AND v.periode_fin <= ?
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
     GROUP BY v.chatteur_id
     ORDER BY total DESC
     LIMIT 1
@@ -144,7 +148,7 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     SELECT p.nom as plateforme, p.couleur_fond as couleur_fond, p.couleur_texte as couleur_texte, SUM(v.montant_brut) as total, COUNT(*) as nb
     FROM ventes v
     JOIN plateformes p ON v.plateforme_id = p.id
-    WHERE v.periode_debut >= ? AND v.periode_fin <= ?
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
     GROUP BY v.plateforme_id
     ORDER BY total DESC
   `).all([periodDebut, periodFin]);

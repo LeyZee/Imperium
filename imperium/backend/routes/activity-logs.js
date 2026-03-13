@@ -1,7 +1,8 @@
 const express = require('express');
 const db = require('../database');
-const { authMiddleware, adminOrManager } = require('../middleware/auth');
+const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
+const ApiError = require('../utils/ApiError');
 const { parsePagination, paginatedResponse } = require('../utils/pagination');
 
 const router = express.Router();
@@ -31,6 +32,12 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   `).all(...params, limit, (page - 1) * limit);
 
   res.json(paginatedResponse(rows, total, page, limit));
+}));
+
+// DELETE /api/activity-logs — clear all logs (admin only)
+router.delete('/', authMiddleware, adminOnly, asyncHandler((req, res) => {
+  const result = db.prepare('DELETE FROM activity_logs').run();
+  res.json({ message: `${result.changes} entrée(s) supprimée(s)`, count: result.changes });
 }));
 
 module.exports = router;

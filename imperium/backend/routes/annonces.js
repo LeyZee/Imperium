@@ -4,6 +4,7 @@ const { authMiddleware, adminOrManager } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { logActivity } = require('../utils/activityLogger');
+const { notifyAllChatteurs } = require('../utils/notifier');
 
 const router = express.Router();
 
@@ -34,6 +35,9 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   ).run(req.user.id, title.trim(), content.trim());
 
   logActivity(req.user.id, 'create_annonce', 'annonce', result.lastInsertRowid, title.trim());
+
+  // Notify all active chatteurs
+  notifyAllChatteurs('annonce', 'Nouvelle annonce', title.trim(), '/chatteur/dashboard');
 
   res.status(201).json({ id: result.lastInsertRowid });
 }));

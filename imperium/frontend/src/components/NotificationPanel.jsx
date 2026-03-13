@@ -1,13 +1,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Bell, Check, CheckCheck, CalendarCheck, CreditCard, Megaphone, AlertCircle } from 'lucide-react';
+import { Bell, Check, CheckCheck, CalendarCheck, CreditCard, Megaphone, AlertCircle, TrendingUp, Calendar, MinusCircle, Gift, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import api from '../utils/api';
+import api from '../api/index.js';
 
 const TYPE_ICONS = {
   demande: CalendarCheck,
   demande_review: CalendarCheck,
   paie_statut: CreditCard,
+  paie: CreditCard,
   annonce: Megaphone,
+  vente: TrendingUp,
+  shift: Calendar,
+  malus: MinusCircle,
+  prime: Gift,
 };
 
 export default function NotificationPanel() {
@@ -79,6 +84,28 @@ export default function NotificationPanel() {
     }
   };
 
+  // Extract vente ID from validate link pattern
+  const getValidateId = (link) => {
+    if (!link) return null;
+    const match = link.match(/validate=(\d+)/);
+    return match ? parseInt(match[1]) : null;
+  };
+
+  const handleValidateVente = async (e, notifId, venteId, statut) => {
+    e.stopPropagation();
+    try {
+      await api.put(`/api/ventes/${venteId}/valider`, { statut });
+      // Update notification: mark as read + remove validate link
+      setNotifications(prev => prev.map(n =>
+        n.id === notifId
+          ? { ...n, is_read: 1, link: '/admin/ventes', message: `${n.message} — ${statut === 'validée' ? 'Validée' : 'Rejetée'}` }
+          : n
+      ));
+      setCount(c => Math.max(0, c - 1));
+      handleMarkRead(notifId);
+    } catch { /* empty */ }
+  };
+
   return (
     <div ref={panelRef} style={{ position: 'relative' }}>
       {/* Bell icon */}
@@ -140,6 +167,7 @@ export default function NotificationPanel() {
           ) : (
             notifications.map(n => {
               const Icon = TYPE_ICONS[n.type] || AlertCircle;
+              const validateId = getValidateId(n.link);
               return (
                 <div
                   key={n.id}
@@ -175,11 +203,38 @@ export default function NotificationPanel() {
                         {n.message}
                       </p>
                     )}
+                    {/* Validate/Reject buttons for pending ventes */}
+                    {validateId && !n.is_read && (
+                      <div style={{ display: 'flex', gap: '0.4rem', marginTop: '0.4rem' }}>
+                        <button
+                          onClick={(e) => handleValidateVente(e, n.id, validateId, 'validée')}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.2rem',
+                            padding: '0.25rem 0.6rem', borderRadius: 6, fontSize: '0.7rem', fontWeight: 600,
+                            background: 'rgba(16,185,129,0.1)', color: '#10b981',
+                            border: '1px solid rgba(16,185,129,0.2)', cursor: 'pointer',
+                          }}
+                        >
+                          <Check size={12} /> Valider
+                        </button>
+                        <button
+                          onClick={(e) => handleValidateVente(e, n.id, validateId, 'rejetée')}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.2rem',
+                            padding: '0.25rem 0.6rem', borderRadius: 6, fontSize: '0.7rem', fontWeight: 600,
+                            background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                            border: '1px solid rgba(239,68,68,0.2)', cursor: 'pointer',
+                          }}
+                        >
+                          <X size={12} /> Rejeter
+                        </button>
+                      </div>
+                    )}
                     <p style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '0.15rem' }}>
                       {formatTimeAgo(n.created_at)}
                     </p>
                   </div>
-                  {!n.is_read && (
+                  {!n.is_read && !validateId && (
                     <div style={{
                       width: '8px', height: '8px', borderRadius: '50%',
                       background: '#f5b731', flexShrink: 0, alignSelf: 'center',

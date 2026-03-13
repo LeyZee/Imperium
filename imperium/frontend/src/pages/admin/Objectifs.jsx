@@ -30,12 +30,14 @@ export default function Objectifs() {
   const [chatteurs, setChatteurs] = useState([]);
   const [modeles, setModeles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [modal, setModal] = useState(null);
   const [deleteId, setDeleteId] = useState(null);
   const toast = useToast();
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const [oRes, pRes, cRes, mRes] = await Promise.all([
         api.get(`/api/objectifs?periode_debut=${periode.debut}&periode_fin=${periode.fin}`),
@@ -47,7 +49,9 @@ export default function Objectifs() {
       setProgress(pRes.data);
       setChatteurs(cRes.data);
       setModeles(mRes.data);
-    } catch { /* empty */ }
+    } catch {
+      setFetchError('Impossible de charger les données.');
+    }
     setLoading(false);
   }, [periode]);
 
@@ -98,7 +102,12 @@ export default function Objectifs() {
         </div>
       </div>
 
-      {loading ? (
+      {fetchError ? (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {fetchError}
+          <button onClick={fetchAll} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
+        </div>
+      ) : loading ? (
         <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner" /></div>
       ) : progress.length === 0 ? (
         <div className="card" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>

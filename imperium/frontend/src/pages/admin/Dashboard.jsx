@@ -3,9 +3,10 @@ import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, Che
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/index.js';
 import StatCard from '../../components/StatCard.jsx';
+import DonutChart from '../../components/DonutChart.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
 import usePolling from '../../hooks/usePolling.js';
-import { PieChart, Pie, Cell, BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 import { CHATTEUR_COLORS } from '../../constants/colors';
 
 function formatPeriodLabel(debut, fin) {
@@ -40,81 +41,6 @@ function TrendBadge({ value }) {
   );
 }
 
-/* ── Feature A: Donut Chart Modèles ── */
-const DONUT_COLORS = ['#f5b731', '#1b2e4b', '#6366f1', '#10b981', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4'];
-
-function CustomDonutTooltip({ active, payload }) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0].payload;
-  return (
-    <div style={{
-      background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
-      borderRadius: '8px', padding: '0.6rem 0.85rem',
-      boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '0.8rem',
-    }}>
-      <p style={{ fontWeight: 600, color: '#1b2e4b', marginBottom: '0.25rem' }}>{d.pseudo}</p>
-      <p style={{ color: '#f5b731', fontWeight: 700 }}>
-        {d.total_brut.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"}
-      </p>
-      <p style={{ color: '#64748b', fontSize: '0.72rem' }}>
-        {d.nb_ventes} vente{d.nb_ventes > 1 ? 's' : ''} {"\u00b7"} {d.percentage.toFixed(1)}%
-      </p>
-    </div>
-  );
-}
-
-function DonutChartModeles({ data }) {
-  if (!data || data.length === 0) {
-    return (
-      <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem' }}>
-        <div style={{ width: 60, height: 60, margin: '0 auto 0.75rem', borderRadius: '50%', border: '6px solid #e2e8f0', borderTopColor: '#f5b731' }} />
-        <p style={{ fontSize: '0.82rem', color: '#94a3b8' }}>{"Aucune vente par mod\u00e8le pour cette p\u00e9riode"}</p>
-      </div>
-    );
-  }
-
-  const total = data.reduce((s, d) => s + d.total_brut, 0);
-  const chartData = data.map((d, i) => ({
-    ...d,
-    pseudo: d.pseudo || 'Non assign\u00e9',
-    percentage: total > 0 ? (d.total_brut / total) * 100 : 0,
-    color: d.couleur_fond || DONUT_COLORS[i % DONUT_COLORS.length],
-  }));
-
-  return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-      <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-        <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{"Ventes par mod\u00e8le"}</h3>
-      </div>
-      <div style={{ padding: '1.25rem', display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-        <div style={{ width: 180, height: 180, flexShrink: 0 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie data={chartData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={2} dataKey="total_brut" stroke="none">
-                {chartData.map((d, i) => (
-                  <Cell key={i} fill={d.color} />
-                ))}
-              </Pie>
-              <Tooltip content={<CustomDonutTooltip />} />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-        <div style={{ flex: 1, minWidth: 150, display: 'flex', flexDirection: 'column', gap: '0.45rem' }}>
-          {chartData.map((d, i) => (
-            <div key={d.pseudo + i} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-              <div style={{ width: 10, height: 10, borderRadius: 3, background: d.color, flexShrink: 0 }} />
-              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: '#1b2e4b', flex: 1 }}>{d.pseudo}</span>
-              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1b2e4b' }}>
-                {d.total_brut.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"}
-              </span>
-              <span style={{ fontSize: '0.68rem', color: '#94a3b8', minWidth: 36, textAlign: 'right' }}>{d.percentage.toFixed(0)}%</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* ── Feature B: Widget Cagnotte Prime ── */
 function CagnotteWidget({ classementData, historiqueData }) {
@@ -769,73 +695,18 @@ export default function AdminDashboard() {
       {/* ── Répartition : Donut Plateforme + Donut Modèles ── */}
       {!loading && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-          {/* Platform breakdown — Donut */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-              <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{"R\u00e9partition par plateforme"}</h3>
-            </div>
-            <div style={{ padding: '1.25rem' }}>
-              {(() => {
-                const vpData = data?.ventesParPlateforme || [];
-                if (vpData.length === 0) return <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem 0' }}>{"Aucune donn\u00e9e"}</p>;
-                const totalAll = vpData.reduce((s, vp) => s + vp.total, 0);
-                const chartData = vpData.map((vp, i) => ({
-                  ...vp,
-                  percentage: totalAll > 0 ? (vp.total / totalAll) * 100 : 0,
-                  color: vp.couleur_fond || DONUT_COLORS[i % DONUT_COLORS.length],
-                }));
-                return (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-                    <div style={{ width: 150, height: 150, flexShrink: 0 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie data={chartData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={2} dataKey="total" stroke="none">
-                            {chartData.map((d, i) => (
-                              <Cell key={i} fill={d.color} />
-                            ))}
-                          </Pie>
-                          <Tooltip content={({ active, payload }) => {
-                            if (!active || !payload?.length) return null;
-                            const d = payload[0].payload;
-                            return (
-                              <div style={{
-                                background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
-                                borderRadius: '8px', padding: '0.6rem 0.85rem',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '0.8rem',
-                              }}>
-                                <p style={{ fontWeight: 600, color: '#1b2e4b', marginBottom: '0.25rem' }}>{d.plateforme}</p>
-                                <p style={{ color: '#f5b731', fontWeight: 700 }}>
-                                  {d.total.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"}
-                                </p>
-                                <p style={{ color: '#64748b', fontSize: '0.72rem' }}>
-                                  {d.nb} vente{d.nb > 1 ? 's' : ''} {"\u00b7"} {d.percentage.toFixed(1)}%
-                                </p>
-                              </div>
-                            );
-                          }} />
-                        </PieChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 130, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                      {chartData.map((d, i) => (
-                        <div key={d.plateforme + i} style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                          <span className="badge" style={{
-                            background: d.color, color: d.couleur_texte || '#ffffff',
-                            fontSize: '0.75rem', fontWeight: 600,
-                          }}>{d.plateforme}</span>
-                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1b2e4b', marginLeft: 'auto' }}>
-                            {d.total.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"}
-                          </span>
-                          <span style={{ fontSize: '0.68rem', color: '#94a3b8', minWidth: 36, textAlign: 'right' }}>{d.percentage.toFixed(0)}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-          <DonutChartModeles data={ventesParModele} />
+          <DonutChart
+            data={(data?.ventesParPlateforme || []).map(d => ({ label: d.plateforme, value: d.total, color: d.couleur_fond }))}
+            title="Répartition par plateforme"
+            valueLabel="€"
+            emptyText="Aucune donnée"
+          />
+          <DonutChart
+            data={(ventesParModele || []).map(d => ({ label: d.pseudo || 'Non assigné', value: d.total_brut, color: d.couleur_fond, extra: { nb_ventes: d.nb_ventes } }))}
+            title="Ventes par modèle"
+            valueLabel="€"
+            emptyText="Aucune vente par modèle pour cette période"
+          />
         </div>
       )}
 

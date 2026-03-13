@@ -1,7 +1,17 @@
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
-import { LogOut, User, Menu } from 'lucide-react';
+import { LogOut, Menu } from 'lucide-react';
 import NotificationPanel from './NotificationPanel.jsx';
+import { CHATTEUR_COLORS } from '../constants/colors.js';
+
+const ROLE_COLORS = {
+  chatteur: { bg: '#dbeafe', color: '#1e40af' },
+  manager: { bg: '#fef3c7', color: '#b45309' },
+  directeur: { bg: '#ede9fe', color: '#6366f1' },
+  va: { bg: '#f3e8ff', color: '#7c3aed' },
+  admin: { bg: '#fef3c7', color: '#92400e' },
+};
+const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', directeur: 'Directeur', va: 'VA', admin: 'Admin' };
 
 export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth();
@@ -66,27 +76,27 @@ export default function Navbar({ onMenuClick }) {
             }}
             className="hover-profile"
           >
-            {user.photo ? (
-              <img src={user.photo} alt="" style={{
-                width: 36, height: 36, borderRadius: '50%', objectFit: 'cover',
-                border: '2px solid rgba(245, 183, 49, 0.3)',
-              }} />
-            ) : (
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '50%',
-                  background: 'rgba(245, 183, 49, 0.12)',
-                  border: '2px solid rgba(245, 183, 49, 0.25)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <User size={16} color="#f5b731" />
-              </div>
-            )}
+            {(() => {
+              const clr = user.couleur != null ? CHATTEUR_COLORS[user.couleur] : null;
+              const avatarBg = clr?.bg || ROLE_COLORS[user.role]?.bg || '#f1f5f9';
+              const avatarText = clr?.text || ROLE_COLORS[user.role]?.color || '#475569';
+              const avatarBorder = clr?.border || `${ROLE_COLORS[user.role]?.color || '#f5b731'}30`;
+              return user.photo ? (
+                <img src={user.photo} alt="" style={{
+                  width: 36, height: 36, borderRadius: '50%', objectFit: 'cover',
+                  border: `2px solid ${avatarBorder}`,
+                }} />
+              ) : (
+                <div style={{
+                  width: '36px', height: '36px', borderRadius: '50%',
+                  background: avatarBg, border: `2px solid ${avatarBorder}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '0.85rem', fontWeight: 700, color: avatarText,
+                }}>
+                  {(user.prenom || user.email || '?')[0].toUpperCase()}
+                </div>
+              );
+            })()}
             <div className="user-info-text" style={{ textAlign: 'left' }}>
               <p
                 style={{
@@ -97,15 +107,19 @@ export default function Navbar({ onMenuClick }) {
                 }}
               >
                 {user.prenom || user.email}</p>
-              <p
+              <span
                 style={{
-                  fontSize: '0.65rem',
-                  color: '#64748b',
+                  fontSize: '0.6rem',
+                  fontWeight: 600,
+                  padding: '0.1rem 0.4rem',
+                  borderRadius: '20px',
+                  background: ROLE_COLORS[user.role]?.bg || '#f1f5f9',
+                  color: ROLE_COLORS[user.role]?.color || '#475569',
                   textTransform: 'capitalize',
                 }}
               >
-                {user.role}
-              </p>
+                {ROLE_LABELS[user.role] || user.role}
+              </span>
             </div>
           </button>
         )}

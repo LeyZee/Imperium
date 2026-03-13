@@ -1,11 +1,79 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
-import { Trophy, TrendingUp, BarChart2, AlertTriangle, Zap, Target, Users, Flame, Star } from 'lucide-react';
+import { Trophy, TrendingUp, BarChart2, AlertTriangle, Zap, Target, Users, Flame, Star, Plus, ShoppingBag } from 'lucide-react';
 import { computeMilestones, computeStreaksAndRecords, computeMicroMilestones } from '../../utils/gamification.js';
 
 const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
+
+/* ─── Fallback milestones when no history yet ─── */
+const FALLBACK_MILESTONES = [
+  { seuil: 5, label: 'D\u00e9marrage', emoji: '\uD83C\uDF31', pct: 0.5 },
+  { seuil: 15, label: 'En route', emoji: '\uD83D\uDD25', pct: 0.875 },
+  { seuil: 30, label: 'Objectif', emoji: '\uD83D\uDE80', pct: 1.25 },
+  { seuil: 50, label: 'Record', emoji: '\uD83D\uDC51', pct: 1.625 },
+];
+
+/* ─── Badge descriptions for unlock conditions ─── */
+const BADGE_DESCRIPTIONS = {
+  rising: 'Prime en hausse vs la p\u00e9riode pr\u00e9c\u00e9dente',
+  regulier: '3 podiums cons\u00e9cutifs minimum',
+  newcomer: 'Premier podium atteint !',
+};
+
+/* ─── Shared IntersectionObserver (one observer for all elements) ─── */
+const observerCallbacks = new Map();
+let sharedObserver = null;
+function getSharedObserver() {
+  if (!sharedObserver) {
+    sharedObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const cb = observerCallbacks.get(entry.target);
+          if (cb) { cb(); observerCallbacks.delete(entry.target); sharedObserver.unobserve(entry.target); }
+        }
+      });
+    }, { threshold: 0.15 });
+  }
+  return sharedObserver;
+}
+
+function useInView() {
+  const ref = useRef(null);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const obs = getSharedObserver();
+    observerCallbacks.set(el, () => setInView(true));
+    obs.observe(el);
+    return () => { observerCallbacks.delete(el); obs.unobserve(el); };
+  }, []);
+  return [ref, inView];
+}
+
+/* ─── AnimatedCard wrapper ─── */
+const AnimatedCard = memo(function AnimatedCard({ children, delay = 0, style = {}, ...props }) {
+  const [ref, inView] = useInView();
+  return (
+    <div
+      ref={ref}
+      className="card"
+      style={{
+        padding: 0, overflow: 'hidden',
+        opacity: inView ? 1 : 0,
+        transform: inView ? 'translateY(0)' : 'translateY(20px)',
+        transition: `opacity 500ms cubic-bezier(0.4, 0, 0.2, 1) ${delay}ms, transform 500ms cubic-bezier(0.4, 0, 0.2, 1) ${delay}ms`,
+        ...style,
+      }}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+});
 
 function getPeriodeCourante() {
   const now = new Date();
@@ -41,14 +109,35 @@ function getMotivation(rang, distanceToPodium) {
 }
 
 
+/* ─── Static styles & constants ─── */
+const TRACK_STYLE = { height: '14px', borderRadius: '7px', background: '#f1f5f9', position: 'relative', overflow: 'hidden' };
+const FALLBACK_BANNER_STYLE = {
+  fontSize: '0.7rem', color: '#64748b', background: 'rgba(99,102,241,0.06)',
+  padding: '0.5rem 0.75rem', borderRadius: '8px', marginBottom: '0.75rem',
+  textAlign: 'center', lineHeight: 1.4,
+};
+const EMPTY_STATE_STYLE = { textAlign: 'center', padding: '1.5rem 0' };
+const CELEBRATION_MESSAGES = {
+  'D\u00e9marrage': 'La cagnotte d\u00e9marre bien ! \uD83C\uDF89',
+  'En route': "L'\u00e9quipe est en feu ! \uD83D\uDD25",
+  'Objectif': 'Objectif atteint, bravo \u00e0 tous ! \uD83C\uDF8A',
+  'Record': 'Record battu ! L\u00e9gendaire ! \uD83D\uDC51',
+};
+
 /* ─── Thermometre Component ─── */
-function Thermometre({ paliers, currentPrimePool, moyennePrimePool }) {
+const Thermometre = memo(function Thermometre({ paliers, currentPrimePool, moyennePrimePool, isFallback }) {
+  const [ref, inView] = useInView();
+  const [showTooltip, setShowTooltip] = useState(null);
+
   if (!paliers) {
     return (
-      <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-        <div style={{ fontSize: '1.6rem', marginBottom: '0.4rem' }}>{'\uD83C\uDF21\uFE0F'}</div>
-        <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+      <div style={EMPTY_STATE_STYLE}>
+        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{'\uD83C\uDF21\uFE0F'}</div>
+        <p style={{ color: '#94a3b8', fontSize: '0.82rem', lineHeight: 1.5 }}>
           {"Les paliers appara\u00eetront apr\u00e8s quelques p\u00e9riodes."}
+        </p>
+        <p style={{ color: '#cbd5e1', fontSize: '0.72rem', marginTop: '0.3rem' }}>
+          {"Continue \u00e0 vendre pour d\u00e9bloquer le thermom\u00e8tre !"}
         </p>
       </div>
     );
@@ -56,65 +145,81 @@ function Thermometre({ paliers, currentPrimePool, moyennePrimePool }) {
 
   const maxSeuil = paliers[paliers.length - 1].seuil;
   const progressPct = maxSeuil > 0 ? Math.min(100, (currentPrimePool / maxSeuil) * 100) : 0;
-
-  // Highest reached milestone
   const highestReached = [...paliers].reverse().find(p => p.atteint);
 
-  const celebrationMessages = {
-    'D\u00e9marrage': 'La cagnotte d\u00e9marre bien ! \uD83C\uDF89',
-    'En route': "L'\u00e9quipe est en feu ! \uD83D\uDD25",
-    'Objectif': 'Objectif atteint, bravo \u00e0 tous ! \uD83C\uDF8A',
-    'Record': 'Record battu ! L\u00e9gendaire ! \uD83D\uDC51',
-  };
-
   return (
-    <div>
-      {/* Thermometer bar */}
-      <div style={{ position: 'relative', marginBottom: '2.2rem', marginTop: '0.5rem' }}>
-        {/* Track */}
-        <div style={{
-          height: '12px', borderRadius: '6px',
-          background: '#f1f5f9',
-          position: 'relative', overflow: 'hidden',
-        }}>
+    <div ref={ref}>
+      {isFallback && (
+        <div style={FALLBACK_BANNER_STYLE}>
+          {"Paliers de d\u00e9marrage \u2014 ils s'adapteront automatiquement \u00e0 l'historique de l'\u00e9quipe."}
+        </div>
+      )}
+
+      <div style={{ position: 'relative', marginBottom: '2.5rem', marginTop: '0.5rem' }}>
+        <div style={TRACK_STYLE}>
           <div style={{
-            height: '100%', borderRadius: '6px',
+            height: '100%', borderRadius: '7px',
             background: 'linear-gradient(90deg, #f5b731, #f59e0b, #ef8c00)',
-            width: `${progressPct}%`,
-            transition: 'width 1000ms cubic-bezier(0.4, 0, 0.2, 1)',
+            width: inView ? `${progressPct}%` : '0%',
+            transition: 'width 1200ms cubic-bezier(0.4, 0, 0.2, 1) 300ms',
           }} />
         </div>
 
         {/* Milestone markers */}
         {paliers.map((p, i) => {
           const pct = maxSeuil > 0 ? (p.seuil / maxSeuil) * 100 : 0;
+          const isTooltipVisible = showTooltip === i;
           return (
             <div
               key={i}
+              onMouseEnter={() => setShowTooltip(i)}
+              onMouseLeave={() => setShowTooltip(null)}
+              onClick={() => setShowTooltip(isTooltipVisible ? null : i)}
               style={{
                 position: 'absolute',
                 left: `${pct}%`,
-                top: '-4px',
+                top: '-5px',
                 transform: 'translateX(-50%)',
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
+                cursor: 'pointer',
+                zIndex: isTooltipVisible ? 10 : 1,
               }}
             >
+              {/* Tooltip */}
+              {isTooltipVisible && (
+                <div style={{
+                  position: 'absolute', bottom: '100%', marginBottom: '4px',
+                  background: '#1b2e4b', color: '#fff', padding: '0.35rem 0.6rem',
+                  borderRadius: '6px', fontSize: '0.65rem', fontWeight: 500,
+                  whiteSpace: 'nowrap', pointerEvents: 'none',
+                  animation: 'fadeIn 150ms ease',
+                }}>
+                  {p.emoji} {p.label}
+                  <div style={{
+                    position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+                    borderLeft: '4px solid transparent', borderRight: '4px solid transparent',
+                    borderTop: '4px solid #1b2e4b',
+                  }} />
+                </div>
+              )}
+
               {/* Marker dot */}
               <div style={{
-                width: '20px', height: '20px', borderRadius: '50%',
+                width: '24px', height: '24px', borderRadius: '50%',
                 background: p.atteint ? '#f5b731' : '#e2e8f0',
-                border: p.atteint ? '2px solid #d97706' : '2px solid #cbd5e1',
+                border: p.atteint ? '3px solid #d97706' : '2px solid #cbd5e1',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '0.6rem',
-                transition: 'all 300ms ease',
-                boxShadow: p.atteint ? '0 2px 6px rgba(245,183,49,0.3)' : 'none',
+                fontSize: '0.65rem',
+                transition: 'all 400ms ease',
+                boxShadow: p.atteint ? '0 2px 8px rgba(245,183,49,0.4)' : 'none',
+                animation: p.atteint && inView ? `pulseGold 2s ease-in-out ${i * 200}ms` : 'none',
               }}>
                 {p.atteint ? '\u2713' : p.emoji}
               </div>
               {/* Label below */}
               <div style={{
-                marginTop: '0.25rem',
-                fontSize: '0.55rem', fontWeight: 600,
+                marginTop: '0.3rem',
+                fontSize: '0.6rem', fontWeight: 600,
                 color: p.atteint ? '#b8860b' : '#94a3b8',
                 whiteSpace: 'nowrap', textAlign: 'center',
               }}>
@@ -128,35 +233,42 @@ function Thermometre({ paliers, currentPrimePool, moyennePrimePool }) {
       {/* Celebration message */}
       {highestReached && (
         <div style={{
-          textAlign: 'center', fontSize: '0.78rem', color: '#92400e',
-          background: 'rgba(245,183,49,0.08)', padding: '0.4rem 0.8rem',
-          borderRadius: '8px', marginBottom: '0.5rem',
+          textAlign: 'center', fontSize: '0.8rem', color: '#92400e',
+          background: 'rgba(245,183,49,0.1)', padding: '0.5rem 1rem',
+          borderRadius: '10px', marginBottom: '0.5rem',
+          border: '1px solid rgba(245,183,49,0.15)',
+          animation: 'fadeIn 400ms ease',
         }}>
-          {celebrationMessages[highestReached.label] || `${highestReached.emoji} ${highestReached.label} atteint !`}
+          {CELEBRATION_MESSAGES[highestReached.label] || `${highestReached.emoji} ${highestReached.label} atteint !`}
         </div>
       )}
 
       {/* Footer text */}
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
-        fontSize: '0.68rem', color: '#64748b',
+        fontSize: '0.7rem', color: '#64748b',
       }}>
         <Users size={12} />
         {"Chaque vente fait grandir la cagnotte !"}
       </div>
     </div>
   );
-}
+});
 
 
 /* ─── StreaksRecords Component ─── */
-function StreaksRecords({ streak, bestPrime, bestPaie, totalPodiums, badges }) {
+const StreaksRecords = memo(function StreaksRecords({ streak, bestPrime, bestPaie, totalPodiums, badges }) {
+  const [ref, inView] = useInView();
+
   if (bestPrime === 0 && bestPaie === 0 && totalPodiums === 0) {
     return (
-      <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-        <div style={{ fontSize: '1.6rem', marginBottom: '0.4rem' }}>{'\uD83C\uDFC6'}</div>
-        <p style={{ color: '#94a3b8', fontSize: '0.8rem' }}>
+      <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+        <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{'\uD83C\uDFC6'}</div>
+        <p style={{ color: '#94a3b8', fontSize: '0.82rem', lineHeight: 1.5 }}>
           {"Tes records appara\u00eetront d\u00e8s ta premi\u00e8re prime."}
+        </p>
+        <p style={{ color: '#cbd5e1', fontSize: '0.72rem', marginTop: '0.3rem' }}>
+          {"Monte sur le podium pour d\u00e9bloquer tes badges !"}
         </p>
       </div>
     );
@@ -170,7 +282,7 @@ function StreaksRecords({ streak, bestPrime, bestPaie, totalPodiums, badges }) {
   ];
 
   return (
-    <div>
+    <div ref={ref}>
       {/* 2x2 stats grid */}
       <div style={{
         display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem',
@@ -182,6 +294,9 @@ function StreaksRecords({ streak, bestPrime, bestPaie, totalPodiums, badges }) {
             background: s.highlight ? 'rgba(245,183,49,0.05)' : 'rgba(0,0,0,0.02)',
             border: s.highlight ? '1px solid rgba(245,183,49,0.15)' : '1px solid rgba(0,0,0,0.06)',
             display: 'flex', flexDirection: 'column', gap: '0.3rem',
+            opacity: inView ? 1 : 0,
+            transform: inView ? 'translateY(0)' : 'translateY(10px)',
+            transition: `all 400ms cubic-bezier(0.4, 0, 0.2, 1) ${i * 100}ms`,
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
               {s.icon}
@@ -197,33 +312,44 @@ function StreaksRecords({ streak, bestPrime, bestPaie, totalPodiums, badges }) {
         ))}
       </div>
 
-      {/* Badges row */}
+      {/* Badges row with descriptions */}
       {badges.length > 0 && (
         <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
-          {badges.map(b => (
-            <div key={b.id} style={{
-              display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-              padding: '0.3rem 0.65rem', borderRadius: '20px',
+          {badges.map((b, i) => (
+            <div key={b.id} title={BADGE_DESCRIPTIONS[b.id] || ''} style={{
+              display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '0.15rem',
+              padding: '0.4rem 0.7rem', borderRadius: '12px',
               fontSize: '0.7rem', fontWeight: 600,
               background: b.earned ? 'rgba(245,183,49,0.12)' : 'rgba(0,0,0,0.04)',
               color: b.earned ? '#92400e' : '#94a3b8',
               border: b.earned ? '1px solid rgba(245,183,49,0.25)' : '1px solid rgba(0,0,0,0.06)',
-              opacity: b.earned ? 1 : 0.6,
-              transition: 'all 200ms ease',
+              opacity: inView ? (b.earned ? 1 : 0.5) : 0,
+              transform: inView ? 'scale(1)' : 'scale(0.8)',
+              transition: `all 400ms cubic-bezier(0.34, 1.56, 0.64, 1) ${400 + i * 120}ms`,
+              cursor: 'default',
             }}>
-              <span style={{ fontSize: '0.85rem' }}>{b.emoji}</span>
-              {b.label}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                <span style={{ fontSize: '0.9rem' }}>{b.emoji}</span>
+                {b.label}
+              </div>
+              <div style={{
+                fontSize: '0.55rem', fontWeight: 400,
+                color: b.earned ? '#b8860b' : '#b0b8c4',
+                maxWidth: '100px', textAlign: 'center', lineHeight: 1.2,
+              }}>
+                {BADGE_DESCRIPTIONS[b.id] || ''}
+              </div>
             </div>
           ))}
         </div>
       )}
     </div>
   );
-}
+});
 
 
 /* ─── MicroJalonsTrack Component ─── */
-function MicroJalonsTrack({ jalons, nextJalonAmount, progressPct }) {
+const MicroJalonsTrack = memo(function MicroJalonsTrack({ jalons, nextJalonAmount, progressPct }) {
   if (!jalons) return null;
 
   return (
@@ -285,12 +411,110 @@ function MicroJalonsTrack({ jalons, nextJalonAmount, progressPct }) {
       )}
     </div>
   );
-}
+});
 
+
+/* ─── Animated Podium ─── */
+const PodiumAnimated = memo(function PodiumAnimated({ top3Primes, userId }) {
+  const [ref, inView] = useInView();
+  return (
+    <div ref={ref} style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      {[0, 1, 2].map(i => {
+        const entry = top3Primes[i];
+        const hasChatteur = entry?.id;
+        const isMe = hasChatteur && entry.id === userId;
+        return (
+          <div
+            key={i}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.75rem',
+              padding: '0.65rem 0.85rem',
+              borderRadius: '10px',
+              background: isMe ? 'rgba(245,183,49,0.1)' : hasChatteur ? 'rgba(0,0,0,0.02)' : 'rgba(0,0,0,0.015)',
+              border: isMe ? '2px solid #f5b731' : '1px solid rgba(0,0,0,0.06)',
+              opacity: inView ? 1 : 0,
+              transform: inView ? 'translateY(0)' : 'translateY(12px)',
+              transition: `all 400ms cubic-bezier(0.4, 0, 0.2, 1) ${i * 150}ms`,
+            }}
+          >
+            <span style={{ fontSize: '1.3rem', flexShrink: 0, width: '28px', textAlign: 'center' }}>
+              {medals[i]}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{
+                fontSize: '0.85rem', fontWeight: isMe ? 700 : hasChatteur ? 600 : 400,
+                color: isMe ? '#1b2e4b' : hasChatteur ? '#334155' : '#cbd5e1',
+                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                fontStyle: hasChatteur ? 'normal' : 'italic',
+              }}>
+                {hasChatteur ? entry.prenom : 'En attente...'}
+                {isMe && (
+                  <span style={{
+                    marginLeft: '0.4rem', fontSize: '0.6rem', fontWeight: 700,
+                    background: 'rgba(245,183,49,0.2)', color: '#b8860b',
+                    padding: '0.1rem 0.4rem', borderRadius: '10px',
+                  }}>
+                    TOI
+                  </span>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0 }}>
+              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: hasChatteur ? '#f5b731' : '#e2e8f0' }}>
+                {hasChatteur ? `${fmtDec(entry.calculatedPrime)} \u20AC` : '\u2014 \u20AC'}
+              </span>
+              <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>
+                {`${(entry.rate * 100).toFixed(1)}% de la cagnotte`}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+});
+
+/* ─── Animated Bar Chart ─── */
+const BarChartAnimated = memo(function BarChartAnimated({ historique, maxPaie, periodeDebut }) {
+  const [ref, inView] = useInView();
+  return (
+    <div ref={ref} style={{ display: 'flex', alignItems: 'flex-end', gap: '0.35rem', height: '140px', marginBottom: '0.5rem' }}>
+      {historique.map((h, i) => {
+        const heightPct = Math.max((h.total_paie / maxPaie) * 100, 4);
+        const isCurrent = h.periode_debut === periodeDebut;
+        return (
+          <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem', minWidth: 0 }}>
+            <span style={{
+              fontSize: '0.6rem', color: '#64748b', whiteSpace: 'nowrap',
+              overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%',
+              opacity: inView ? 1 : 0, transition: `opacity 400ms ease ${300 + i * 100}ms`,
+            }}>
+              {`${fmt(h.total_paie)}\u20AC`}
+            </span>
+            <div
+              style={{
+                width: '100%', maxWidth: '40px',
+                height: inView ? `${heightPct}%` : '4px',
+                minHeight: '4px',
+                borderRadius: '4px 4px 0 0',
+                background: isCurrent
+                  ? 'linear-gradient(180deg, #f5b731, #f59e0b)'
+                  : 'linear-gradient(180deg, #cbd5e1, #94a3b8)',
+                transition: `height 700ms cubic-bezier(0.34, 1.56, 0.64, 1) ${i * 120}ms`,
+              }}
+              title={`${formatPeriodShort(h.periode_debut)}: ${fmt(h.total_paie)} \u20AC`}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+});
 
 /* ─── Main Component ─── */
 export default function MaPerformance() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [historique, setHistorique] = useState([]);
   const [classementData, setClassementData] = useState(null);
   const [cagnotteHistorique, setCagnotteHistorique] = useState(null);
@@ -323,11 +547,12 @@ export default function MaPerformance() {
 
   // Memoize all derived computations
   const {
-    maxPaie, classement, totalNetHTEquipe, primeRates, totalPrimePool,
+    maxPaie, classement, nbChatteursTotal, totalNetHTEquipe, primeRates, totalPrimePool,
     top3Primes, myRang, myData, thirdPlaceNetHT, distanceToPodium,
-    motivation, paliers, streaksData, microJalons, totalGagne, moyennePrimePool,
+    motivation, paliers, isFallbackPaliers, streaksData, microJalons, totalGagne, moyennePrimePool,
   } = useMemo(() => {
     const classement = classementData?.classement || [];
+    const nbChatteursTotal = classementData?.nb_chatteurs || classement.length;
     const totalNetHTEquipe = classementData?.total_net_ht_equipe || 0;
     const primeRates = classementData?.prime_rates || [0.005, 0.0025, 0.0012];
     const maxPaie = Math.max(...historique.map(h => h.total_paie || 0), 1);
@@ -348,7 +573,19 @@ export default function MaPerformance() {
     const motivation = getMotivation(myRang, distanceToPodium);
 
     const moyennePrimePool = cagnotteHistorique?.moyenne_prime_pool || 0;
-    const paliers = computeMilestones(moyennePrimePool, totalPrimePool);
+    let paliers = computeMilestones(moyennePrimePool, totalPrimePool);
+    let isFallbackPaliers = false;
+
+    // Smart fallback: use fixed milestones when no history or seuils are meaninglessly small
+    const paliersAreTiny = paliers && paliers[paliers.length - 1].seuil < 1;
+    if ((!paliers || paliersAreTiny) && totalPrimePool > 0) {
+      paliers = FALLBACK_MILESTONES.map(p => ({
+        ...p,
+        atteint: totalPrimePool >= p.seuil,
+      }));
+      isFallbackPaliers = true;
+    }
+
     const streaksData = computeStreaksAndRecords(historique);
     const microJalons = computeMicroMilestones(myData?.total_net_ht || 0, thirdPlaceNetHT, myRang);
     const totalGagne = historique.reduce((s, h) => s + (h.total_paie || 0), 0);
@@ -356,7 +593,7 @@ export default function MaPerformance() {
     return {
       maxPaie, classement, totalNetHTEquipe, primeRates, totalPrimePool,
       top3Primes, myRang, myData, thirdPlaceNetHT, distanceToPodium,
-      motivation, paliers, streaksData, microJalons, totalGagne, moyennePrimePool,
+      motivation, paliers, isFallbackPaliers, streaksData, microJalons, totalGagne, moyennePrimePool, nbChatteursTotal,
     };
   }, [historique, classementData, cagnotteHistorique, user?.chatteur_id]);
 
@@ -385,7 +622,7 @@ export default function MaPerformance() {
       ) : (
         <>
           {/* ─── 1. Paliers Cagnotte (Thermometre) ─── */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <AnimatedCard delay={0}>
             <div style={{
               padding: '1rem 1.25rem',
               borderBottom: '1px solid rgba(0,0,0,0.06)',
@@ -409,12 +646,13 @@ export default function MaPerformance() {
                 paliers={paliers}
                 currentPrimePool={totalPrimePool}
                 moyennePrimePool={moyennePrimePool}
+                isFallback={isFallbackPaliers}
               />
             </div>
-          </div>
+          </AnimatedCard>
 
           {/* ─── 2. Mon Evolution (bar chart) ─── */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <AnimatedCard delay={100}>
             <div style={{
               padding: '1rem 1.25rem',
               borderBottom: '1px solid rgba(0,0,0,0.06)',
@@ -427,37 +665,36 @@ export default function MaPerformance() {
             </div>
             <div style={{ padding: '1.25rem' }}>
               {historique.length === 0 ? (
-                <p style={{ color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '1.5rem 0' }}>
-                  Aucun historique disponible
-                </p>
+                <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{'\uD83D\uDCC8'}</div>
+                  <p style={{ color: '#94a3b8', fontSize: '0.82rem', lineHeight: 1.5 }}>
+                    Aucun historique disponible
+                  </p>
+                  <p style={{ color: '#cbd5e1', fontSize: '0.72rem', marginTop: '0.3rem' }}>
+                    {"Ton \u00e9volution appara\u00eetra d\u00e8s la prochaine p\u00e9riode."}
+                  </p>
+                  <button
+                    onClick={() => navigate('/mes-ventes')}
+                    className="btn-primary"
+                    style={{ marginTop: '1rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                  >
+                    <Plus size={14} /> Ajouter une vente
+                  </button>
+                </div>
               ) : (
                 <>
+                  {/* Single period context message */}
+                  {historique.length === 1 && (
+                    <div style={{
+                      fontSize: '0.7rem', color: '#64748b', background: 'rgba(99,102,241,0.06)',
+                      padding: '0.5rem 0.75rem', borderRadius: '8px', marginBottom: '0.75rem',
+                      textAlign: 'center', lineHeight: 1.4,
+                    }}>
+                      {"Premi\u00e8re p\u00e9riode ! Le graphique se remplira au fil du temps."}
+                    </div>
+                  )}
                   {/* Bar chart */}
-                  <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.35rem', height: '140px', marginBottom: '0.5rem' }}>
-                    {historique.map((h, i) => {
-                      const heightPct = Math.max((h.total_paie / maxPaie) * 100, 4);
-                      const isCurrent = h.periode_debut === periode.debut;
-                      return (
-                        <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.2rem', minWidth: 0 }}>
-                          <span style={{ fontSize: '0.6rem', color: '#64748b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>
-                            {`${fmt(h.total_paie)}\u20AC`}
-                          </span>
-                          <div
-                            style={{
-                              width: '100%', maxWidth: '40px',
-                              height: `${heightPct}%`, minHeight: '4px',
-                              borderRadius: '4px 4px 0 0',
-                              background: isCurrent
-                                ? 'linear-gradient(180deg, #f5b731, #f59e0b)'
-                                : 'linear-gradient(180deg, #cbd5e1, #94a3b8)',
-                              transition: 'height 600ms cubic-bezier(0.4, 0, 0.2, 1)',
-                            }}
-                            title={`${formatPeriodShort(h.periode_debut)}: ${fmt(h.total_paie)} \u20AC`}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <BarChartAnimated historique={historique} maxPaie={maxPaie} periodeDebut={periode.debut} />
                   {/* X-axis labels */}
                   <div style={{ display: 'flex', gap: '0.35rem' }}>
                     {historique.map((h, i) => (
@@ -491,10 +728,10 @@ export default function MaPerformance() {
                 </>
               )}
             </div>
-          </div>
+          </AnimatedCard>
 
           {/* ─── 3. Mes Records & Streaks ─── */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <AnimatedCard delay={200}>
             <div style={{
               padding: '1rem 1.25rem',
               borderBottom: '1px solid rgba(0,0,0,0.06)',
@@ -518,10 +755,10 @@ export default function MaPerformance() {
             <div style={{ padding: '1.25rem' }}>
               <StreaksRecords {...streaksData} />
             </div>
-          </div>
+          </AnimatedCard>
 
           {/* ─── 4. Podium & Classement ─── */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <AnimatedCard delay={300}>
             <div style={{
               padding: '1rem 1.25rem',
               borderBottom: '1px solid rgba(0,0,0,0.06)',
@@ -536,11 +773,23 @@ export default function MaPerformance() {
 
             <div style={{ padding: '1.25rem' }}>
               {totalNetHTEquipe === 0 ? (
-                <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-                  <div style={{ fontSize: '2rem', marginBottom: '0.5rem' }}>{'\uD83C\uDFC1'}</div>
-                  <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>
-                    {"La cagnotte d\u00e9marre avec les premi\u00e8res ventes de la p\u00e9riode !"}
+                <div style={{ textAlign: 'center', padding: '1.5rem 0' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '0.5rem' }}>{'\uD83C\uDFC1'}</div>
+                  <p style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 500 }}>
+                    {"La course commence avec les premi\u00e8res ventes !"}
                   </p>
+                  <p style={{ color: '#94a3b8', fontSize: '0.75rem', marginTop: '0.25rem', lineHeight: 1.5 }}>
+                    {"Chaque vente de l'\u00e9quipe alimente la cagnotte."}
+                    <br />
+                    {"Les 3 meilleurs se partagent les primes."}
+                  </p>
+                  <button
+                    onClick={() => navigate('/mes-ventes')}
+                    className="btn-primary"
+                    style={{ marginTop: '1rem', fontSize: '0.78rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                  >
+                    <ShoppingBag size={14} /> Voir mes ventes
+                  </button>
                 </div>
               ) : (
                 <>
@@ -563,7 +812,7 @@ export default function MaPerformance() {
                       marginTop: '0.5rem', fontSize: '0.7rem', color: '#64748b',
                     }}>
                       <Users size={12} />
-                      {"Chaque vente fait grossir la cagnotte pour tous"}
+                      {"Les 3 premiers se partagent la cagnotte"}
                     </div>
                   </div>
 
@@ -579,67 +828,7 @@ export default function MaPerformance() {
                       Podium
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                      {[0, 1, 2].map(i => {
-                        const entry = top3Primes[i];
-                        const hasChatteur = entry?.id;
-                        const isMe = hasChatteur && entry.id === user?.chatteur_id;
-
-                        return (
-                          <div
-                            key={i}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: '0.75rem',
-                              padding: '0.65rem 0.85rem',
-                              borderRadius: '10px',
-                              background: isMe ? 'rgba(245,183,49,0.1)' : 'rgba(0,0,0,0.02)',
-                              border: isMe ? '2px solid #f5b731' : '1px solid rgba(0,0,0,0.06)',
-                              transition: 'all 200ms ease',
-                            }}
-                          >
-                            {/* Medal */}
-                            <span style={{ fontSize: '1.3rem', flexShrink: 0, width: '28px', textAlign: 'center' }}>
-                              {medals[i]}
-                            </span>
-
-                            {/* Name */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{
-                                fontSize: '0.85rem', fontWeight: isMe ? 700 : 600,
-                                color: isMe ? '#1b2e4b' : '#334155',
-                                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                              }}>
-                                {hasChatteur ? entry.prenom : '\u2014'}
-                                {isMe && (
-                                  <span style={{
-                                    marginLeft: '0.4rem', fontSize: '0.6rem', fontWeight: 700,
-                                    background: 'rgba(245,183,49,0.2)', color: '#b8860b',
-                                    padding: '0.1rem 0.4rem', borderRadius: '10px',
-                                  }}>
-                                    TOI
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Prime amount */}
-                            <div style={{
-                              display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0,
-                            }}>
-                              <span style={{
-                                fontSize: '0.9rem', fontWeight: 700,
-                                color: hasChatteur ? '#f5b731' : '#d1d5db',
-                              }}>
-                                {hasChatteur ? `${fmtDec(entry.calculatedPrime)} \u20AC` : '\u2014 \u20AC'}
-                              </span>
-                              <span style={{ fontSize: '0.6rem', color: '#94a3b8' }}>
-                                {`${(entry.rate * 100).toFixed(1)}% de la cagnotte`}
-                              </span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <PodiumAnimated top3Primes={top3Primes} userId={user?.chatteur_id} />
                   </div>
 
                   {/* User's position */}
@@ -677,7 +866,7 @@ export default function MaPerformance() {
                       {/* Message */}
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#1b2e4b', marginBottom: '0.15rem' }}>
-                          {myRang > 0 ? `Tu es ${myRang <= 3 ? 'sur le podium' : `${myRang}${myRang === 1 ? 'er' : 'e'}`} sur ${classement.length}` : 'Pas encore class\u00e9'}
+                          {myRang > 0 ? `${myRang <= 3 ? `${medals[myRang - 1]} Sur le podium` : `${myRang}${myRang === 1 ? 'er' : '\u00e8me'}`} sur ${nbChatteursTotal} chatteurs` : 'Pas encore class\u00e9'}
                         </div>
                         <div style={{ fontSize: '0.78rem', color: '#475569', lineHeight: 1.4 }}>
                           {motivation.emoji} {motivation.text}
@@ -736,7 +925,7 @@ export default function MaPerformance() {
                 </>
               )}
             </div>
-          </div>
+          </AnimatedCard>
         </>
       )}
     </div>

@@ -4,12 +4,14 @@ import StatCard from '../../components/StatCard.jsx';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
-  Euro, TrendingUp, Building2,
+  Euro, TrendingUp, Building2, Calendar,
   Trophy, RefreshCw, ChevronDown, Crown, Users, Shield,
   CheckCircle, Clock, AlertCircle, Download, FileText,
 } from 'lucide-react';
 
-/* ─── Period generator ─── */
+/* ─── Period generator (no periods before March 2026 — app launch) ─── */
+const APP_START_DATE = '2026-03-01';
+
 function generatePeriods() {
   const periods = [];
   const now = new Date();
@@ -17,17 +19,16 @@ function generatePeriods() {
   let month = now.getMonth();
   let isFirstHalf = now.getDate() < 15;
 
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 24; i++) {
     const m = String(month + 1).padStart(2, '0');
     const monthName = new Date(year, month, 1).toLocaleDateString('fr-FR', { month: 'long' });
     const cap = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
+    let debut, fin, label;
     if (isFirstHalf) {
-      periods.push({
-        debut: `${year}-${m}-01`,
-        fin: `${year}-${m}-15`,
-        label: `1 – 15 ${cap} ${year}`,
-      });
+      debut = `${year}-${m}-01`;
+      fin = `${year}-${m}-15`;
+      label = `1 – 15 ${cap} ${year}`;
       isFirstHalf = false;
       month--;
       if (month < 0) { month = 11; year--; }
@@ -37,13 +38,15 @@ function generatePeriods() {
       const nm = String(next.getMonth() + 1).padStart(2, '0');
       const nextMonth = next.toLocaleDateString('fr-FR', { month: 'long' });
       const capNext = nextMonth.charAt(0).toUpperCase() + nextMonth.slice(1);
-      periods.push({
-        debut: `${year}-${m}-15`,
-        fin: `${ny}-${nm}-01`,
-        label: `15 ${cap} – 1 ${capNext} ${ny}`,
-      });
+      debut = `${year}-${m}-15`;
+      fin = `${ny}-${nm}-01`;
+      label = `15 ${cap} – 1 ${capNext} ${ny}`;
       isFirstHalf = true;
     }
+
+    // Stop before app launch date
+    if (debut < APP_START_DATE) break;
+    periods.push({ debut, fin, label });
   }
   return periods;
 }
@@ -271,10 +274,11 @@ export default function Paies() {
           {/* Period selector */}
           <div ref={dropdownRef} style={{ position: 'relative' }}>
             <button
-              className="btn-primary"
+              className="btn-secondary"
               onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', minWidth: '160px', justifyContent: 'space-between' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.5rem 1rem', minWidth: '160px', justifyContent: 'space-between' }}
             >
+              <Calendar size={15} />
               <span style={{ fontSize: '0.85rem' }}>{period?.label}</span>
               <ChevronDown size={15} style={{
                 transform: showPeriodDropdown ? 'rotate(180deg)' : 'rotate(0)',
@@ -282,36 +286,47 @@ export default function Paies() {
               }} />
             </button>
             {showPeriodDropdown && (
-              <div style={{
-                position: 'absolute', top: '100%', right: 0, marginTop: '0.35rem',
-                background: '#fff', borderRadius: '10px', border: '1px solid rgba(0,0,0,0.08)',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 50,
-                minWidth: '240px', maxHeight: '320px', overflowY: 'auto',
-                animation: 'slideUp 0.2s ease',
-              }}>
-                {periods.map((p, i) => (
-                  <button
-                    key={p.debut}
-                    onClick={() => { setSelectedIdx(i); setShowPeriodDropdown(false); }}
-                    style={{
-                      display: 'block', width: '100%', textAlign: 'left',
-                      padding: '0.6rem 1rem', border: 'none', cursor: 'pointer',
-                      fontSize: '0.85rem', transition: 'all 150ms',
-                      background: i === selectedIdx ? 'rgba(245,183,49,0.1)' : 'transparent',
-                      color: i === selectedIdx ? '#f5b731' : '#1a1f2e',
-                      fontWeight: i === selectedIdx ? 600 : 400,
-                      borderLeft: i === selectedIdx ? '3px solid #f5b731' : '3px solid transparent',
-                    }}
-                    className={i !== selectedIdx ? 'hover-row' : ''}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
+              <>
+                <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setShowPeriodDropdown(false)} />
+                <div style={{
+                  position: 'absolute', top: '100%', right: 0, marginTop: '0.35rem',
+                  background: 'var(--bg-card)', borderRadius: '10px', border: '1px solid var(--border-subtle)',
+                  boxShadow: '0 10px 30px rgba(0,0,0,0.12)', zIndex: 50,
+                  minWidth: '240px', maxHeight: '320px', overflowY: 'auto',
+                  animation: 'modalCardIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                }}>
+                  {periods.map((p, i) => (
+                    <button
+                      key={p.debut}
+                      onClick={() => { setSelectedIdx(i); setShowPeriodDropdown(false); }}
+                      style={{
+                        display: 'block', width: '100%', textAlign: 'left',
+                        padding: '0.6rem 1rem', border: 'none', cursor: 'pointer',
+                        fontSize: '0.85rem', transition: 'background 150ms',
+                        background: i === selectedIdx ? 'rgba(245,183,49,0.1)' : 'transparent',
+                        color: i === selectedIdx ? '#f5b731' : 'var(--text-primary)',
+                        fontWeight: i === selectedIdx ? 600 : 400,
+                        borderLeft: i === selectedIdx ? '3px solid #f5b731' : '3px solid transparent',
+                      }}
+                      className={i !== selectedIdx ? 'hover-row' : ''}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>
       </div>
+
+      {/* Error with retry */}
+      {error && !loading && !data && (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {error}
+          <button onClick={fetchPaies} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
+        </div>
+      )}
 
       {/* Loading skeleton */}
       {loading ? (

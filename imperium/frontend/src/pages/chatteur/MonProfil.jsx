@@ -3,7 +3,8 @@ import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
 import { useToast } from '../../components/Toast.jsx';
-import { User, Mail, Globe, Percent, Shield, AlertTriangle, Lock, Save, Eye, EyeOff } from 'lucide-react';
+import { User, Mail, Globe, Percent, Shield, AlertTriangle, Lock, Save, Eye, EyeOff, Camera, Pencil, Send, CheckCircle } from 'lucide-react';
+import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
 const PAYS_ISO = { 'France': 'fr', 'Benin': 'bj', 'Bénin': 'bj', 'Madagascar': 'mg' };
 
@@ -48,6 +49,13 @@ export default function MonProfil() {
   const [pwdForm, setPwdForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
   const [showPwd, setShowPwd] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Email change form
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
 
   const fetchProfile = () => {
     if (!user?.chatteur_id) {
@@ -105,6 +113,47 @@ export default function MonProfil() {
     }
   };
 
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(file.type)) {
+      return toast('Format accepté : JPEG, PNG, GIF, WebP', 'error');
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      return toast('Photo trop lourde (max 2 Mo)', 'error');
+    }
+    setUploadingPhoto(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        await api.put('/api/auth/profile', { photo: reader.result });
+        setChatteur(prev => ({ ...prev, photo: reader.result }));
+        toast('Photo mise à jour', 'success');
+      } catch (err) {
+        toast(err.response?.data?.error || 'Erreur lors du téléchargement', 'error');
+      } finally {
+        setUploadingPhoto(false);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleEmailChange = async () => {
+    if (!newEmail.trim()) return toast('Saisis un nouvel email', 'error');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) return toast('Email invalide', 'error');
+
+    setEmailSaving(true);
+    try {
+      await api.post('/api/auth/change-email', { new_email: newEmail.trim() });
+      setEmailSent(true);
+      toast('Email de vérification envoyé', 'success');
+    } catch (err) {
+      toast(err.response?.data?.error || 'Erreur', 'error');
+    } finally {
+      setEmailSaving(false);
+    }
+  };
+
   if (loading) return <div className="page-enter" style={{ maxWidth: 500, margin: '0 auto' }}><CardSkeleton count={2} /></div>;
 
   if (error) {
@@ -128,53 +177,132 @@ export default function MonProfil() {
 
   const iso = PAYS_ISO[chatteur?.pays] || 'fr';
   const photoUrl = chatteur?.photo || user?.photo;
-  const roleLabel = { chatteur: 'Chatteur', manager: 'Manager', va: 'VA' }[chatteur?.role] || 'Chatteur';
+  const ROLE_COLORS = {
+    chatteur: { bg: '#dbeafe', color: '#1e40af' },
+    manager: { bg: '#fef3c7', color: '#b45309' },
+    directeur: { bg: '#ede9fe', color: '#6366f1' },
+    va: { bg: '#f3e8ff', color: '#7c3aed' },
+  };
+  const roleLabel = { chatteur: 'Chatteur', manager: 'Manager', directeur: 'Directeur', va: 'VA' }[chatteur?.role] || 'Chatteur';
+  const roleColor = ROLE_COLORS[chatteur?.role] || ROLE_COLORS.chatteur;
+  // User-assigned color from CHATTEUR_COLORS palette (set by admin)
+  const userClr = chatteur?.couleur != null ? CHATTEUR_COLORS[chatteur.couleur] : null;
+  const avatarBg = userClr?.bg || roleColor.bg;
+  const avatarText = userClr?.text || roleColor.color;
+  const avatarBorder = userClr?.border || `${roleColor.color}30`;
 
   return (
     <div className="page-enter stagger-children" style={{ maxWidth: 500, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       {/* Header avec photo */}
       <div className="card" style={{ textAlign: 'center', padding: '2rem 1.5rem 1.5rem' }}>
-        {photoUrl ? (
-          <img src={photoUrl} alt={chatteur?.prenom || 'Profil'} style={{
-            width: 80, height: 80, borderRadius: '50%', objectFit: 'cover',
-            border: '3px solid rgba(245,183,49,0.4)', margin: '0 auto 1rem',
-            display: 'block',
-          }} />
-        ) : (
-          <div style={{
-            width: 80, height: 80, borderRadius: '50%',
-            background: 'rgba(245,183,49,0.12)', border: '3px solid rgba(245,183,49,0.3)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 1rem',
-          }}>
-            <User size={32} color="#f5b731" />
-          </div>
-        )}
-        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1b2e4b', marginBottom: '0.35rem' }}>
+        <div style={{ position: 'relative', width: 80, height: 80, margin: '0 auto 1rem' }}>
+          {photoUrl ? (
+            <img src={photoUrl} alt={chatteur?.prenom || 'Profil'} style={{
+              width: 80, height: 80, borderRadius: '50%', objectFit: 'cover',
+              border: `3px solid ${avatarBorder}`, display: 'block',
+            }} />
+          ) : (
+            <div style={{
+              width: 80, height: 80, borderRadius: '50%',
+              background: avatarBg, border: `3px solid ${avatarBorder}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '1.75rem', fontWeight: 700, color: avatarText,
+            }}>
+              {(chatteur?.prenom || '?')[0].toUpperCase()}
+            </div>
+          )}
+          {/* Camera overlay button */}
+          <label
+            className="haptic"
+            style={{
+              position: 'absolute', bottom: -2, right: -2,
+              width: 28, height: 28, borderRadius: '50%',
+              background: '#f5b731', border: '2px solid #fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              cursor: 'pointer', boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+              transition: 'transform 150ms ease',
+            }}
+            title="Changer la photo"
+          >
+            {uploadingPhoto
+              ? <span className="spinner" style={{ width: 14, height: 14 }} />
+              : <Camera size={14} color="#fff" />}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              onChange={handlePhotoUpload}
+              style={{ display: 'none' }}
+            />
+          </label>
+        </div>
+        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1b2e4b', marginBottom: 0 }}>
           {chatteur?.prenom || 'Mon Profil'}
         </h1>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-          <img
-            src={`https://flagcdn.com/w40/${iso}.png`}
-            alt={chatteur?.pays || 'France'}
-            style={{ width: 20, height: 14, borderRadius: 2, objectFit: 'cover' }}
-          />
-          <span style={{ fontSize: '0.82rem', color: '#64748b' }}>{chatteur?.pays || 'France'}</span>
-        </div>
       </div>
 
       {/* Infos */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1.25rem' }}>
-        <InfoRow icon={Mail} label="Email" value={chatteur?.user_email || chatteur?.email || '\u2014'} />
+        <InfoRow icon={Mail} label="Email" value={chatteur?.user_email || chatteur?.email || '\u2014'}
+          extra={
+            !showEmailForm && !emailSent && (
+              <button onClick={() => { setShowEmailForm(true); setNewEmail(''); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', display: 'flex' }}
+                title="Modifier l'email">
+                <Pencil size={13} color="#94a3b8" />
+              </button>
+            )
+          }
+        />
+        {showEmailForm && !emailSent && (
+          <div style={{
+            display: 'flex', gap: '0.5rem', alignItems: 'center',
+            padding: '0.5rem 1rem', marginTop: '-0.25rem',
+          }}>
+            <input
+              type="email" className="input-field"
+              value={newEmail} onChange={e => setNewEmail(e.target.value)}
+              placeholder="Nouvel email"
+              style={{ flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.75rem' }}
+              autoFocus
+            />
+            <button onClick={handleEmailChange} disabled={emailSaving}
+              className="btn-primary haptic"
+              style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              {emailSaving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Send size={13} />}
+              Vérifier
+            </button>
+            <button onClick={() => setShowEmailForm(false)}
+              className="btn-secondary" style={{ padding: '0.5rem 0.6rem', fontSize: '0.78rem' }}>
+              Annuler
+            </button>
+          </div>
+        )}
+        {emailSent && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.5rem',
+            padding: '0.5rem 1rem', marginTop: '-0.25rem',
+            background: 'rgba(16,185,129,0.06)', borderRadius: '8px',
+          }}>
+            <CheckCircle size={14} color="#10b981" />
+            <span style={{ fontSize: '0.78rem', color: '#065f46' }}>
+              Un email de vérification a été envoyé à <strong>{newEmail}</strong>
+            </span>
+          </div>
+        )}
         <InfoRow
           icon={Globe} label="Pays" value={chatteur?.pays || 'France'}
           extra={<img src={`https://flagcdn.com/w40/${iso}.png`} alt="" style={{ width: 18, height: 12, borderRadius: 2, objectFit: 'cover' }} />}
         />
         <InfoRow
           icon={Percent} label="Taux de commission"
-          value={chatteur?.taux_commission != null ? `${(chatteur.taux_commission * 100).toLocaleString('fr-FR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : '\u2014'}
+          value={chatteur?.taux_commission != null ? `${(chatteur.taux_commission * 100).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%` : '\u2014'}
         />
-        <InfoRow icon={Shield} label="Rôle" value={roleLabel} />
+        <InfoRow icon={Shield} label="Rôle" value={
+          <span style={{
+            fontSize: '0.75rem', fontWeight: 600, padding: '0.15rem 0.5rem',
+            borderRadius: '20px', background: roleColor.bg, color: roleColor.color,
+          }}>{roleLabel}</span>
+        } />
       </div>
 
       {/* Change password section */}

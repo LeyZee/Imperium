@@ -94,8 +94,13 @@ router.get('/progress', authMiddleware, asyncHandler((req, res) => {
 }));
 
 // GET /api/objectifs/suggestions?chatteur_id=X — data-driven goal suggestions
-router.get('/suggestions', authMiddleware, adminOrManager, asyncHandler((req, res) => {
-  const { chatteur_id } = req.query;
+router.get('/suggestions', authMiddleware, asyncHandler((req, res) => {
+  let { chatteur_id } = req.query;
+
+  // Chatteurs can only see their own suggestions
+  if (req.user.role === 'chatteur') {
+    chatteur_id = req.user.chatteur_id;
+  }
 
   // Get last 6 periods of ventes data
   let query, params;
@@ -104,7 +109,7 @@ router.get('/suggestions', authMiddleware, adminOrManager, asyncHandler((req, re
       SELECT v.periode_debut, v.periode_fin,
         COALESCE(SUM(v.montant_brut), 0) as total_brut
       FROM ventes v
-      WHERE v.chatteur_id = ?
+      WHERE v.chatteur_id = ? AND v.statut != 'rejetée'
       GROUP BY v.periode_debut, v.periode_fin
       ORDER BY v.periode_debut DESC
       LIMIT 6
@@ -116,6 +121,7 @@ router.get('/suggestions', authMiddleware, adminOrManager, asyncHandler((req, re
       SELECT v.periode_debut, v.periode_fin,
         COALESCE(SUM(v.montant_brut), 0) as total_brut
       FROM ventes v
+      WHERE v.statut != 'rejetée'
       GROUP BY v.periode_debut, v.periode_fin
       ORDER BY v.periode_debut DESC
       LIMIT 6
@@ -179,6 +185,54 @@ router.get('/suggestions', authMiddleware, adminOrManager, asyncHandler((req, re
     tendance: Math.round(tendance),
     suggestions,
   });
+}));
+
+// GET /api/objectifs/mon-objectif?periode_debut=&periode_fin= — chatteur's personal goal
+router.get('/mon-objectif', authMiddleware, asyncHandler((req, res) => {
+  const chatteur_id = req.user.chatteur_id;
+  if (!chatteur_id) throw new ApiError(403, 'Pas de chatteur associé');
+  const { periode_debut, periode_fin } = req.query;
+  if (!periode_debut || !periode_fin) throw new ApiError(400, 'periode_debut et periode_fin requis');
+
+  const obj = db.prepare(
+    'SELECT * FROM objectifs_personnels WHERE chatteur_id = ? AND periode_debut = ? AND periode_fin = ?'
+  ).get(chatteur_id, periode_debut, periode_fin);
+
+  res.json(obj || null);
+}));
+
+// POST /api/objectifs/mon-objectif — chatteur sets personal goal
+router.post('/mon-objectif', authMiddleware, asyncHandler((req, res) => {
+  const chatteur_id = req.user.chatteur_id;
+  if (!chatteur_id) throw new ApiError(403, 'Pas de chatteur associé');
+  const { montant_cible, periode_debut, periode_fin } = req.body;
+  if (!montant_cible || montant_cible <= 0) throw new ApiError(400, 'Montant cible invalide');
+  if (!periode_debut || !periode_fin) throw new ApiError(400, 'periode_debut et periode_fin requis');
+
+  const existing = db.prepare(
+    'SELECT id FROM objectifs_personnels WHERE chatteur_id = ? AND periode_debut = ? AND periode_fin = ?'
+  ).get(chatteur_id, periode_debut, periode_fin);
+
+  if (existing) {
+    db.prepare('UPDATE objectifs_personnels SET montant_cible = ? WHERE id = ?').run(montant_cible, existing.id);
+    res.json({ id: existing.id, updated: true });
+  } else {
+    const result = db.prepare(
+      'INSERT INTO objectifs_personnels (chatteur_id, montant_cible, periode_debut, periode_fin) VALUES (?, ?, ?, ?)'
+    ).run(chatteur_id, montant_cible, periode_debut, periode_fin);
+    res.status(201).json({ id: result.lastInsertRowid });
+  }
+}));
+
+// DELETE /api/objectifs/mon-objectif — chatteur removes personal goal
+router.delete('/mon-objectif', authMiddleware, asyncHandler((req, res) => {
+  const chatteur_id = req.user.chatteur_id;
+  if (!chatteur_id) throw new ApiError(403, 'Pas de chatteur associé');
+  const { periode_debut, periode_fin } = req.query;
+  db.prepare(
+    'DELETE FROM objectifs_personnels WHERE chatteur_id = ? AND periode_debut = ? AND periode_fin = ?'
+  ).run(chatteur_id, periode_debut, periode_fin);
+  res.json({ message: 'Objectif supprimé' });
 }));
 
 // POST /api/objectifs

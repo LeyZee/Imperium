@@ -141,7 +141,7 @@ describe('PUT /api/auth/profile', () => {
 
   test('updates email', async () => {
     const getMock = jest.fn()
-      .mockReturnValueOnce({ id: 1, email: 'old@t.com', password_hash: 'h' })
+      .mockReturnValueOnce({ id: 1, email: 'old@t.com', password_hash: 'h', role: 'admin' })
       .mockReturnValueOnce(null)
       .mockReturnValueOnce({ id: 1, email: 'new@t.com', role: 'admin' });
     db.prepare.mockReturnValue(mockStmt({ get: getMock, run: jest.fn() }));
@@ -151,7 +151,7 @@ describe('PUT /api/auth/profile', () => {
 
   test('409 for email conflict', async () => {
     const getMock = jest.fn()
-      .mockReturnValueOnce({ id: 1, email: 'old@t.com', password_hash: 'h' })
+      .mockReturnValueOnce({ id: 1, email: 'old@t.com', password_hash: 'h', role: 'admin' })
       .mockReturnValueOnce({ id: 99 });
     db.prepare.mockReturnValue(mockStmt({ get: getMock }));
     const res = await request(adminApp).put('/api/auth/profile').send({ email: 'taken@t.com' });

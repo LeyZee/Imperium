@@ -9,16 +9,34 @@ const GROUP_PLATFORM = {
 };
 
 /**
- * Fuzzy match chatteur by first name
+ * Find chatteur by Telegram user ID first, then fuzzy name match.
+ * Auto-saves telegram_user_id on successful name match.
  */
-function findChatteur(name) {
+function findChatteur(name, telegramUserId) {
+  // 1. Try exact match by telegram_user_id
+  if (telegramUserId) {
+    const byId = db.prepare('SELECT * FROM chatteurs WHERE telegram_user_id = ? AND actif = 1').get(telegramUserId);
+    if (byId) return byId;
+  }
+
+  // 2. Fallback: fuzzy name match
   if (!name) return null;
   const normalized = name.toLowerCase().replace(/[-\s]/g, '');
   const all = db.prepare('SELECT * FROM chatteurs WHERE actif = 1').all([]);
-  return all.find(c => {
+  const match = all.find(c => {
     const p = c.prenom.toLowerCase().replace(/[-\s]/g, '');
     return p === normalized || normalized.includes(p) || p.includes(normalized);
   });
+
+  // 3. Auto-save telegram_user_id if matched by name and no ID stored yet
+  if (match && telegramUserId && !match.telegram_user_id) {
+    try {
+      db.prepare('UPDATE chatteurs SET telegram_user_id = ? WHERE id = ?').run(telegramUserId, match.id);
+      console.log(`🔗 Telegram ID ${telegramUserId} auto-lié à ${match.prenom}`);
+    } catch { /* silent — unique constraint may fail */ }
+  }
+
+  return match;
 }
 
 /**
@@ -97,13 +115,28 @@ function isDuplicate(chatteur_id, plateforme_id, montant_brut, periode_debut, pe
 }
 
 /**
+ * Find the most likely shift for a vente (same chatteur, plateforme, recent date)
+ */
+function findShiftForVente(chatteur_id, plateforme_id, dateStr) {
+  // Look for a shift on the same date or within 1 day for this chatteur+plateforme
+  const shift = db.prepare(`
+    SELECT id, modele_id FROM shifts
+    WHERE chatteur_id = ? AND plateforme_id = ?
+      AND date BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+    ORDER BY ABS(julianday(date) - julianday(?)) ASC
+    LIMIT 1
+  `).get(chatteur_id, plateforme_id, dateStr, dateStr, dateStr);
+  return shift || null;
+}
+
+/**
  * Insert a vente from Telegram
  */
-function insertVente(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes) {
+function insertVente(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id, modele_id) {
   const result = db.prepare(`
-    INSERT INTO ventes (chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes);
+    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?)
+  `).run(chatteur_id, modele_id ?? null, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id ?? null);
   return result;
 }
 
@@ -111,7 +144,7 @@ function insertVente(chatteur_id, plateforme_id, montant_brut, periode_debut, pe
  * Process a single Telegram message and create a vente if valid
  * Returns { success, vente_id, ... } or { error, ... }
  */
-function processMessage({ group_id, sender_name, message }) {
+function processMessage({ group_id, sender_name, sender_id, message }) {
   // Identify platform
   const plateforme_id = GROUP_PLATFORM[group_id.toString()];
   if (!plateforme_id) {
@@ -133,10 +166,11 @@ function processMessage({ group_id, sender_name, message }) {
   const { debut: periode_debut, fin: periode_fin } = getPeriode(parsed.date);
 
   // Find chatteur
-  const chatteur = findChatteur(sender_name);
+  const chatteur = findChatteur(sender_name, sender_id);
   if (!chatteur) {
     return { error: `Chatteur non trouvé: "${sender_name}"` };
   }
+  const chatteur_id = chatteur.id;
 
   // Dedup check
   const dup = isDuplicate(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin);
@@ -144,18 +178,23 @@ function processMessage({ group_id, sender_name, message }) {
     return { error: 'Doublon détecté', existing_id: dup.id };
   }
 
+  // Try to find matching shift
+  const shift = findShiftForVente(chatteur.id, plateforme_id, parsed.date);
+
   // Insert
   const notes = `Import Telegram — ${message.substring(0, 100)}`;
-  const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes);
+  const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes, shift?.id, shift?.modele_id);
 
   return {
     success: true,
     vente_id: result.lastInsertRowid,
+    chatteur_id,
     chatteur: chatteur.prenom,
     plateforme_id,
     montant_brut: parsed.montant_brut,
     periode: `${periode_debut} → ${periode_fin}`,
     date_rapport: parsed.date,
+    shift_id: shift?.id || null,
   };
 }
 
@@ -165,6 +204,7 @@ module.exports = {
   parseReport,
   isShiftReport,
   isDuplicate,
+  findShiftForVente,
   insertVente,
   processMessage,
 };

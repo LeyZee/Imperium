@@ -42,4 +42,18 @@ function notifyChatteur(chatteurId, type, title, message = null, link = null) {
   }
 }
 
-module.exports = { notify, notifyAdminsAndManagers, notifyChatteur };
+/**
+ * Notify all active chatteurs (for announcements, etc.).
+ */
+function notifyAllChatteurs(type, title, message = null, link = null) {
+  try {
+    const chatteurs = db.prepare('SELECT user_id FROM chatteurs WHERE actif = 1 AND user_id IS NOT NULL').all();
+    for (const c of chatteurs) {
+      notify(c.user_id, type, title, message, link);
+    }
+  } catch (e) {
+    // Silent fail
+  }
+}
+
+module.exports = { notify, notifyAdminsAndManagers, notifyChatteur, notifyAllChatteurs };

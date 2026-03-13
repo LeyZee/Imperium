@@ -18,7 +18,7 @@ const MODELE_PASTEL_COLORS = [
   '#FFD6A5', '#FFC078', '#FFAA4C', // abricots
 ];
 
-export default function Modeles() {
+export default function Modeles({ embedded = false }) {
   const toast = useToast();
   const [modeles, setModeles] = useState([]);
   const [plateformes, setPlateformes] = useState([]);
@@ -132,11 +132,17 @@ export default function Modeles() {
   }
 
   return (
-    <div className="page-enter">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
-        <h1 className="text-navy" style={{ fontWeight: 700 }}>Modèles</h1>
-        <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
-      </div>
+    <div className={embedded ? '' : 'page-enter'}>
+      {!embedded ? (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
+          <h1 className="text-navy" style={{ fontWeight: 700 }}>Modèles</h1>
+          <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '1rem' }}>
+          <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
+        </div>
+      )}
 
       {fetchError ? (
         <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>

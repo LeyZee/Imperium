@@ -77,6 +77,12 @@ const loginLimiter = rateLimit({
 });
 app.use('/api/auth/login', loginLimiter);
 
+// Rate limit on invitation/setup-password endpoints
+const inviteLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Trop de requêtes, réessayez dans 1 minute.' } });
+app.use('/api/auth/invite', inviteLimiter);
+app.use('/api/auth/setup-password', inviteLimiter);
+app.use('/api/auth/change-email', inviteLimiter);
+
 // Stricter rate limits on CPU-intensive endpoints
 const pdfLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: 'Trop de requêtes PDF, réessayez dans 1 minute.' } });
 app.use('/api/paies/facture', pdfLimiter);
@@ -169,6 +175,18 @@ const server = app.listen(PORT, () => {
       logger.error('Telegram bot failed to start', { error: err.message });
     });
   }, 2000);
+
+  // Post-shift notifications + pay day reminders — check every 30 minutes
+  const { checkPostShiftNotifications, checkPayDayReminder } = require('./services/post-shift-checker');
+  setInterval(() => {
+    checkPostShiftNotifications();
+    checkPayDayReminder();
+  }, 30 * 60 * 1000); // 30 min
+  // Run once on startup after a short delay
+  setTimeout(() => {
+    checkPostShiftNotifications();
+    checkPayDayReminder();
+  }, 10000);
 });
 
 // Graceful shutdown

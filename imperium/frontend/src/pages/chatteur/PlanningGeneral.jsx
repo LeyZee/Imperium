@@ -49,6 +49,17 @@ function getCreneauShort(cr, tzOffset) {
   return `${padH(s)}-${padH(e)}`;
 }
 
+function useIsMobile(breakpoint = 480) {
+  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= breakpoint);
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const handler = (e) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export default function PlanningGeneral() {
   const { user } = useAuth();
   const [weekStart, setWeekStart] = useState(getMonday(new Date()));
@@ -126,6 +137,7 @@ export default function PlanningGeneral() {
 
   // Count unique chatteurs this week
   const uniqueChatteurs = useMemo(() => new Set(shifts.map(s => s.chatteur_id)).size, [shifts]);
+  const isMobile = useIsMobile(480);
 
   return (
     <div className="page-enter">
@@ -243,6 +255,7 @@ export default function PlanningGeneral() {
                 tzOffset={tzOffset}
                 currentUserId={user?.chatteur_id}
                 todayISO={todayISO}
+                isMobile={isMobile}
               />
             );
           })}
@@ -337,7 +350,7 @@ function TzButton({ active, last, onClick, label, iso }) {
 }
 
 /* ─── Model Card with compact week grid (read-only) ─── */
-function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO }) {
+function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isMobile }) {
   const [hovered, setHovered] = useState(false);
   const count = shifts.length;
 
@@ -367,14 +380,16 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO }) {
         {model.photo ? (
           <img src={model.photo} alt="" style={{
             width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
-            border: '2px solid rgba(245,183,49,0.3)', flexShrink: 0,
+            border: `2px solid ${model.couleur_fond || 'rgba(245,183,49,0.3)'}`, flexShrink: 0,
           }} />
         ) : (
           <div style={{
             width: 28, height: 28, borderRadius: '50%',
-            background: 'rgba(245,183,49,0.12)', border: '2px solid rgba(245,183,49,0.3)',
+            background: model.couleur_fond || 'rgba(245,183,49,0.12)',
+            border: `2px solid ${model.couleur_fond ? model.couleur_fond + '80' : 'rgba(245,183,49,0.3)'}`,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '0.65rem', fontWeight: 700, color: '#1b2e4b', flexShrink: 0,
+            fontSize: '0.65rem', fontWeight: 700,
+            color: model.couleur_texte || '#1b2e4b', flexShrink: 0,
           }}>
             {model.pseudo?.charAt(0) || '?'}
           </div>
@@ -390,37 +405,88 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO }) {
         </span>
       </div>
 
-      {/* Compact week grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '38px repeat(7, 1fr)', gap: '2px' }}>
-        {/* Day headers */}
-        <div />
-        {days.map((d, i) => {
-          const isToday = toISO(d) === todayISO;
-          return (
-            <div key={i} style={{
-              textAlign: 'center', padding: '2px 0', borderRadius: '4px',
-              background: isToday ? 'rgba(245,183,49,0.1)' : 'transparent',
-            }}>
-              <div style={{ fontSize: '0.5rem', color: '#94a3b8', fontWeight: 500 }}>{JOURS_SHORT[i]}</div>
-              <div style={{ fontSize: '0.65rem', fontWeight: 600, color: isToday ? '#b8860b' : '#1a1f2e' }}>
-                {d.getDate()}
+      {isMobile ? (
+        /* Mobile: vertical day list */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+          {days.map((d, i) => {
+            const iso = toISO(d);
+            const isToday = iso === todayISO;
+            const dayShifts = CRENEAUX.map(cr => ({ creneau: cr, shift: shiftMap[`${iso}-${cr.id}`] })).filter(x => x.shift);
+            return (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: '0.5rem',
+                padding: '0.4rem 0.5rem', borderRadius: '8px',
+                background: isToday ? 'rgba(245,183,49,0.08)' : '#fafaf8',
+                borderLeft: isToday ? '2px solid #f5b731' : '2px solid transparent',
+              }}>
+                <div style={{ width: 36, textAlign: 'center', flexShrink: 0 }}>
+                  <div style={{ fontSize: '0.55rem', color: '#94a3b8', fontWeight: 500 }}>
+                    {d.toLocaleDateString('fr-FR', { weekday: 'short' })}
+                  </div>
+                  <div style={{ fontSize: '0.82rem', fontWeight: 700, color: isToday ? '#b8860b' : '#1b2e4b' }}>
+                    {d.getDate()}
+                  </div>
+                </div>
+                <div style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+                  {dayShifts.length === 0 ? (
+                    <span style={{ fontSize: '0.68rem', color: '#cbd5e1' }}>&mdash;</span>
+                  ) : dayShifts.map(({ creneau, shift }) => {
+                    const isMe = shift.chatteur_id === currentUserId;
+                    const color = shift.chatteur_couleur !== undefined && shift.chatteur_couleur !== null
+                      ? CHATTEUR_COLORS[shift.chatteur_couleur % CHATTEUR_COLORS.length]
+                      : CHATTEUR_COLORS[0];
+                    return (
+                      <span key={creneau.id} style={{
+                        fontSize: '0.62rem', fontWeight: 600, padding: '0.15rem 0.4rem',
+                        borderRadius: '6px', whiteSpace: 'nowrap',
+                        background: color.bg, color: color.text,
+                        borderWidth: isMe ? '1.5px' : '1px',
+                        borderStyle: shift.from_template ? 'dashed' : 'solid',
+                        borderColor: isMe ? '#f5b731' : color.border,
+                        opacity: shift.from_template ? 0.6 : 1,
+                      }}>
+                        {getCreneauShort(creneau, tzOffset)} {shift.chatteur_prenom}
+                      </span>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+      ) : (
+        /* Desktop: compact week grid */
+        <div style={{ display: 'grid', gridTemplateColumns: '38px repeat(7, 1fr)', gap: '2px' }}>
+          {/* Day headers */}
+          <div />
+          {days.map((d, i) => {
+            const isToday = toISO(d) === todayISO;
+            return (
+              <div key={i} style={{
+                textAlign: 'center', padding: '2px 0', borderRadius: '4px',
+                background: isToday ? 'rgba(245,183,49,0.1)' : 'transparent',
+              }}>
+                <div style={{ fontSize: '0.5rem', color: '#94a3b8', fontWeight: 500 }}>{JOURS_SHORT[i]}</div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 600, color: isToday ? '#b8860b' : '#1a1f2e' }}>
+                  {d.getDate()}
+                </div>
+              </div>
+            );
+          })}
 
-        {/* Creneau rows */}
-        {CRENEAUX.map(cr => (
-          <ShiftRow
-            key={cr.id}
-            creneau={cr}
-            tzOffset={tzOffset}
-            days={days}
-            shiftMap={shiftMap}
-            currentUserId={currentUserId}
-          />
-        ))}
-      </div>
+          {/* Creneau rows */}
+          {CRENEAUX.map(cr => (
+            <ShiftRow
+              key={cr.id}
+              creneau={cr}
+              tzOffset={tzOffset}
+              days={days}
+              shiftMap={shiftMap}
+              currentUserId={currentUserId}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -469,13 +535,11 @@ function ShiftCell({ shift, currentUserId }) {
       style={{
         minHeight: '30px',
         borderRadius: '5px',
-        border: shift
-          ? (isMe
-            ? '2px solid #f5b731'
-            : (isTemplate
-              ? `1.5px dashed ${color.border}`
-              : `1.5px solid ${hovered ? color.text : color.border}`))
-          : '1.5px solid #f1f5f9',
+        borderWidth: shift ? (isMe ? '2px' : '1.5px') : '1.5px',
+        borderStyle: shift ? (isTemplate ? 'dashed' : 'solid') : 'solid',
+        borderColor: shift
+          ? (isMe ? '#f5b731' : (isTemplate ? color.border : (hovered ? color.text : color.border)))
+          : '#f1f5f9',
         background: shift
           ? (hovered ? color.border + '30' : color.bg)
           : '#fafafa',

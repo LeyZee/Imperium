@@ -23,12 +23,14 @@ export default function MalusPage() {
   const [primes, setPrimes] = useState([]);
   const [chatteurs, setChatteurs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState(null);
   const [modal, setModal] = useState(null);
   const [deleteModal, setDeleteModal] = useState(null);
   const toast = useToast();
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const [mRes, pRes, cRes] = await Promise.all([
         api.get(`/api/malus?periode_debut=${periode.debut}&periode_fin=${periode.fin}`),
@@ -38,7 +40,9 @@ export default function MalusPage() {
       setMalus(mRes.data);
       setPrimes(pRes.data);
       setChatteurs(cRes.data);
-    } catch { /* empty */ }
+    } catch {
+      setFetchError('Impossible de charger les données.');
+    }
     setLoading(false);
   }, [periode]);
 
@@ -119,6 +123,14 @@ export default function MalusPage() {
             className="input-field" style={{ width: 'auto', minWidth: 0 }} />
         </div>
       </div>
+
+      {/* Fetch error */}
+      {fetchError && (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
+          {fetchError}
+          <button onClick={fetchAll} className="btn-ghost" style={{ marginLeft: '1rem', fontSize: '0.8rem' }}>Réessayer</button>
+        </div>
+      )}
 
       {/* Stat Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>

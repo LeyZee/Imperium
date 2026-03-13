@@ -1,6 +1,8 @@
 const fetch = require('node-fetch');
 const db = require('../database');
 const { GROUP_PLATFORM, processMessage } = require('./telegram-parser');
+const { notifyChatteur } = require('../utils/notifier');
+const { logActivity } = require('../utils/activityLogger');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -88,9 +90,12 @@ function handleUpdate(update) {
 
   const text = msg.text;
 
+  const senderId = msg.from?.id || null;
+
   const result = processMessage({
     group_id: chatId,
     sender_name: senderName,
+    sender_id: senderId,
     message: text,
   });
 
@@ -103,6 +108,17 @@ function handleUpdate(update) {
     messagesProcessed++;
     lastMessageAt = new Date();
     console.log(`✅ Vente importée: ${result.chatteur} — ${result.montant_brut}€ (plateforme ${result.plateforme_id}) [${result.date_rapport}]`);
+    logActivity(null, 'telegram_import', 'vente', result.vente_id, `${result.chatteur} — ${result.montant_brut}€`);
+    // Notify chatteur that a vente was detected
+    if (result.chatteur_id) {
+      notifyChatteur(
+        result.chatteur_id,
+        'vente',
+        'Vente détectée par Telegram',
+        `${result.montant_brut}€ — ${result.date_rapport}`,
+        '/chatteur/mes-ventes'
+      );
+    }
   } else if (result.error) {
     if (result.existing_id) {
       console.log(`   ↳ Doublon ignoré (vente #${result.existing_id})`);

@@ -4,6 +4,7 @@ const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/aut
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { TIMEZONES, CRENEAUX } = require('../utils/constants');
+const { notifyChatteur } = require('../utils/notifier');
 
 const router = express.Router();
 
@@ -79,6 +80,11 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const result = db.prepare(
     'INSERT INTO shifts (chatteur_id, modele_id, plateforme_id, date, creneau, fuseau_horaire, notes) VALUES (?, ?, ?, ?, ?, ?, ?)'
   ).run([chatteur_id, modele_id || null, plateforme_id || null, date, creneau, fuseau, notes || null]);
+
+  // Notify the chatteur
+  const creneauLabel = CRENEAUX[creneau]?.label || `Créneau ${creneau}`;
+  notifyChatteur(chatteur_id, 'shift', 'Shift assigné',
+    `${date} — ${creneauLabel}`, '/chatteur/planning');
 
   res.status(201).json({ id: result.lastInsertRowid });
 }));
@@ -206,8 +212,8 @@ router.get('/semaine', authMiddleware, asyncHandler((req, res) => {
     SELECT s.*,
       c.prenom as chatteur_prenom,
       c.couleur as chatteur_couleur,
-      m.pseudo as modele_pseudo,
-      p.nom as plateforme_nom
+      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
+      p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte
     FROM shifts s
     JOIN chatteurs c ON c.id = s.chatteur_id
     LEFT JOIN modeles m ON m.id = s.modele_id
@@ -232,7 +238,8 @@ router.get('/semaine', authMiddleware, asyncHandler((req, res) => {
   const templates = db.prepare(`
     SELECT t.*, c.prenom as chatteur_prenom,
       c.couleur as chatteur_couleur,
-      m.pseudo as modele_pseudo, p.nom as plateforme_nom
+      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
+      p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte
     FROM shift_templates t
     JOIN chatteurs c ON c.id = t.chatteur_id
     LEFT JOIN modeles m ON m.id = t.modele_id
@@ -265,7 +272,11 @@ router.get('/semaine', authMiddleware, asyncHandler((req, res) => {
       chatteur_prenom: t.chatteur_prenom,
       chatteur_couleur: t.chatteur_couleur,
       modele_pseudo: t.modele_pseudo,
+      modele_couleur_fond: t.modele_couleur_fond,
+      modele_couleur_texte: t.modele_couleur_texte,
       plateforme_nom: t.plateforme_nom,
+      plateforme_couleur_fond: t.plateforme_couleur_fond,
+      plateforme_couleur_texte: t.plateforme_couleur_texte,
       creneau_label: CRENEAUX[t.creneau]?.label || '',
       from_template: true,
     });
@@ -332,6 +343,12 @@ router.post('/bulk', authMiddleware, adminOrManager, asyncHandler((req, res) => 
   });
 
   insertBulk();
+
+  // Notify the chatteur once for all created shifts
+  if (created > 0) {
+    notifyChatteur(chatteur_id, 'shift', 'Shifts assignés',
+      `${created} shift${created > 1 ? 's' : ''} assigné${created > 1 ? 's' : ''}`, '/chatteur/planning');
+  }
 
   res.status(201).json({ created, replaced });
 }));
@@ -496,6 +513,36 @@ router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res
     { key: 'creneau_label', label: 'Créneau' },
     { key: 'fuseau_horaire', label: 'Fuseau horaire' },
   ]);
+}));
+
+// GET /api/shifts/for-vente — shifts matching criteria for vente association
+router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
+  let { chatteur_id, modele_id, plateforme_id, days } = req.query;
+  const maxDays = parseInt(days) || 7;
+
+  // Chatteur can only see their own shifts
+  if (req.user.role === 'chatteur') {
+    chatteur_id = req.user.chatteur_id;
+  }
+  if (!chatteur_id) throw new ApiError(400, 'chatteur_id requis');
+
+  let where = ['s.chatteur_id = ?', `s.date >= date('now', '-${maxDays} days')`];
+  const params = [chatteur_id];
+
+  if (modele_id) { where.push('s.modele_id = ?'); params.push(modele_id); }
+  if (plateforme_id) { where.push('s.plateforme_id = ?'); params.push(plateforme_id); }
+
+  const shifts = db.prepare(`
+    SELECT s.id, s.date, s.creneau,
+      m.pseudo as modele_pseudo, p.nom as plateforme_nom
+    FROM shifts s
+    LEFT JOIN modeles m ON m.id = s.modele_id
+    LEFT JOIN plateformes p ON p.id = s.plateforme_id
+    WHERE ${where.join(' AND ')}
+    ORDER BY s.date DESC, s.creneau ASC
+  `).all(...params);
+
+  res.json(shifts);
 }));
 
 module.exports = router;

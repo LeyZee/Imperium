@@ -650,6 +650,20 @@ runMigration('seed_modele_colors', () => {
   });
 });
 
+// Fix modele text colors — white on pastel is unreadable
+runMigration('fix_modele_text_colors', () => {
+  const colorMap = {
+    '#F2A7C3': '#8B1A4A', // rose → texte bordeaux
+    '#C4A6E8': '#4A1D96', // lavande → texte violet foncé
+    '#A7D8F0': '#0C4A6E', // bleu ciel → texte bleu foncé
+    '#F7C59F': '#7C2D12', // pêche → texte marron
+    '#B5E6C5': '#14532D', // menthe → texte vert foncé
+  };
+  for (const [bg, text] of Object.entries(colorMap)) {
+    db.prepare('UPDATE modeles SET couleur_texte = ? WHERE couleur_fond = ?').run(text, bg);
+  }
+});
+
 // --- Add SACHA (owner) as manager for payroll calculation ---
 runMigration('add_sacha_manager', () => {
   // SACHA is the admin (user_id=1) and gets 5% of total_net_ht_equipe
@@ -684,6 +698,91 @@ runMigration('add_composite_indexes_v2', () => {
   db.exec("CREATE INDEX IF NOT EXISTS idx_activity_user_action ON activity_logs(user_id, action)");
   // Objectifs: chatteur + période (suggestions endpoint)
   db.exec("CREATE INDEX IF NOT EXISTS idx_objectifs_chatteur_actif ON objectifs(chatteur_id, actif)");
+});
+
+runMigration('create_objectifs_personnels', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS objectifs_personnels (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chatteur_id INTEGER NOT NULL,
+      montant_cible REAL NOT NULL,
+      periode_debut TEXT NOT NULL,
+      periode_fin TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (chatteur_id) REFERENCES chatteurs(id),
+      UNIQUE(chatteur_id, periode_debut, periode_fin)
+    )
+  `);
+});
+
+runMigration('create_invitation_tokens', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS invitation_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT UNIQUE NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+});
+
+runMigration('create_email_verifications', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS email_verifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      new_email TEXT NOT NULL,
+      token TEXT UNIQUE NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used_at DATETIME,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+});
+
+runMigration('add_shifts_notification_sent', () => {
+  db.exec("ALTER TABLE shifts ADD COLUMN notification_sent INTEGER DEFAULT 0");
+});
+
+runMigration('add_ventes_statut', () => {
+  db.exec("ALTER TABLE ventes ADD COLUMN statut TEXT NOT NULL DEFAULT 'validée'");
+  db.exec("CREATE INDEX idx_ventes_statut ON ventes(statut)");
+});
+
+runMigration('add_ventes_shift_id', () => {
+  db.exec("ALTER TABLE ventes ADD COLUMN shift_id INTEGER REFERENCES shifts(id) ON DELETE SET NULL");
+  db.exec("CREATE INDEX idx_ventes_shift ON ventes(shift_id)");
+});
+
+runMigration('add_chatteurs_telegram_user_id', () => {
+  db.exec("ALTER TABLE chatteurs ADD COLUMN telegram_user_id INTEGER");
+  db.exec("CREATE UNIQUE INDEX idx_chatteurs_telegram_uid ON chatteurs(telegram_user_id) WHERE telegram_user_id IS NOT NULL");
+});
+
+runMigration('add_shift_reports', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS shift_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shift_id INTEGER NOT NULL REFERENCES shifts(id),
+      chatteur_id INTEGER NOT NULL REFERENCES chatteurs(id),
+      raison TEXT NOT NULL,
+      commentaire TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(shift_id)
+    )
+  `);
+});
+
+runMigration('add_login_lockout_table', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS login_lockouts (
+      username TEXT PRIMARY KEY,
+      attempts INTEGER DEFAULT 0,
+      locked_until TEXT DEFAULT NULL
+    )
+  `);
 });
 
 console.log(`DB initialized in ${Date.now() - dbStartTime}ms`);

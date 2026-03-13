@@ -78,7 +78,7 @@ export function ToastProvider({ children }) {
                 boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
                 pointerEvents: 'auto',
                 animation: isExiting ? 'slideOut 200ms ease forwards' : 'slideIn 250ms ease-out',
-                maxWidth: '400px',
+                maxWidth: 'min(400px, calc(100vw - 2rem))',
               }}
             >
               <Icon size={18} color={color} style={{ flexShrink: 0 }} />

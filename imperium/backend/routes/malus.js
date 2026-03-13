@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { logActivity } = require('../utils/activityLogger');
 const { recalculatePaies } = require('../services/paie-calculator');
+const { notifyChatteur } = require('../utils/notifier');
 
 const router = express.Router();
 
@@ -54,6 +55,9 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   if (!chatteur_id || montant == null || montant === '' || !periode) {
     throw new ApiError(400, 'chatteur_id, montant et periode requis');
   }
+  if (typeof montant !== 'number' || montant <= 0) {
+    throw new ApiError(400, 'Le montant doit être un nombre positif');
+  }
   const typeMalus = type_malus === 'pourcentage' ? 'pourcentage' : 'montant';
   const fin = periode_fin || periode;
 
@@ -79,6 +83,11 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const result = insertAndRecalc();
   recalcForMalus(periode, fin);
 
+  // Notify the chatteur
+  const label = typeMalus === 'pourcentage' ? `${montant}%` : `${montant}€`;
+  notifyChatteur(chatteur_id, 'malus', 'Malus appliqué',
+    `${label} — ${raison || 'Aucune raison précisée'}`, '/chatteur/factures');
+
   res.status(201).json({ id: result.lastInsertRowid });
 }));
 
@@ -89,6 +98,10 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 
   const existing = db.prepare('SELECT id FROM malus WHERE id = ? AND actif != 0').get(id);
   if (!existing) throw new ApiError(404, 'Malus non trouvé');
+
+  if (montant !== undefined && (typeof montant !== 'number' || montant <= 0)) {
+    throw new ApiError(400, 'Le montant doit être un nombre positif');
+  }
 
   const typeMalus = type_malus === 'pourcentage' ? 'pourcentage' : (type_malus === 'montant' ? 'montant' : null);
   const updateAndLog = db.transaction(() => {

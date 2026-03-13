@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { logActivity } = require('../utils/activityLogger');
 const { recalculatePaies } = require('../services/paie-calculator');
+const { notifyChatteur } = require('../utils/notifier');
 
 const router = express.Router();
 
@@ -61,6 +62,10 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   });
   const result = insertAndLog();
   recalcForPrime(periode_debut, periode_fin);
+
+  // Notify the chatteur
+  notifyChatteur(chatteur_id, 'prime', 'Prime attribuée',
+    `${montant}€ — ${raison || 'Aucun motif précisé'}`, '/chatteur/factures');
 
   res.status(201).json({ id: result.lastInsertRowid });
 }));

@@ -1,43 +1,46 @@
 const express = require('express');
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const db = require('../database');
-const { authMiddleware, signToken } = require('../middleware/auth');
+const { authMiddleware, adminOrManager, signToken } = require('../middleware/auth');
 const { validatePassword, validateEmail, validatePhoto } = require('../utils/validation');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
+const { sendEmail, buildInvitationEmail, buildEmailVerificationEmail } = require('../utils/email');
+
+const PENDING_HASH = '!PENDING_INVITATION!';
 
 const router = express.Router();
 
-// --- Brute force protection: account lockout after 5 failed attempts ---
-const loginAttempts = new Map(); // email → { count, lockedUntil }
+// --- Brute force protection: account lockout after 5 failed attempts (DB-persisted) ---
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_DURATION = 15 * 60 * 1000; // 15 minutes
 
 function checkLockout(email) {
-  const entry = loginAttempts.get(email);
+  const entry = db.prepare('SELECT attempts, locked_until FROM login_lockouts WHERE username = ?').get(email);
   if (!entry) return;
-  if (entry.lockedUntil && Date.now() < entry.lockedUntil) {
-    const minutes = Math.ceil((entry.lockedUntil - Date.now()) / 60000);
+  if (entry.locked_until && new Date(entry.locked_until).getTime() > Date.now()) {
+    const minutes = Math.ceil((new Date(entry.locked_until).getTime() - Date.now()) / 60000);
     throw new ApiError(429, `Compte verrouillé. Réessayez dans ${minutes} minute${minutes > 1 ? 's' : ''}.`);
   }
-  if (entry.lockedUntil && Date.now() >= entry.lockedUntil) {
-    loginAttempts.delete(email); // Reset after lockout period
+  if (entry.locked_until && new Date(entry.locked_until).getTime() <= Date.now()) {
+    db.prepare('DELETE FROM login_lockouts WHERE username = ?').run(email);
   }
 }
 
 function recordFailedAttempt(email) {
-  const entry = loginAttempts.get(email) || { count: 0, lockedUntil: null };
-  entry.count++;
-  if (entry.count >= MAX_ATTEMPTS) {
-    entry.lockedUntil = Date.now() + LOCKOUT_DURATION;
-    logger.warn('Account locked due to failed attempts', { email, attempts: entry.count });
+  const entry = db.prepare('SELECT attempts FROM login_lockouts WHERE username = ?').get(email);
+  const newCount = (entry?.attempts ?? 0) + 1;
+  const lockedUntil = newCount >= MAX_ATTEMPTS ? new Date(Date.now() + LOCKOUT_DURATION).toISOString() : null;
+  db.prepare('INSERT OR REPLACE INTO login_lockouts (username, attempts, locked_until) VALUES (?, ?, ?)').run(email, newCount, lockedUntil ?? null);
+  if (newCount >= MAX_ATTEMPTS) {
+    logger.warn('Account locked due to failed attempts', { email, attempts: newCount });
   }
-  loginAttempts.set(email, entry);
 }
 
 function resetAttempts(email) {
-  loginAttempts.delete(email);
+  db.prepare('DELETE FROM login_lockouts WHERE username = ?').run(email);
 }
 
 // POST /api/auth/login — login by email
@@ -65,11 +68,8 @@ router.post('/login', asyncHandler((req, res) => {
   // Success — reset attempts
   resetAttempts(email);
 
-  // If chatteur, get their chatteur profile
-  let chatteur = null;
-  if (user.role === 'chatteur' || user.role === 'manager') {
-    chatteur = db.prepare('SELECT * FROM chatteurs WHERE user_id = ?').get(user.id);
-  }
+  // Get chatteur profile if linked
+  const chatteur = db.prepare('SELECT * FROM chatteurs WHERE user_id = ?').get(user.id);
 
   const token = signToken({
     id: user.id,
@@ -93,7 +93,8 @@ router.post('/login', asyncHandler((req, res) => {
       role: user.role,
       prenom: user.prenom || chatteur?.prenom || null,
       chatteur_id: chatteur?.id || null,
-      photo: user.photo || null
+      photo: user.photo || null,
+      couleur: chatteur?.couleur ?? null,
     }
   });
 }));
@@ -109,10 +110,7 @@ router.get('/me', authMiddleware, asyncHandler((req, res) => {
   const user = db.prepare('SELECT id, username, role, email, prenom, photo, created_at FROM users WHERE id = ?').get(req.user.id);
   if (!user) throw new ApiError(404, 'Utilisateur introuvable');
 
-  let chatteur = null;
-  if (user.role === 'chatteur' || user.role === 'manager') {
-    chatteur = db.prepare('SELECT * FROM chatteurs WHERE user_id = ?').get(user.id);
-  }
+  const chatteur = db.prepare('SELECT * FROM chatteurs WHERE user_id = ?').get(user.id) || null;
 
   res.json({ ...user, chatteur });
 }));
@@ -174,6 +172,10 @@ router.put('/profile', authMiddleware, asyncHandler((req, res) => {
 
   // Update email (also update username for backward compat)
   if (email && email !== user.email) {
+    // Non-admin users must use the verified email change flow
+    if (user.role !== 'admin') {
+      throw new ApiError(400, 'Utilise le formulaire de changement d\'email depuis ton profil');
+    }
     const emailErr = validateEmail(email);
     if (emailErr) throw new ApiError(400, emailErr);
     const conflict = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, req.user.id);
@@ -201,6 +203,171 @@ router.put('/profile', authMiddleware, asyncHandler((req, res) => {
 
   const updated = db.prepare('SELECT id, email, role, prenom, photo FROM users WHERE id = ?').get(req.user.id);
   res.json(updated);
+}));
+
+// ─── Invitation system ───
+
+// POST /api/auth/invite — send/resend invitation email (admin/manager only)
+router.post('/invite', authMiddleware, adminOrManager, asyncHandler(async (req, res) => {
+  const { user_id } = req.body;
+  if (!user_id) throw new ApiError(400, 'user_id requis');
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(user_id);
+  if (!user) throw new ApiError(404, 'Utilisateur introuvable');
+
+  const chatteur = db.prepare('SELECT prenom FROM chatteurs WHERE user_id = ?').get(user_id);
+  if (!chatteur) throw new ApiError(404, 'Chatteur introuvable');
+
+  if (user.password_hash !== PENDING_HASH) {
+    throw new ApiError(400, 'Ce compte a déjà un mot de passe défini');
+  }
+
+  // Invalidate previous tokens
+  db.prepare('UPDATE invitation_tokens SET used_at = datetime(\'now\') WHERE user_id = ? AND used_at IS NULL').run(user_id);
+
+  // Generate new token
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare(
+    'INSERT INTO invitation_tokens (user_id, token, expires_at) VALUES (?, ?, datetime(\'now\', \'+48 hours\'))'
+  ).run(user_id, token);
+
+  await sendEmail(user.email, 'Bienvenue sur Imperium — Définissez votre mot de passe', buildInvitationEmail(chatteur.prenom, token));
+
+  res.json({ message: 'Invitation envoyée' });
+}));
+
+// GET /api/auth/setup-password/:token — validate invitation token
+router.get('/setup-password/:token', asyncHandler((req, res) => {
+  const { token } = req.params;
+
+  const row = db.prepare(`
+    SELECT it.*, u.email, c.prenom
+    FROM invitation_tokens it
+    JOIN users u ON u.id = it.user_id
+    LEFT JOIN chatteurs c ON c.user_id = it.user_id
+    WHERE it.token = ?
+  `).get(token);
+
+  if (!row) return res.json({ valid: false, reason: 'invalid' });
+  if (row.used_at) return res.json({ valid: false, reason: 'used' });
+  if (new Date(row.expires_at + 'Z') < new Date()) return res.json({ valid: false, reason: 'expired' });
+
+  res.json({ valid: true, email: row.email, prenom: row.prenom });
+}));
+
+// POST /api/auth/setup-password/:token — set password and auto-login
+router.post('/setup-password/:token', asyncHandler((req, res) => {
+  const { token } = req.params;
+  const { password } = req.body;
+  if (!password) throw new ApiError(400, 'Mot de passe requis');
+
+  const pwdErr = validatePassword(password);
+  if (pwdErr) throw new ApiError(400, pwdErr);
+
+  const row = db.prepare(`
+    SELECT it.*, u.email, u.role as user_role, c.id as chatteur_id, c.prenom
+    FROM invitation_tokens it
+    JOIN users u ON u.id = it.user_id
+    LEFT JOIN chatteurs c ON c.user_id = it.user_id
+    WHERE it.token = ?
+  `).get(token);
+
+  if (!row) throw new ApiError(400, 'Lien invalide');
+  if (row.used_at) throw new ApiError(400, 'Ce lien a déjà été utilisé');
+  if (new Date(row.expires_at + 'Z') < new Date()) throw new ApiError(400, 'Ce lien a expiré. Demandez un nouveau lien à votre administrateur.');
+
+  // Set password
+  const hash = bcrypt.hashSync(password, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, row.user_id);
+
+  // Mark token as used
+  db.prepare('UPDATE invitation_tokens SET used_at = datetime(\'now\') WHERE id = ?').run(row.id);
+
+  // Auto-login
+  const jwtToken = signToken({
+    id: row.user_id,
+    email: row.email,
+    role: row.user_role,
+    chatteur_id: row.chatteur_id || null,
+  });
+
+  res.cookie('token', jwtToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: 24 * 60 * 60 * 1000,
+  });
+
+  res.json({
+    user: {
+      id: row.user_id,
+      email: row.email,
+      role: row.user_role,
+      prenom: row.prenom || null,
+      chatteur_id: row.chatteur_id || null,
+      photo: null,
+    },
+  });
+}));
+
+// ─── Email change verification ───
+
+// POST /api/auth/change-email — request email change (sends verification)
+router.post('/change-email', authMiddleware, asyncHandler(async (req, res) => {
+  const { new_email } = req.body;
+  if (!new_email) throw new ApiError(400, 'Nouvel email requis');
+
+  const emailErr = validateEmail(new_email);
+  if (emailErr) throw new ApiError(400, emailErr);
+
+  // Check uniqueness
+  const conflictUser = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(new_email, req.user.id);
+  if (conflictUser) throw new ApiError(409, 'Cet email est déjà utilisé');
+  const conflictChatteur = db.prepare('SELECT id FROM chatteurs WHERE email = ? AND user_id != ?').get(new_email, req.user.id);
+  if (conflictChatteur) throw new ApiError(409, 'Cet email est déjà utilisé');
+
+  // Invalidate previous verifications
+  db.prepare('UPDATE email_verifications SET used_at = datetime(\'now\') WHERE user_id = ? AND used_at IS NULL').run(req.user.id);
+
+  // Generate token
+  const token = crypto.randomBytes(32).toString('hex');
+  db.prepare(
+    'INSERT INTO email_verifications (user_id, new_email, token, expires_at) VALUES (?, ?, ?, datetime(\'now\', \'+24 hours\'))'
+  ).run(req.user.id, new_email, token);
+
+  const chatteur = db.prepare('SELECT prenom FROM chatteurs WHERE user_id = ?').get(req.user.id);
+  await sendEmail(new_email, 'Imperium — Confirme ton nouvel email', buildEmailVerificationEmail(chatteur?.prenom || 'Utilisateur', token));
+
+  res.json({ message: 'Email de vérification envoyé' });
+}));
+
+// GET /api/auth/verify-email/:token — confirm email change
+router.get('/verify-email/:token', asyncHandler((req, res) => {
+  const { token } = req.params;
+
+  const row = db.prepare(`
+    SELECT ev.*, u.email as current_email
+    FROM email_verifications ev
+    JOIN users u ON u.id = ev.user_id
+    WHERE ev.token = ?
+  `).get(token);
+
+  if (!row) return res.json({ success: false, reason: 'invalid' });
+  if (row.used_at) return res.json({ success: false, reason: 'used' });
+  if (new Date(row.expires_at + 'Z') < new Date()) return res.json({ success: false, reason: 'expired' });
+
+  // Re-check uniqueness (race condition)
+  const conflict = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(row.new_email, row.user_id);
+  if (conflict) return res.json({ success: false, reason: 'conflict' });
+
+  // Update email everywhere
+  db.prepare('UPDATE users SET email = ?, username = ? WHERE id = ?').run(row.new_email, row.new_email, row.user_id);
+  db.prepare('UPDATE chatteurs SET email = ? WHERE user_id = ?').run(row.new_email, row.user_id);
+
+  // Mark token used
+  db.prepare('UPDATE email_verifications SET used_at = datetime(\'now\') WHERE id = ?').run(row.id);
+
+  res.json({ success: true, new_email: row.new_email });
 }));
 
 module.exports = router;
