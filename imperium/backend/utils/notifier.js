@@ -1,4 +1,5 @@
 const db = require('../database');
+const logger = require('./logger');
 
 /**
  * Create a notification for a specific user.
@@ -10,7 +11,7 @@ function notify(userId, type, title, message = null, link = null) {
       'INSERT INTO notifications (user_id, type, title, message, link) VALUES (?, ?, ?, ?, ?)'
     ).run(userId, type, title, message ?? null, link ?? null);
   } catch (e) {
-    // Silent fail
+    logger.warn('Notification insert failed', { userId, type, error: e.message });
   }
 }
 
@@ -24,7 +25,7 @@ function notifyAdminsAndManagers(type, title, message = null, link = null) {
       notify(u.id, type, title, message, link);
     }
   } catch (e) {
-    // Silent fail
+    logger.warn('notifyAdminsAndManagers failed', { type, error: e.message });
   }
 }
 
@@ -38,7 +39,7 @@ function notifyChatteur(chatteurId, type, title, message = null, link = null) {
       notify(chatteur.user_id, type, title, message, link);
     }
   } catch (e) {
-    // Silent fail
+    logger.warn('notifyChatteur failed', { chatteurId, type, error: e.message });
   }
 }
 
@@ -52,7 +53,7 @@ function notifyAllChatteurs(type, title, message = null, link = null) {
       notify(c.user_id, type, title, message, link);
     }
   } catch (e) {
-    // Silent fail
+    logger.warn('notifyAllChatteurs failed', { type, error: e.message });
   }
 }
 

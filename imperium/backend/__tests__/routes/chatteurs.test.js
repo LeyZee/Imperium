@@ -3,6 +3,7 @@ const { createApp, mockStmt } = require('../helpers/setup');
 
 jest.mock('../../database', () => ({
   prepare: jest.fn(() => ({ all: jest.fn(() => []), get: jest.fn(() => null), run: jest.fn(() => ({ lastInsertRowid: 1 })) })),
+  transaction: jest.fn((fn) => fn),
 }));
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (req, res, next) => next(),
@@ -19,7 +20,7 @@ const adminApp = createApp('/api/chatteurs', router, 'admin');
 const managerApp = createApp('/api/chatteurs', router, 'manager');
 const chatteurApp = createApp('/api/chatteurs', router, 'chatteur');
 
-const sample = { id: 1, prenom: 'Jean', email: 'j@t.com', iban: 'FR123', adresse: '1 rue', code_postal: '75001', ville: 'Paris', taux_commission: 0.15, taux_net_equipe: 0, taux_horaire: 0, user_id: 5, user_email: 'j@t.com', couleur: 1, role: 'chatteur', actif: 1, pays: 'France' };
+const sample = { id: 1, prenom: 'Jean', email: 'j@t.com', adresse: '1 rue', code_postal: '75001', ville: 'Paris', taux_commission: 0.15, taux_net_equipe: 0, taux_horaire: 0, user_id: 5, user_email: 'j@t.com', couleur: 1, role: 'chatteur', actif: 1, pays: 'France' };
 
 describe('GET /api/chatteurs', () => {
   beforeEach(() => jest.clearAllMocks());
@@ -28,14 +29,13 @@ describe('GET /api/chatteurs', () => {
     db.prepare.mockReturnValue(mockStmt({ all: jest.fn(() => [sample]) }));
     const res = await request(adminApp).get('/api/chatteurs');
     expect(res.status).toBe(200);
-    expect(res.body[0].iban).toBe('FR123');
+    expect(res.body[0].prenom).toBe('Jean');
   });
 
   test('strips sensitive fields for chatteur', async () => {
     db.prepare.mockReturnValue(mockStmt({ all: jest.fn(() => [sample]) }));
     const res = await request(chatteurApp).get('/api/chatteurs');
     expect(res.status).toBe(200);
-    expect(res.body[0].iban).toBeUndefined();
     expect(res.body[0].taux_commission).toBeUndefined();
     expect(res.body[0].prenom).toBe('Jean');
   });

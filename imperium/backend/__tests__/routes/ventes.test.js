@@ -3,6 +3,7 @@ const { createApp, mockStmt } = require('../helpers/setup');
 
 jest.mock('../../database', () => ({
   prepare: jest.fn(() => ({ all: jest.fn(() => []), get: jest.fn(() => null), run: jest.fn(() => ({ lastInsertRowid: 1 })) })),
+  transaction: jest.fn((fn) => fn),
 }));
 jest.mock('../../middleware/auth', () => ({
   authMiddleware: (req, res, next) => next(),
@@ -205,8 +206,8 @@ describe('PUT /api/ventes/:id/valider', () => {
     const res = await request(adminApp).put('/api/ventes/1/valider').send({ statut: 'rejetée' });
     expect(res.status).toBe(200);
     expect(res.body.message).toContain('rejetée');
-    // Should NOT recalculate paies for rejected
-    expect(recalculatePaies).not.toHaveBeenCalled();
+    // Should also recalculate paies on rejection (to remove rejected vente from paies)
+    expect(recalculatePaies).toHaveBeenCalledWith('2026-03-01', '2026-03-15');
     expect(logActivity).toHaveBeenCalledWith(expect.any(Number), 'reject_vente', 'vente', 1, expect.stringContaining('rejetée'));
   });
 

@@ -1,5 +1,36 @@
 const db = require('../database');
 const { getExchangeRate } = require('../utils/rateCache');
+const logger = require('../utils/logger');
+
+/** Round to 2 decimal places (cents) to avoid floating-point artefacts */
+function roundCents(n) {
+  if (typeof n !== 'number' || isNaN(n)) return 0;
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Validate and return a safe exchange rate.
+ * Throws if the rate is missing or invalid.
+ */
+function safeExchangeRate() {
+  const rate = getExchangeRate();
+  if (rate === null || rate === undefined || isNaN(rate) || rate <= 0) {
+    throw new Error(`Taux de change invalide: ${rate}. Vérifiez la table taux_change.`);
+  }
+  return rate;
+}
+
+/**
+ * Cap malus so it never exceeds commission + prime (prevents negative paies).
+ * Logs a warning if capping occurs.
+ */
+function capMalus(malus, maxAmount, chatteurId) {
+  if (malus > maxAmount) {
+    logger.warn(`Malus cappé pour chatteur ${chatteurId}: ${malus} → ${maxAmount} (malus dépassait commission+prime)`);
+    return maxAmount;
+  }
+  return malus;
+}
 
 /**
  * Recalculate all paies for a given period.
@@ -19,8 +50,8 @@ const { getExchangeRate } = require('../utils/rateCache');
 function recalculatePaies(periode_debut, periode_fin) {
   // Wrap entire calculation + save in a single transaction for atomicity
   const doRecalculate = db.transaction(() => {
-    // Get exchange rate USD→EUR
-    const tauxChange = getExchangeRate();
+    // Get exchange rate USD→EUR (throws if invalid)
+    const tauxChange = safeExchangeRate();
 
     // Get all active chatteurs (managers included — they can sell too)
     const chatteurs = db.prepare('SELECT * FROM chatteurs WHERE actif = 1').all();
@@ -41,26 +72,27 @@ function recalculatePaies(periode_debut, periode_fin) {
         COUNT(*) as nb_ventes
       FROM ventes v
       JOIN plateformes p ON p.id = v.plateforme_id
-      WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
+      WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut = 'validée'
       GROUP BY v.chatteur_id, v.plateforme_id
     `).all(periode_debut, periode_fin);
 
     // Batch fetch: all malus (montant fixe + pourcentage) grouped by chatteur
+    // Period overlap: malus.periode <= periode_fin AND malus.periode_fin >= periode_debut
     const allMalusFixe = db.prepare(`
       SELECT chatteur_id, COALESCE(SUM(montant), 0) as total
       FROM malus
-      WHERE COALESCE(periode_fin, periode) >= ? AND periode <= ? AND actif != 0 AND type_malus = 'montant'
+      WHERE periode <= ? AND COALESCE(periode_fin, periode) >= ? AND actif != 0 AND type_malus = 'montant'
       GROUP BY chatteur_id
-    `).all(periode_debut, periode_fin);
+    `).all(periode_fin, periode_debut);
     const malusFixeByChatteur = {};
     for (const m of allMalusFixe) malusFixeByChatteur[m.chatteur_id] = m.total;
 
     const allMalusPct = db.prepare(`
       SELECT chatteur_id, COALESCE(SUM(montant), 0) as total_pct
       FROM malus
-      WHERE COALESCE(periode_fin, periode) >= ? AND periode <= ? AND actif != 0 AND type_malus = 'pourcentage'
+      WHERE periode <= ? AND COALESCE(periode_fin, periode) >= ? AND actif != 0 AND type_malus = 'pourcentage'
       GROUP BY chatteur_id
-    `).all(periode_debut, periode_fin);
+    `).all(periode_fin, periode_debut);
     const malusPctByChatteur = {};
     for (const m of allMalusPct) malusPctByChatteur[m.chatteur_id] = m.total_pct;
 
@@ -98,10 +130,10 @@ function recalculatePaies(periode_debut, periode_fin) {
       for (const vp of ventesParPlateforme) {
         const brut = vp.total_brut;
         const isUSD = vp.devise === 'USD';
-        const ttc = isUSD ? brut * tauxChange : brut;
-        const ht = ttc / (1 + vp.tva_rate);
-        const netHT = ht * (1 - vp.commission_rate);
-        const commission = netHT * chatteur.taux_commission;
+        const ttc = roundCents(isUSD ? brut * tauxChange : brut);
+        const ht = roundCents(ttc / (1 + vp.tva_rate));
+        const netHT = roundCents(ht * (1 - vp.commission_rate));
+        const commission = roundCents(netHT * chatteur.taux_commission);
 
         chatteurTotalNetHT += netHT;
 
@@ -121,12 +153,15 @@ function recalculatePaies(periode_debut, periode_fin) {
       }
 
       // Malus = fixe + pourcentage du net HT total du chatteur
-      const malusTotalChatteur = malusFixe + (malusPct / 100) * chatteurTotalNetHT;
+      let malusTotalChatteur = roundCents(malusFixe + (malusPct / 100) * chatteurTotalNetHT);
+
+      // Cap malus: cannot exceed net_ht to prevent negative paies
+      malusTotalChatteur = capMalus(malusTotalChatteur, Math.max(0, chatteurTotalNetHT), chatteur.id);
 
       // Distribute malus across platforms proportionally to net_ht
       if (malusTotalChatteur > 0 && chatteurTotalNetHT > 0) {
         for (const row of platformRows) {
-          row.malus_total = malusTotalChatteur * (row.net_ht_eur / chatteurTotalNetHT);
+          row.malus_total = roundCents(malusTotalChatteur * (row.net_ht_eur / chatteurTotalNetHT));
         }
       }
 
@@ -151,7 +186,7 @@ function recalculatePaies(periode_debut, periode_fin) {
     const primeRates = [0.005, 0.0025, 0.0012]; // 0.5%, 0.25%, 0.12%
     const primeById = {};
     for (let i = 0; i < Math.min(3, ranked.length); i++) {
-      primeById[ranked[i].id] = totalNetHTEquipe * primeRates[i];
+      primeById[ranked[i].id] = roundCents(totalNetHTEquipe * primeRates[i]);
     }
 
     // Distribute prime (cagnotte + manuelles) across platforms proportionally
@@ -160,10 +195,13 @@ function recalculatePaies(periode_debut, periode_fin) {
       const chatteurPrimeManuelle = primesManuByChatteur[row.chatteur_id] || 0;
       const chatteurPrimeTotal = chatteurPrimeCagnotte + chatteurPrimeManuelle;
       if (chatteurPrimeTotal > 0) {
-        const chatteurTotal = chatteurNetHT[row.chatteur_id] || 1;
-        row.prime = chatteurPrimeTotal * (row.net_ht_eur / chatteurTotal);
+        const chatteurTotal = chatteurNetHT[row.chatteur_id];
+        if (chatteurTotal > 0) {
+          row.prime = roundCents(chatteurPrimeTotal * (row.net_ht_eur / chatteurTotal));
+        }
+        // If chatteurTotal <= 0, prime stays at 0 (no division by zero)
       }
-      row.total_chatteur = row.commission_chatteur + row.prime - row.malus_total;
+      row.total_chatteur = roundCents(row.commission_chatteur + row.prime - row.malus_total);
     }
 
     // Save to DB
@@ -217,7 +255,7 @@ function recalculatePaies(periode_debut, periode_fin) {
     // SQLite treats NULL != NULL in UNIQUE constraints, so ON CONFLICT won't match.
     // Instead: update paid rows in-place, delete+reinsert non-paid rows.
     for (const mgr of managers) {
-      const mgrTotal = totalNetHTEquipe * mgr.taux_net_equipe;
+      const mgrTotal = roundCents(totalNetHTEquipe * mgr.taux_net_equipe);
       const existing = db.prepare(`
         SELECT id, statut FROM paies
         WHERE chatteur_id = ? AND plateforme_id IS NULL
@@ -275,4 +313,4 @@ function recalculatePaies(periode_debut, periode_fin) {
   return doRecalculate();
 }
 
-module.exports = { recalculatePaies };
+module.exports = { recalculatePaies, roundCents, safeExchangeRate, capMalus };

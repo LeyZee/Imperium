@@ -12,7 +12,7 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 }));
 
 router.get('/:id', authMiddleware, asyncHandler((req, res) => {
-  const p = db.prepare('SELECT * FROM plateformes WHERE id = ?').get(req.params.id);
+  const p = db.prepare('SELECT * FROM plateformes WHERE id = ? AND actif = 1').get(req.params.id);
   if (!p) throw new ApiError(404, 'Plateforme introuvable');
   res.json(p);
 }));

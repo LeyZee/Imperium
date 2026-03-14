@@ -4,10 +4,15 @@ jest.mock('../../database', () => ({
     get: jest.fn(() => null),
     run: jest.fn(() => ({ lastInsertRowid: 1 })),
   })),
+  transaction: jest.fn((fn) => fn),
 }));
 
 jest.mock('../../utils/period', () => ({
   getPeriode: jest.fn((date) => ({ debut: '2026-03-01', fin: '2026-03-15' })),
+}));
+
+jest.mock('../../services/paie-calculator', () => ({
+  recalculatePaies: jest.fn(),
 }));
 
 const db = require('../../database');

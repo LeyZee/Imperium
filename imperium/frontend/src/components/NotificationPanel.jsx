@@ -103,6 +103,8 @@ export default function NotificationPanel() {
       ));
       setCount(c => Math.max(0, c - 1));
       handleMarkRead(notifId);
+      // Notify other components (e.g. Ventes page) to refresh
+      window.dispatchEvent(new CustomEvent('vente-status-changed', { detail: { venteId, statut } }));
     } catch { /* empty */ }
   };
 

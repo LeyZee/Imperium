@@ -785,6 +785,56 @@ runMigration('add_login_lockout_table', () => {
   `);
 });
 
+// --- Defense in depth: DB-level constraints via triggers ---
+runMigration('add_ventes_montant_check_trigger', () => {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_ventes_montant_check
+    BEFORE INSERT ON ventes
+    BEGIN
+      SELECT CASE
+        WHEN NEW.montant_brut <= 0 OR NEW.montant_brut > 100000
+        THEN RAISE(ABORT, 'montant_brut doit être entre 0.01 et 100000')
+      END;
+    END
+  `);
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_ventes_montant_check_update
+    BEFORE UPDATE OF montant_brut ON ventes
+    BEGIN
+      SELECT CASE
+        WHEN NEW.montant_brut <= 0 OR NEW.montant_brut > 100000
+        THEN RAISE(ABORT, 'montant_brut doit être entre 0.01 et 100000')
+      END;
+    END
+  `);
+});
+
+runMigration('add_malus_montant_check_trigger', () => {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_malus_montant_check
+    BEFORE INSERT ON malus
+    BEGIN
+      SELECT CASE
+        WHEN NEW.montant <= 0
+        THEN RAISE(ABORT, 'malus montant doit être positif')
+      END;
+    END
+  `);
+});
+
+runMigration('add_taux_commission_check_trigger', () => {
+  db.exec(`
+    CREATE TRIGGER IF NOT EXISTS trg_chatteurs_taux_check
+    BEFORE UPDATE OF taux_commission ON chatteurs
+    BEGIN
+      SELECT CASE
+        WHEN NEW.taux_commission < 0 OR NEW.taux_commission > 1
+        THEN RAISE(ABORT, 'taux_commission doit être entre 0 et 1')
+      END;
+    END
+  `);
+});
+
 console.log(`DB initialized in ${Date.now() - dbStartTime}ms`);
 
 // Compatibility wrapper: makes node-sqlite3-wasm behave like better-sqlite3

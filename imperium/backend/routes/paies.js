@@ -16,7 +16,7 @@ const { parsePagination, paginatedResponse } = require('../utils/pagination');
 const router = express.Router();
 
 // GET /api/paies?debut=YYYY-MM-DD&fin=YYYY-MM-DD
-router.get('/', authMiddleware, asyncHandler((req, res) => {
+router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { debut, fin } = req.query;
   if (!debut || !fin) {
     throw new ApiError(400, 'debut et fin requis');
@@ -54,7 +54,7 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
   const totalPayeEquipe = paies.reduce((s, p) => s + p.total_chatteur, 0);
 
   // Trésorerie agence = part agence du CA - ce qu'on paye aux chatteurs/managers
-  // On calcule le revenu agence depuis les ventes (net_ht × part_percent par modèle)
+  // On calcule le revenu agence depuis les ventes validées (net_ht × part_percent par modèle)
   const agencyGrossRow = db.prepare(`
     SELECT COALESCE(SUM(
       (CASE WHEN pl.devise = 'USD' THEN v.montant_brut * ? ELSE v.montant_brut END)
@@ -65,7 +65,7 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
     FROM ventes v
     JOIN plateformes pl ON pl.id = v.plateforme_id
     LEFT JOIN modeles m ON m.id = v.modele_id
-    WHERE v.periode_debut = ? AND v.periode_fin = ?
+    WHERE v.periode_debut = ? AND v.periode_fin = ? AND v.statut = 'validée'
   `).get(tauxChange, debut, fin);
   const agencyGross = agencyGrossRow?.agency_gross || 0;
   const tresorerieAgence = agencyGross - totalPayeEquipe;
@@ -88,6 +88,19 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
     .sort((a, b) => b.net_ht - a.net_ht)
     .slice(0, 3);
 
+  // Preview: calculate estimated total if all en_attente ventes were validated
+  const pendingRow = db.prepare(`
+    SELECT COALESCE(SUM(
+      (CASE WHEN pl.devise = 'USD' THEN v.montant_brut * ? ELSE v.montant_brut END)
+      / (1 + pl.tva_rate)
+      * (1 - pl.commission_rate)
+    ), 0) as pending_net_ht,
+    COUNT(*) as nb_pending
+    FROM ventes v
+    JOIN plateformes pl ON pl.id = v.plateforme_id
+    WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut = 'en_attente'
+  `).get(tauxChange, debut, fin);
+
   res.json({
     paies: normalPaies,
     managers: managerPaies,
@@ -99,6 +112,11 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
       tresorerie_agence: tresorerieAgence,
       taux_change: tauxChange,
       top_chatteurs: topChatteurs,
+    },
+    preview: {
+      pending_net_ht: pendingRow?.pending_net_ht || 0,
+      nb_pending: pendingRow?.nb_pending || 0,
+      total_net_ht_with_pending: totalNetHTEquipe + (pendingRow?.pending_net_ht || 0),
     },
   });
 }));
@@ -172,7 +190,7 @@ router.get('/mes-paies', authMiddleware, asyncHandler((req, res) => {
 }));
 
 // GET /api/paies/periodes — list available periods
-router.get('/periodes', authMiddleware, asyncHandler((req, res) => {
+router.get('/periodes', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const periodes = db.prepare(`
     SELECT DISTINCT periode_debut, periode_fin
     FROM paies

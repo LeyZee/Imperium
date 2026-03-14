@@ -194,7 +194,7 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/positif/i);
+      expect(res.body.error).toMatch(/invalide/i);
     });
 
     it('should reject missing required fields', async () => {
@@ -271,7 +271,8 @@ describe('E2E Flow: Login → Vente → Paie → Facture', () => {
       ];
       db.prepare
         .mockReturnValueOnce(mockStmt({ all: jest.fn().mockReturnValue(mockPaies) })) // paies query
-        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ agency_gross: 3000 }) })); // agency gross
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ agency_gross: 3000 }) })) // agency gross
+        .mockReturnValueOnce(mockStmt({ get: jest.fn().mockReturnValue({ pending_net_ht: 0, nb_pending: 0 }) })); // preview (pending ventes)
 
       const res = await request(app)
         .get('/api/paies?debut=2026-03-01&fin=2026-03-15')

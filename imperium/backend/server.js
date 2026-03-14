@@ -104,14 +104,35 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Health check
+// Health check with exchange rate and DB status
 app.get('/health', (req, res) => {
+  const warnings = [];
   try {
     const db = require('./database');
     db.prepare('SELECT 1').get();
-    res.json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
-  } catch {
-    res.status(503).json({ status: 'error', error: 'Database unavailable' });
+
+    // Check exchange rate
+    const { getExchangeRate } = require('./utils/rateCache');
+    const rate = getExchangeRate();
+    if (!rate || rate <= 0 || rate === 0.92) {
+      warnings.push(`Exchange rate fallback active (${rate}) — vérifier frankfurter.app`);
+    }
+
+    // Check for negative paies
+    const negPaies = db.prepare("SELECT COUNT(*) as c FROM paies WHERE total_chatteur < 0").get();
+    if (negPaies?.c > 0) {
+      warnings.push(`${negPaies.c} paie(s) avec total négatif détectée(s)`);
+    }
+
+    res.json({
+      status: warnings.length > 0 ? 'degraded' : 'ok',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+      exchange_rate: rate,
+      warnings,
+    });
+  } catch (err) {
+    res.status(503).json({ status: 'error', error: 'Database unavailable', message: err.message });
   }
 });
 

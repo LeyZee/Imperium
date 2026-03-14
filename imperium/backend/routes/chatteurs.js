@@ -24,10 +24,10 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 
   // Strip sensitive fields for non-admin/manager users
   if (req.user.role !== 'admin' && req.user.role !== 'manager') {
-    return res.json(chatteurs.map(({ iban, adresse, code_postal, ville, taux_commission, taux_net_equipe, taux_horaire, user_id, user_email, password_hash, ...safe }) => safe));
+    return res.json(chatteurs.map(({ adresse, code_postal, ville, taux_commission, taux_net_equipe, taux_horaire, user_id, user_email, password_hash, iban, ...safe }) => safe));
   }
-  // Add pending_invitation flag, remove password_hash
-  res.json(chatteurs.map(({ password_hash, ...c }) => ({
+  // Add pending_invitation flag, remove password_hash and iban (not used — payment via Worldremit)
+  res.json(chatteurs.map(({ password_hash, iban, ...c }) => ({
     ...c,
     pending_invitation: password_hash === PENDING_HASH,
   })));
@@ -127,12 +127,12 @@ router.get('/:id', authMiddleware, asyncHandler((req, res) => {
 
   // Strip sensitive fields for chatteur role
   if (req.user.role === 'chatteur') {
-    const { iban, taux_net_equipe, taux_horaire, password_hash, ...safe } = chatteur;
+    const { taux_net_equipe, taux_horaire, password_hash, iban, ...safe } = chatteur;
     return res.json(safe);
   }
 
-  // Add pending_invitation flag, remove password_hash
-  const { password_hash, ...safe } = chatteur;
+  // Add pending_invitation flag, remove password_hash and iban
+  const { password_hash, iban, ...safe } = chatteur;
   res.json({ ...safe, pending_invitation: password_hash === PENDING_HASH });
 }));
 
@@ -140,7 +140,7 @@ router.get('/:id', authMiddleware, asyncHandler((req, res) => {
 router.post('/', authMiddleware, adminOrManager, asyncHandler(async (req, res) => {
   const {
     prenom, email, adresse, code_postal, ville, pays,
-    iban, taux_commission, is_nouveau, role, taux_net_equipe, taux_horaire, couleur,
+    taux_commission, is_nouveau, role, taux_net_equipe, taux_horaire, couleur,
     password, photo, telegram_user_id // optional: create associated user account (email = login ID)
   } = req.body;
 
@@ -161,38 +161,43 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler(async (req, res) =
   let user_id = null;
   let invitation_sent = false;
 
-  if (email) {
-    const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
-    if (exists) throw new ApiError(409, 'Cet email est déjà utilisé');
+  // Atomic: create user + chatteur in a single transaction
+  const createChatteur = db.transaction(() => {
+    if (email) {
+      const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
+      if (exists) throw new ApiError(409, 'Cet email est déjà utilisé');
 
-    const userRole = (role === 'manager' || role === 'directeur') ? 'manager' : 'chatteur';
+      const userRole = (role === 'manager' || role === 'directeur') ? 'manager' : 'chatteur';
 
-    if (password) {
-      // Legacy: admin provides password directly (backward compat for seed.js)
-      if (password.length < 8) throw new ApiError(400, 'Le mot de passe doit contenir au moins 8 caractères');
-      const hash = bcrypt.hashSync(password, 10);
-      const userResult = db.prepare(
-        'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
-      ).run(email, hash, userRole, email);
-      user_id = userResult.lastInsertRowid;
-    } else {
-      // New: invitation-based — create user with pending hash
-      const userResult = db.prepare(
-        'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
-      ).run(email, PENDING_HASH, userRole, email);
-      user_id = userResult.lastInsertRowid;
+      if (password) {
+        // Legacy: admin provides password directly (backward compat for seed.js)
+        if (password.length < 8) throw new ApiError(400, 'Le mot de passe doit contenir au moins 8 caractères');
+        const hash = bcrypt.hashSync(password, 10);
+        const userResult = db.prepare(
+          'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
+        ).run(email, hash, userRole, email);
+        user_id = userResult.lastInsertRowid;
+      } else {
+        // New: invitation-based — create user with pending hash
+        const userResult = db.prepare(
+          'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
+        ).run(email, PENDING_HASH, userRole, email);
+        user_id = userResult.lastInsertRowid;
+      }
     }
-  }
 
-  const result = db.prepare(`
-    INSERT INTO chatteurs (prenom, email, adresse, code_postal, ville, pays, iban, taux_commission, is_nouveau, role, taux_net_equipe, taux_horaire, couleur, user_id, photo, telegram_user_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    prenom, email || null, adresse || null, code_postal || null,
-    ville || null, pays || 'France', iban || null,
-    taux_commission ?? 0.15, is_nouveau ? 1 : 0,
-    role || 'chatteur', taux_net_equipe ?? 0, taux_horaire ?? 0, couleur ?? 0, user_id, photo ?? null, telegram_user_id ?? null
-  );
+    return db.prepare(`
+      INSERT INTO chatteurs (prenom, email, adresse, code_postal, ville, pays, taux_commission, is_nouveau, role, taux_net_equipe, taux_horaire, couleur, user_id, photo, telegram_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      prenom, email || null, adresse || null, code_postal || null,
+      ville || null, pays || 'France',
+      taux_commission ?? 0.15, is_nouveau ? 1 : 0,
+      role || 'chatteur', taux_net_equipe ?? 0, taux_horaire ?? 0, couleur ?? 0, user_id, photo ?? null, telegram_user_id ?? null
+    );
+  });
+
+  const result = createChatteur();
 
   // Send invitation email for passwordless creation
   if (user_id && !password && email) {
@@ -259,7 +264,7 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 
   const {
     prenom, email, adresse, code_postal, ville, pays,
-    iban, taux_commission, is_nouveau, actif, role, taux_net_equipe, taux_horaire, couleur, photo, telegram_user_id
+    taux_commission, is_nouveau, actif, role, taux_net_equipe, taux_horaire, couleur, photo, telegram_user_id
   } = req.body;
 
   // Validate commission rate
@@ -282,7 +287,6 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
       code_postal = COALESCE(?, code_postal),
       ville = COALESCE(?, ville),
       pays = COALESCE(?, pays),
-      iban = COALESCE(?, iban),
       taux_commission = COALESCE(?, taux_commission),
       is_nouveau = COALESCE(?, is_nouveau),
       actif = COALESCE(?, actif),
@@ -296,7 +300,7 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   `).run(
     prenom ?? null, email ?? null, adresse ?? null,
     code_postal ?? null, ville ?? null, pays ?? null,
-    iban ?? null, taux_commission ?? null,
+    taux_commission ?? null,
     is_nouveau !== undefined ? (is_nouveau ? 1 : 0) : null,
     effectiveActif,
     role ?? null, taux_net_equipe ?? null, taux_horaire ?? null,

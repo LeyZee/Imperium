@@ -419,7 +419,7 @@ router.get('/conflits', authMiddleware, adminOrManager, asyncHandler((req, res) 
 
   for (const s of shifts) {
     datesWithShifts.add(s.date);
-    const key = `${s.date}|${s.creneau}|${s.modele_id}|${s.plateforme_id}`;
+    const key = `${s.date}|${s.creneau}|${s.modele_id || 0}|${s.plateforme_id || 0}`;
     if (covered[key]) {
       doublons.push({
         date: s.date, creneau: s.creneau,
@@ -451,7 +451,7 @@ router.get('/conflits', authMiddleware, adminOrManager, asyncHandler((req, res) 
       dow = dow === 0 ? 7 : dow; // 1=Monday..7=Sunday
       for (const t of templates) {
         if (t.day_of_week !== dow) continue;
-        const key = `${dateStr}|${t.creneau}|${t.modele_id}|${t.plateforme_id}`;
+        const key = `${dateStr}|${t.creneau}|${t.modele_id || 0}|${t.plateforme_id || 0}`;
         if (!covered[key]) {
           covered[key] = t.chatteur_prenom;
         }

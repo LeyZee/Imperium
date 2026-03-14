@@ -164,10 +164,12 @@ function SalesEvolutionChart({ historiqueData }) {
     const deb = new Date(p.periode_debut + 'T00:00:00');
     const fin = new Date(p.periode_fin + 'T00:00:00');
     const moisDeb = MOIS_COURTS[deb.getMonth()];
+    const moisFin = MOIS_COURTS[fin.getMonth()];
     const dayDeb = deb.getDate();
     const dayFin = fin.getDate();
-    const shortLabel = `${dayDeb}-${dayFin} ${moisDeb}`;
-    const fullLabel = `${dayDeb} - ${dayFin} ${moisDeb} ${fin.getFullYear()}`;
+    const crossMonth = deb.getMonth() !== fin.getMonth();
+    const shortLabel = crossMonth ? `${dayDeb} ${moisDeb}-${dayFin} ${moisFin}` : `${dayDeb}-${dayFin} ${moisDeb}`;
+    const fullLabel = crossMonth ? `${dayDeb} ${moisDeb} - ${dayFin} ${moisFin} ${fin.getFullYear()}` : `${dayDeb} - ${dayFin} ${moisDeb} ${fin.getFullYear()}`;
     return {
       label: shortLabel,
       fullLabel,

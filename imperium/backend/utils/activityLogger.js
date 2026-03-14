@@ -1,4 +1,5 @@
 const db = require('../database');
+const logger = require('./logger');
 
 /**
  * Log an activity to the activity_logs table.
@@ -16,7 +17,7 @@ function logActivity(userId, action, entityType = null, entityId = null, details
       'INSERT INTO activity_logs (user_id, action, entity_type, entity_id, details) VALUES (?, ?, ?, ?, ?)'
     ).run(userId ?? null, action, entityType ?? null, entityId ?? null, details ?? null);
   } catch (e) {
-    // Silent fail
+    logger.warn('Activity log insert failed', { userId, action, error: e.message });
   }
 }
 

@@ -161,6 +161,13 @@ export default function Ventes() {
     initialFetch();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Refresh when a vente is validated/rejected from NotificationPanel
+  useEffect(() => {
+    const handler = () => refresh();
+    window.addEventListener('vente-status-changed', handler);
+    return () => window.removeEventListener('vente-status-changed', handler);
+  }, [selectedPeriod]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function refresh(period, platId, chattId, modId) {
     await Promise.all([fetchVentes(period, platId, chattId, modId), fetchSummary(period)]);
   }

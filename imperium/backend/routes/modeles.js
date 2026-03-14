@@ -26,7 +26,7 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 }));
 
 router.get('/:id', authMiddleware, asyncHandler((req, res) => {
-  const m = db.prepare('SELECT * FROM modeles WHERE id = ?').get(req.params.id);
+  const m = db.prepare('SELECT * FROM modeles WHERE id = ? AND actif = 1').get(req.params.id);
   if (!m) throw new ApiError(404, 'Modèle introuvable');
   res.json(m);
 }));

@@ -7,17 +7,32 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session on mount — check cookie via /api/auth/me
+  // Restore session on mount — validate JWT via /api/auth/me, then fall back to sessionStorage
   useEffect(() => {
-    const storedUser = sessionStorage.getItem('user');
-    if (storedUser) {
+    let cancelled = false;
+    async function validateSession() {
       try {
-        setUser(JSON.parse(storedUser));
+        const res = await api.get('/api/auth/me');
+        if (!cancelled && res.data?.user) {
+          setUser(res.data.user);
+          sessionStorage.setItem('user', JSON.stringify(res.data.user));
+        }
       } catch {
-        sessionStorage.removeItem('user');
+        // JWT invalid or expired — try sessionStorage as UI hint only
+        const storedUser = sessionStorage.getItem('user');
+        if (storedUser && !cancelled) {
+          try {
+            setUser(JSON.parse(storedUser));
+          } catch {
+            sessionStorage.removeItem('user');
+          }
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     }
-    setLoading(false);
+    validateSession();
+    return () => { cancelled = true; };
   }, []);
 
   const login = async (email, password) => {

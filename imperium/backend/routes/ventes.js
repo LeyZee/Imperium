@@ -158,8 +158,8 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   }
 
   const montant = parseFloat(montant_brut);
-  if (isNaN(montant) || montant <= 0) {
-    throw new ApiError(400, 'Montant brut invalide (doit être un nombre positif)');
+  if (isNaN(montant) || montant <= 0 || montant > 100000) {
+    throw new ApiError(400, 'Montant brut invalide (doit être entre 0.01 et 100 000)');
   }
 
   // Validate shift exists and belongs to the chatteur
@@ -187,16 +187,23 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     }
   }
 
-  const result = db.prepare(`
-    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?)
-  `).run(chatteur_id, effectiveModeleId || null, effectivePlateformeId, montant_brut, periode_debut, periode_fin, notes || null, shift_id ?? null);
-
-  // Auto-recalculate paies for this period (admin ventes are auto-validated)
+  // Atomic: insert vente + recalculate paies in a single transaction
   let recalcWarning = null;
-  try { recalculatePaies(periode_debut, periode_fin); } catch (err) {
-    logger.error('Erreur auto-recalcul paies', { error: err.message });
-    recalcWarning = 'Vente enregistrée mais le recalcul des paies a échoué.';
+  const insertAndRecalc = db.transaction(() => {
+    const r = db.prepare(`
+      INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?)
+    `).run(chatteur_id, effectiveModeleId || null, effectivePlateformeId, montant_brut, periode_debut, periode_fin, notes || null, shift_id ?? null);
+    recalculatePaies(periode_debut, periode_fin);
+    return r;
+  });
+
+  let result;
+  try {
+    result = insertAndRecalc();
+  } catch (err) {
+    logger.error('Erreur insert vente + recalcul paies', { error: err.message });
+    throw new ApiError(500, 'Erreur lors de l\'enregistrement de la vente');
   }
 
   // Notify the chatteur
@@ -236,29 +243,33 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     }
   }
 
-  db.prepare(`
-    UPDATE ventes SET
-      montant_brut = COALESCE(?, montant_brut),
-      modele_id = COALESCE(?, modele_id),
-      plateforme_id = COALESCE(?, plateforme_id),
-      periode_debut = COALESCE(?, periode_debut),
-      periode_fin = COALESCE(?, periode_fin),
-      notes = COALESCE(?, notes),
-      shift_id = COALESCE(?, shift_id)
-    WHERE id = ?
-  `).run(montant_brut ?? null, modele_id ?? null, plateforme_id ?? null, periode_debut ?? null, periode_fin ?? null, notes ?? null, shift_id ?? null, req.params.id);
-
-  // Auto-recalculate paies for affected periods
+  // Atomic: update vente + recalculate paies in a single transaction
   let recalcWarning = null;
-  try {
+  const updateAndRecalc = db.transaction(() => {
+    db.prepare(`
+      UPDATE ventes SET
+        montant_brut = COALESCE(?, montant_brut),
+        modele_id = COALESCE(?, modele_id),
+        plateforme_id = COALESCE(?, plateforme_id),
+        periode_debut = COALESCE(?, periode_debut),
+        periode_fin = COALESCE(?, periode_fin),
+        notes = COALESCE(?, notes),
+        shift_id = COALESCE(?, shift_id)
+      WHERE id = ?
+    `).run(montant_brut ?? null, modele_id ?? null, plateforme_id ?? null, periode_debut ?? null, periode_fin ?? null, notes ?? null, shift_id ?? null, req.params.id);
+
     const newPeriod = db.prepare('SELECT periode_debut, periode_fin FROM ventes WHERE id = ?').get(req.params.id);
     if (newPeriod) recalculatePaies(newPeriod.periode_debut, newPeriod.periode_fin);
     if (current && (current.periode_debut !== newPeriod?.periode_debut || current.periode_fin !== newPeriod?.periode_fin)) {
       recalculatePaies(current.periode_debut, current.periode_fin);
     }
+  });
+
+  try {
+    updateAndRecalc();
   } catch (err) {
-    logger.error('Erreur auto-recalcul paies', { error: err.message });
-    recalcWarning = 'Vente modifiée mais le recalcul des paies a échoué.';
+    logger.error('Erreur update vente + recalcul paies', { error: err.message });
+    throw new ApiError(500, 'Erreur lors de la modification de la vente');
   }
 
   notifyChatteur(current.chatteur_id, 'vente', 'Vente modifiée',
@@ -274,15 +285,18 @@ router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) =>
   // Get period + chatteur before deleting
   const vente = db.prepare('SELECT chatteur_id, montant_brut, periode_debut, periode_fin FROM ventes WHERE id = ?').get(req.params.id);
   if (!vente) throw new ApiError(404, 'Vente introuvable');
-  db.prepare('DELETE FROM ventes WHERE id = ?').run(req.params.id);
 
-  // Auto-recalculate paies for the period
+  // Atomic: delete vente + recalculate paies
   let recalcWarning = null;
-  if (vente) {
-    try { recalculatePaies(vente.periode_debut, vente.periode_fin); } catch (err) {
-      logger.error('Erreur auto-recalcul paies', { error: err.message });
-      recalcWarning = 'Vente supprimée mais le recalcul des paies a échoué.';
-    }
+  const deleteAndRecalc = db.transaction(() => {
+    db.prepare('DELETE FROM ventes WHERE id = ?').run(req.params.id);
+    recalculatePaies(vente.periode_debut, vente.periode_fin);
+  });
+  try {
+    deleteAndRecalc();
+  } catch (err) {
+    logger.error('Erreur suppression vente + recalcul paies', { error: err.message });
+    throw new ApiError(500, 'Erreur lors de la suppression de la vente');
   }
 
   notifyChatteur(vente.chatteur_id, 'vente', 'Vente supprimée',
@@ -398,13 +412,11 @@ router.put('/:id/valider', authMiddleware, adminOrManager, asyncHandler((req, re
 
   db.prepare('UPDATE ventes SET statut = ? WHERE id = ?').run(statut, req.params.id);
 
-  // Recalculate paies only when approving
+  // Recalculate paies on both approval AND rejection (rejection removes the vente from paies)
   let recalcWarning = null;
-  if (statut === 'validée') {
-    try { recalculatePaies(vente.periode_debut, vente.periode_fin); } catch (err) {
-      logger.error('Erreur auto-recalcul paies (validation)', { error: err.message });
-      recalcWarning = 'Vente validée mais le recalcul des paies a échoué.';
-    }
+  try { recalculatePaies(vente.periode_debut, vente.periode_fin); } catch (err) {
+    logger.error('Erreur auto-recalcul paies (validation)', { error: err.message });
+    recalcWarning = `Vente ${statut === 'validée' ? 'validée' : 'rejetée'} mais le recalcul des paies a échoué.`;
   }
 
   const label = statut === 'validée' ? 'validée' : 'rejetée';
@@ -431,8 +443,8 @@ router.post('/mes-ventes', authMiddleware, asyncHandler((req, res) => {
   }
 
   const montant = parseFloat(montant_brut);
-  if (isNaN(montant) || montant <= 0) {
-    throw new ApiError(400, 'Montant brut invalide (doit être un nombre positif)');
+  if (isNaN(montant) || montant <= 0 || montant > 100000) {
+    throw new ApiError(400, 'Montant brut invalide (doit être entre 0.01 et 100 000)');
   }
 
   const dateErr = validateDate(date);
@@ -511,8 +523,8 @@ router.put('/mes-ventes/:id', authMiddleware, asyncHandler((req, res) => {
 
   if (montant_brut !== undefined) {
     const montant = parseFloat(montant_brut);
-    if (isNaN(montant) || montant <= 0) {
-      throw new ApiError(400, 'Montant brut invalide (doit être un nombre positif)');
+    if (isNaN(montant) || montant <= 0 || montant > 100000) {
+      throw new ApiError(400, 'Montant brut invalide (doit être entre 0.01 et 100 000)');
     }
   }
 

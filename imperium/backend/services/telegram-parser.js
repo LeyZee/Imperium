@@ -1,5 +1,7 @@
 const db = require('../database');
 const { getPeriode } = require('../utils/period');
+const { recalculatePaies } = require('./paie-calculator');
+const logger = require('../utils/logger');
 
 // Map groupe Telegram → plateforme_id
 const GROUP_PLATFORM = {
@@ -19,21 +21,37 @@ function findChatteur(name, telegramUserId) {
     if (byId) return byId;
   }
 
-  // 2. Fallback: fuzzy name match
+  // 2. Fallback: name match (exact → prefix, NO substring to avoid MARIE matching MARIE-ANGE)
   if (!name) return null;
   const normalized = name.toLowerCase().replace(/[-\s]/g, '');
   const all = db.prepare('SELECT * FROM chatteurs WHERE actif = 1').all([]);
-  const match = all.find(c => {
-    const p = c.prenom.toLowerCase().replace(/[-\s]/g, '');
-    return p === normalized || normalized.includes(p) || p.includes(normalized);
-  });
+
+  // 2a. Try exact match first
+  let match = all.find(c => c.prenom.toLowerCase().replace(/[-\s]/g, '') === normalized);
+
+  // 2b. Try prefix match only (normalized starts with prenom OR prenom starts with normalized)
+  // but ONLY if there's exactly one match (ambiguity → reject)
+  if (!match) {
+    const prefixMatches = all.filter(c => {
+      const p = c.prenom.toLowerCase().replace(/[-\s]/g, '');
+      return normalized.startsWith(p) || p.startsWith(normalized);
+    });
+    if (prefixMatches.length === 1) {
+      match = prefixMatches[0];
+    } else if (prefixMatches.length > 1) {
+      logger.warn(`Telegram: match ambigu pour "${name}" — ${prefixMatches.map(c => c.prenom).join(', ')}. Ignoré.`);
+      return null;
+    }
+  }
 
   // 3. Auto-save telegram_user_id if matched by name and no ID stored yet
   if (match && telegramUserId && !match.telegram_user_id) {
     try {
       db.prepare('UPDATE chatteurs SET telegram_user_id = ? WHERE id = ?').run(telegramUserId, match.id);
-      console.log(`🔗 Telegram ID ${telegramUserId} auto-lié à ${match.prenom}`);
-    } catch { /* silent — unique constraint may fail */ }
+      logger.info(`Telegram ID ${telegramUserId} auto-lié à ${match.prenom}`);
+    } catch (e) {
+      logger.warn(`Auto-link telegram_user_id échoué pour ${match.prenom}`, { error: e.message });
+    }
   }
 
   return match;
@@ -84,8 +102,8 @@ function parseReport(message) {
   }
 
   const montant_brut = parseFloat(montantMatch[1].replace(',', '.'));
-  if (isNaN(montant_brut) || montant_brut <= 0) {
-    return { error: 'Montant invalide: ' + montantMatch[1] };
+  if (isNaN(montant_brut) || montant_brut <= 0 || montant_brut > 100000) {
+    return { error: 'Montant invalide: ' + montantMatch[1] + ' (doit être entre 0.01 et 100 000)' };
   }
 
   const dateMatch = message.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4}|\d{2})/);
@@ -107,7 +125,7 @@ function parseReport(message) {
 function isDuplicate(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin) {
   const dup = db.prepare(`
     SELECT id FROM ventes
-    WHERE chatteur_id = ? AND plateforme_id = ? AND montant_brut = ?
+    WHERE chatteur_id = ? AND plateforme_id = ? AND ABS(montant_brut - ?) < 0.01
       AND periode_debut = ? AND periode_fin = ?
       AND notes LIKE 'Import Telegram%'
   `).get(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin);
@@ -130,21 +148,45 @@ function findShiftForVente(chatteur_id, plateforme_id, dateStr) {
 }
 
 /**
- * Insert a vente from Telegram
+ * Insert a vente from Telegram + recalculate paies atomically
  */
 function insertVente(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id, modele_id) {
-  const result = db.prepare(`
-    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?)
-  `).run(chatteur_id, modele_id ?? null, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id ?? null);
-  return result;
+  const insertAndRecalc = db.transaction(() => {
+    const result = db.prepare(`
+      INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?)
+    `).run(chatteur_id, modele_id ?? null, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id ?? null);
+    recalculatePaies(periode_debut, periode_fin);
+    return result;
+  });
+  return insertAndRecalc();
+}
+
+// In-memory set of recently processed message IDs for idempotence (cleared every hour)
+const _processedMessages = new Set();
+let _lastCleanup = Date.now();
+const IDEMPOTENCE_TTL = 60 * 60 * 1000; // 1 hour
+
+function _cleanupProcessed() {
+  const now = Date.now();
+  if (now - _lastCleanup > IDEMPOTENCE_TTL) {
+    _processedMessages.clear();
+    _lastCleanup = now;
+  }
 }
 
 /**
  * Process a single Telegram message and create a vente if valid
  * Returns { success, vente_id, ... } or { error, ... }
  */
-function processMessage({ group_id, sender_name, sender_id, message }) {
+function processMessage({ group_id, sender_name, sender_id, message, message_id }) {
+  // Idempotence: skip already-processed messages
+  if (message_id) {
+    _cleanupProcessed();
+    if (_processedMessages.has(message_id)) {
+      return { skipped: true, reason: 'already_processed' };
+    }
+  }
   // Identify platform
   const plateforme_id = GROUP_PLATFORM[group_id.toString()];
   if (!plateforme_id) {
@@ -181,9 +223,14 @@ function processMessage({ group_id, sender_name, sender_id, message }) {
   // Try to find matching shift
   const shift = findShiftForVente(chatteur.id, plateforme_id, parsed.date);
 
-  // Insert
+  // Insert + recalculate paies atomically
   const notes = `Import Telegram — ${message.substring(0, 100)}`;
   const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes, shift?.id, shift?.modele_id);
+
+  // Mark as processed for idempotence
+  if (message_id) _processedMessages.add(message_id);
+
+  logger.info('Telegram import réussi', { chatteur: chatteur.prenom, montant: parsed.montant_brut, plateforme_id, date: parsed.date });
 
   return {
     success: true,
