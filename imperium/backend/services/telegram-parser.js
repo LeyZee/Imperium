@@ -2,6 +2,7 @@ const db = require('../database');
 const { getPeriode } = require('../utils/period');
 const { recalculatePaies } = require('./paie-calculator');
 const logger = require('../utils/logger');
+const { logTelegramIncoming } = require('../utils/telegramSender');
 
 // Map groupe Telegram → plateforme_id
 const GROUP_PLATFORM = {
@@ -54,6 +55,7 @@ function findChatteur(name, telegramUserId) {
       } else {
         db.prepare('UPDATE chatteurs SET telegram_user_id = ? WHERE id = ?').run(String(telegramUserId), match.id);
         logger.info(`Telegram ID ${telegramUserId} auto-lié à ${match.prenom}`);
+        logTelegramIncoming(null, match.id, match.prenom, 'auto_link', `Auto-link depuis groupe — Telegram ID ${telegramUserId} lié à ${match.prenom}`);
       }
     } catch (e) {
       logger.warn(`Auto-link telegram_user_id échoué pour ${match.prenom}`, { error: e.message });

@@ -72,6 +72,28 @@ function logTelegramMessage(chatId, chatteurId, chatteurPrenom, messageType, con
   }
 }
 
+/**
+ * Log an incoming Telegram event (registration, auto-link, vente import, etc.)
+ */
+function logTelegramIncoming(chatId, chatteurId, chatteurPrenom, messageType, content, success = true, errorMessage = null) {
+  try {
+    db.prepare(`
+      INSERT INTO telegram_log (direction, chat_id, chatteur_id, chatteur_prenom, message_type, content, success, error_message)
+      VALUES ('in', ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      String(chatId ?? ''),
+      chatteurId ?? null,
+      chatteurPrenom ?? null,
+      messageType ?? 'event',
+      (content ?? '').substring(0, 1000),
+      success ? 1 : 0,
+      errorMessage ?? null
+    );
+  } catch (e) {
+    logger.debug('telegram_log incoming insert failed', { error: e.message });
+  }
+}
+
 // ─── Core send function ───────────────────────────────────
 
 /**
@@ -282,6 +304,10 @@ function getLog(limit = 100, offset = 0, filters = {}) {
   let where = 'WHERE 1=1';
   const params = [];
 
+  if (filters.direction) {
+    where += ' AND direction = ?';
+    params.push(filters.direction);
+  }
   if (filters.messageType) {
     where += ' AND message_type = ?';
     params.push(filters.messageType);
@@ -321,6 +347,7 @@ module.exports = {
   escapeHTML,
   sanitizeHTML,
   getLog,
+  logTelegramIncoming,
   // Notification templates
   notifyVenteDetected,
   notifyPalierReached,

@@ -205,6 +205,7 @@ router.get('/log', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const offset = Math.max(parseInt(req.query.offset) || 0, 0);
   const filters = {};
 
+  if (req.query.direction) filters.direction = req.query.direction;
   if (req.query.type) filters.messageType = req.query.type;
   if (req.query.chatteur_id) filters.chatteurId = parseInt(req.query.chatteur_id);
   if (req.query.success !== undefined) filters.success = req.query.success === '1' || req.query.success === 'true';

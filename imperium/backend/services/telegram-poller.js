@@ -4,7 +4,7 @@ const { GROUP_PLATFORM, processMessage, findChatteur } = require('./telegram-par
 const { notifyChatteur } = require('../utils/notifier');
 const { logActivity } = require('../utils/activityLogger');
 const logger = require('../utils/logger');
-const { notifyVenteDetected } = require('../utils/telegramSender');
+const { notifyVenteDetected, logTelegramIncoming } = require('../utils/telegramSender');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -166,6 +166,7 @@ async function handlePrivateMessage(msg) {
     const chatteur = findChatteur(text, null);
 
     if (!chatteur) {
+      logTelegramIncoming(chatId, null, null, 'registration_failed', `Prénom non trouvé: "${text}"`, false, 'Chatteur introuvable');
       await sendMessage(chatId,
         `\u274C Je n'ai pas trouv\u00e9 de chatteur correspondant \u00e0 "<b>${text}</b>".\n\n` +
         `V\u00e9rifie l'orthographe et r\u00e9essaie avec /start.`
@@ -175,6 +176,7 @@ async function handlePrivateMessage(msg) {
 
     // Check if this chatteur already has a telegram_user_id
     if (chatteur.telegram_user_id && chatteur.telegram_user_id !== userId) {
+      logTelegramIncoming(chatId, chatteur.id, chatteur.prenom, 'registration_failed', `${chatteur.prenom} déjà lié à un autre compte`, false, 'Déjà lié');
       await sendMessage(chatId,
         `\u26A0\uFE0F Le chatteur <b>${chatteur.prenom}</b> est d\u00e9j\u00e0 li\u00e9 \u00e0 un autre compte Telegram.\n\n` +
         `Contacte un admin si c'est une erreur.`
@@ -188,6 +190,7 @@ async function handlePrivateMessage(msg) {
       registrationsCount++;
       logger.info(`Telegram registration: ${chatteur.prenom} lié à user_id ${userId} (DM activé)`);
       logActivity(null, 'telegram_registration', 'chatteur', chatteur.id, `${chatteur.prenom} — Telegram ID ${userId}`);
+      logTelegramIncoming(chatId, chatteur.id, chatteur.prenom, 'registration', `Enregistrement DM réussi — ${chatteur.prenom} lié à Telegram ID ${userId}`);
 
       await sendMessage(chatId,
         `\u2705 Parfait ! Tu es maintenant enregistr\u00e9(e) comme <b>${chatteur.prenom}</b>.\n\n` +
@@ -195,6 +198,7 @@ async function handlePrivateMessage(msg) {
       );
     } catch (err) {
       logger.error('Erreur enregistrement Telegram', { chatteur: chatteur.prenom, userId, error: err.message });
+      logTelegramIncoming(chatId, null, text, 'registration', `Échec enregistrement — ${err.message}`, false, err.message);
       await sendMessage(chatId,
         `\u274C Erreur lors de l'enregistrement. R\u00e9essaie plus tard ou contacte un admin.`
       );
@@ -271,6 +275,7 @@ function handleUpdate(update) {
     lastMessageAt = new Date();
     console.log(`✅ Vente importée: ${result.chatteur} — ${result.montant_brut}€ (plateforme ${result.plateforme_id}) [${result.date_rapport}]`);
     logActivity(null, 'telegram_import', 'vente', result.vente_id, `${result.chatteur} — ${result.montant_brut}€`);
+    logTelegramIncoming(chatId, result.chatteur_id, result.chatteur, 'vente_import', `${result.montant_brut}€ — ${result.date_rapport} (plateforme ${result.plateforme_id})`);
     // Notify chatteur that a vente was detected (in-app + Telegram DM)
     if (result.chatteur_id) {
       notifyChatteur(
@@ -287,8 +292,10 @@ function handleUpdate(update) {
   } else if (result.error) {
     if (result.existing_id) {
       console.log(`   ↳ Doublon ignoré (vente #${result.existing_id})`);
+      logTelegramIncoming(chatId, null, senderName, 'vente_duplicate', `Doublon ignoré — vente #${result.existing_id}`, true);
     } else {
       console.warn(`⚠️  Telegram: ${result.error} (sender: "${senderName}", group: ${chatId})`);
+      logTelegramIncoming(chatId, null, senderName, 'vente_error', result.error, false, result.error);
     }
   }
 }

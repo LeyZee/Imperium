@@ -30,15 +30,23 @@ function formatDateTime(isoStr) {
 
 // ─── Message type labels & colors ──────────────────────────
 const TYPE_META = {
-  vente_detected: { label: 'Vente détectée', color: '#10b981', icon: '✅' },
-  palier_reached: { label: 'Palier atteint', color: '#f5b731', icon: '\uD83C\uDFC6' },
-  paie_summary: { label: 'Paie', color: '#6366f1', icon: '\uD83D\uDCB0' },
-  shift_reminder: { label: 'Rappel shift', color: '#0ea5e9', icon: '\u23F0' },
-  missing_report: { label: 'Rapport manquant', color: '#f59e0b', icon: '\u26A0\uFE0F' },
-  announcement: { label: 'Annonce', color: '#8b5cf6', icon: '\uD83D\uDCE2' },
-  collective_goal: { label: 'Objectif collectif', color: '#ec4899', icon: '\uD83C\uDFAF' },
-  admin_broadcast: { label: 'Broadcast admin', color: '#1b2e4b', icon: '\uD83D\uDCE3' },
-  message: { label: 'Message', color: '#94a3b8', icon: '\uD83D\uDCE8' },
+  // Outgoing (bot → chatteur)
+  vente_detected: { label: 'Vente détectée', color: '#10b981', icon: '✅', dir: 'out' },
+  palier_reached: { label: 'Palier atteint', color: '#f5b731', icon: '\uD83C\uDFC6', dir: 'out' },
+  paie_summary: { label: 'Paie', color: '#6366f1', icon: '\uD83D\uDCB0', dir: 'out' },
+  shift_reminder: { label: 'Rappel shift', color: '#0ea5e9', icon: '\u23F0', dir: 'out' },
+  missing_report: { label: 'Rapport manquant', color: '#f59e0b', icon: '\u26A0\uFE0F', dir: 'out' },
+  announcement: { label: 'Annonce', color: '#8b5cf6', icon: '\uD83D\uDCE2', dir: 'out' },
+  collective_goal: { label: 'Objectif collectif', color: '#ec4899', icon: '\uD83C\uDFAF', dir: 'out' },
+  admin_broadcast: { label: 'Broadcast admin', color: '#1b2e4b', icon: '\uD83D\uDCE3', dir: 'out' },
+  message: { label: 'Message', color: '#94a3b8', icon: '\uD83D\uDCE8', dir: 'out' },
+  // Incoming (chatteur → bot)
+  registration: { label: 'Enregistrement', color: '#10b981', icon: '\uD83D\uDC64', dir: 'in' },
+  registration_failed: { label: 'Enregistrement échoué', color: '#ef4444', icon: '\uD83D\uDC64', dir: 'in' },
+  auto_link: { label: 'Auto-link', color: '#0ea5e9', icon: '\uD83D\uDD17', dir: 'in' },
+  vente_import: { label: 'Import vente', color: '#10b981', icon: '\uD83D\uDCB5', dir: 'in' },
+  vente_duplicate: { label: 'Doublon ignoré', color: '#94a3b8', icon: '\uD83D\uDD04', dir: 'in' },
+  vente_error: { label: 'Erreur import', color: '#ef4444', icon: '\u26A0\uFE0F', dir: 'in' },
 };
 
 export default function TelegramBot({ embedded = false }) {
@@ -174,7 +182,7 @@ export default function TelegramBot({ embedded = false }) {
       }}>
         {[
           { id: 'bot', label: 'Bot & Imports', icon: Wifi },
-          { id: 'journal', label: 'Journal d\'envoi', icon: ScrollText },
+          { id: 'journal', label: 'Journal d\'activité', icon: ScrollText },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             style={{
@@ -578,6 +586,7 @@ function TelegramJournal() {
   const [page, setPage] = useState(0);
   const [typeFilter, setTypeFilter] = useState('');
   const [successFilter, setSuccessFilter] = useState('');
+  const [dirFilter, setDirFilter] = useState('');
   const PAGE_SIZE = 30;
 
   const fetchLogs = useCallback(async () => {
@@ -586,12 +595,13 @@ function TelegramJournal() {
       const params = new URLSearchParams({ limit: PAGE_SIZE, offset: page * PAGE_SIZE });
       if (typeFilter) params.set('type', typeFilter);
       if (successFilter !== '') params.set('success', successFilter);
+      if (dirFilter) params.set('direction', dirFilter);
       const { data } = await api.get(`/api/telegram/log?${params}`);
       setLogs(data.rows || []);
       setTotal(data.total || 0);
     } catch { /* empty */ }
     setLoading(false);
-  }, [page, typeFilter, successFilter]);
+  }, [page, typeFilter, successFilter, dirFilter]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
@@ -610,10 +620,16 @@ function TelegramJournal() {
               <option key={key} value={key}>{meta.icon} {meta.label}</option>
             ))}
           </select>
+          <select value={dirFilter} onChange={e => { setDirFilter(e.target.value); setPage(0); }}
+            className="input-field" style={{ width: 'auto', minWidth: 130, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
+            <option value="">📥📤 Tous</option>
+            <option value="out">📤 Envoyés</option>
+            <option value="in">📥 Reçus</option>
+          </select>
           <select value={successFilter} onChange={e => { setSuccessFilter(e.target.value); setPage(0); }}
             className="input-field" style={{ width: 'auto', minWidth: 130, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
             <option value="">Tous les statuts</option>
-            <option value="1">{'✅'} Envoyé</option>
+            <option value="1">{'✅'} Réussi</option>
             <option value="0">{'❌'} Échoué</option>
           </select>
           <div style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#64748b' }}>
@@ -632,8 +648,9 @@ function TelegramJournal() {
             <thead>
               <tr>
                 <th style={{ width: 140 }}>Date</th>
-                <th style={{ width: 140 }}>Type</th>
-                <th>Destinataire</th>
+                <th style={{ width: 30, textAlign: 'center' }}></th>
+                <th style={{ width: 160 }}>Type</th>
+                <th>Chatteur</th>
                 <th>Contenu</th>
                 <th style={{ width: 80, textAlign: 'center' }}>Statut</th>
               </tr>
@@ -643,23 +660,32 @@ function TelegramJournal() {
                 <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}><div className="spinner" /></td></tr>
               ) : logs.length === 0 ? (
                 <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
+                  <td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
                     <div style={{
                       width: 48, height: 48, borderRadius: '50%', margin: '0 auto 0.75rem',
                       background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                       <ScrollText size={22} color="#6366f1" strokeWidth={1.5} />
                     </div>
-                    <p style={{ fontWeight: 500, color: '#64748b' }}>Aucun message envoyé</p>
-                    <p style={{ fontSize: '0.8rem' }}>Les messages Telegram envoyés par le bot apparaîtront ici.</p>
+                    <p style={{ fontWeight: 500, color: '#64748b' }}>Aucun message dans le journal</p>
+                    <p style={{ fontSize: '0.8rem' }}>Les messages envoyés et reçus par le bot apparaîtront ici.</p>
                   </td>
                 </tr>
               ) : logs.map(log => {
                 const meta = TYPE_META[log.message_type] || TYPE_META.message;
+                const isIncoming = log.direction === 'in';
                 return (
                   <tr key={log.id}>
                     <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
                       {formatDateTime(log.created_at?.endsWith('Z') ? log.created_at : (log.created_at + 'Z'))}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <span title={isIncoming ? 'Reçu' : 'Envoyé'} style={{
+                        fontSize: '0.85rem',
+                        filter: 'none',
+                      }}>
+                        {isIncoming ? '📥' : '📤'}
+                      </span>
                     </td>
                     <td>
                       <span style={{
@@ -675,7 +701,7 @@ function TelegramJournal() {
                       {log.chatteur_prenom ? (
                         <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>{log.chatteur_prenom}</span>
                       ) : (
-                        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>ID: {log.chat_id}</span>
+                        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{log.chat_id ? `ID: ${log.chat_id}` : '—'}</span>
                       )}
                     </td>
                     <td style={{
@@ -686,11 +712,11 @@ function TelegramJournal() {
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       {log.success ? (
-                        <span title="Envoy\u00e9" style={{ color: '#10b981' }}>
+                        <span title={isIncoming ? 'Traité' : 'Envoyé'} style={{ color: '#10b981' }}>
                           <CheckCircle size={16} />
                         </span>
                       ) : (
-                        <span title={log.error_message || '\u00c9chou\u00e9'} style={{ color: '#ef4444', cursor: 'help' }}>
+                        <span title={log.error_message || 'Échoué'} style={{ color: '#ef4444', cursor: 'help' }}>
                           <XCircle size={16} />
                         </span>
                       )}
