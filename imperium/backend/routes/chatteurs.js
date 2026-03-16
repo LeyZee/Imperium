@@ -363,7 +363,7 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 }));
 
 // PUT /api/chatteurs/:id/account — admin manages chatteur's user account (email-based)
-router.put('/:id/account', authMiddleware, adminOnly, asyncHandler((req, res) => {
+router.put('/:id/account', authMiddleware, adminOnly, asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { email, new_password, confirm_password } = req.body;
 
@@ -399,23 +399,42 @@ router.put('/:id/account', authMiddleware, adminOnly, asyncHandler((req, res) =>
     res.json({ message: new_password ? 'Compte et mot de passe mis à jour' : 'Email mis à jour' });
   } else {
     // Create new user account for this chatteur
-    if (!new_password) {
-      throw new ApiError(400, 'Mot de passe requis pour créer un compte');
-    }
-
     const conflict = db.prepare('SELECT id FROM users WHERE email = ?').get(email.trim());
     if (conflict) throw new ApiError(409, 'Cet email est déjà utilisé');
 
-    const hash = bcrypt.hashSync(new_password, 10);
-    const chatteurData = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
+    const chatteurData = db.prepare('SELECT role, prenom FROM chatteurs WHERE id = ?').get(id);
     const userRole = (chatteurData?.role === 'manager' || chatteurData?.role === 'directeur') ? 'manager' : 'chatteur';
-    const userResult = db.prepare(
-      'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
-    ).run(email.trim(), hash, userRole, email.trim());
 
-    db.prepare('UPDATE chatteurs SET user_id = ?, email = ? WHERE id = ?').run(userResult.lastInsertRowid, email.trim(), id);
+    if (new_password) {
+      // Admin provides password directly
+      if (new_password.length < 8) throw new ApiError(400, 'Le mot de passe doit contenir au moins 8 caractères');
+      const hash = bcrypt.hashSync(new_password, 10);
+      const userResult = db.prepare(
+        'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
+      ).run(email.trim(), hash, userRole, email.trim());
+      db.prepare('UPDATE chatteurs SET user_id = ?, email = ? WHERE id = ?').run(userResult.lastInsertRowid, email.trim(), id);
+      res.status(201).json({ message: 'Compte utilisateur créé et lié', user_id: userResult.lastInsertRowid });
+    } else {
+      // Invitation-based: create with pending hash, send email
+      const userResult = db.prepare(
+        'INSERT INTO users (username, password_hash, role, email) VALUES (?, ?, ?, ?)'
+      ).run(email.trim(), PENDING_HASH, userRole, email.trim());
+      db.prepare('UPDATE chatteurs SET user_id = ?, email = ? WHERE id = ?').run(userResult.lastInsertRowid, email.trim(), id);
 
-    res.status(201).json({ message: 'Compte utilisateur créé et lié', user_id: userResult.lastInsertRowid });
+      let invitation_sent = false;
+      try {
+        const token = crypto.randomBytes(32).toString('hex');
+        db.prepare(
+          'INSERT INTO invitation_tokens (user_id, token, expires_at) VALUES (?, ?, datetime(\'now\', \'+48 hours\'))'
+        ).run(userResult.lastInsertRowid, token);
+        await sendEmail(email.trim(), 'Bienvenue sur Imperium — Définissez votre mot de passe', buildInvitationEmail(chatteurData?.prenom || 'Chatteur', token));
+        invitation_sent = true;
+      } catch (err) {
+        logger.error('Failed to send invitation email', { email: email.trim(), error: err.message });
+      }
+
+      res.status(201).json({ message: invitation_sent ? 'Compte créé et invitation envoyée' : 'Compte créé (email non envoyé)', user_id: userResult.lastInsertRowid, invitation_sent });
+    }
   }
 }));
 

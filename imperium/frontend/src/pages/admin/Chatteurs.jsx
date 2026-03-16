@@ -719,21 +719,26 @@ export default function Chatteurs({ embedded = false }) {
                     </>
                   )}
 
-                  {/* No account: show password field for manual creation */}
+                  {/* No account: password optional — invitation sent if left empty */}
                   {!form.user_id && (
                     <>
+                      <p style={{ fontSize: '0.75rem', color: '#64748b', margin: '0 0 0.5rem', lineHeight: 1.4 }}>
+                        Laissez le mot de passe vide pour envoyer une invitation par email.
+                      </p>
                       <div className="form-group">
-                        <label className="label">Mot de passe *</label>
+                        <label className="label">Mot de passe (optionnel)</label>
                         <input className="input-field" type="password" value={form.new_password || ''}
                           onChange={e => setForm({...form, new_password: e.target.value})}
-                          autoComplete="new-password" placeholder="Minimum 8 caractères" />
+                          autoComplete="new-password" placeholder="Laisser vide = invitation par email" />
                       </div>
-                      <div className="form-group">
-                        <label className="label">Confirmer le mot de passe</label>
-                        <input className="input-field" type="password" value={form.confirm_password || ''}
-                          onChange={e => setForm({...form, confirm_password: e.target.value})}
-                          autoComplete="new-password" placeholder="Retapez le mot de passe" />
-                      </div>
+                      {form.new_password && (
+                        <div className="form-group">
+                          <label className="label">Confirmer le mot de passe</label>
+                          <input className="input-field" type="password" value={form.confirm_password || ''}
+                            onChange={e => setForm({...form, confirm_password: e.target.value})}
+                            autoComplete="new-password" placeholder="Retapez le mot de passe" />
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
