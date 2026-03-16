@@ -1,5 +1,9 @@
 # IMPERIUM - Notes de projet
 
+## Documentation complète
+- **`IMPERIUM.md`** (racine du projet) — Audit exhaustif de l'application : architecture, 31 tables DB, 60+ endpoints API, moteur financier, bot Telegram, gamification, design system, équipe. **Toujours consulter ce fichier en premier** pour comprendre le projet.
+- **`ROADMAP.md`** (racine du projet) — Projets futurs et idées d'évolution : interface modèles, transformation SaaS, améliorations planning/ventes/bot/gamification/UX. **Consulter avant de proposer de nouvelles fonctionnalités** pour éviter les doublons.
+
 ## Stack technique
 - **Frontend**: React + Vite (port 5173), custom CSS inline (PAS de Tailwind), design marble white / navy blue / gold
 - **Backend**: Node.js + Express (port 3001), SQLite via `node-sqlite3-wasm` (PAS better-sqlite3)
