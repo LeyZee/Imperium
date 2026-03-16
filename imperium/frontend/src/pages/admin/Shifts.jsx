@@ -232,9 +232,7 @@ export default function Shifts() {
   async function handleBulkDelete() {
     setDeleting(true);
     try {
-      const params = deleteScope === 'week'
-        ? `?date_debut=${toISO(weekStart)}&date_fin=${toISO(addDays(weekStart, 6))}`
-        : '';
+      const params = `?date_debut=${toISO(weekStart)}&date_fin=${toISO(addDays(weekStart, 6))}`;
       const { data } = await api.delete(`/api/shifts/bulk${params}`);
       toast.success(`${data.count} shift(s) supprimé(s)`);
       setDeleteModal(false);
@@ -481,73 +479,30 @@ export default function Shifts() {
               </button>
             </div>
 
-            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-              {[
-                { key: 'week', label: 'Cette semaine' },
-                { key: 'all', label: 'Tous les shifts' },
-              ].map(opt => (
-                <button key={opt.key} onClick={() => setDeleteScope(opt.key)}
-                  className="haptic"
-                  style={{
-                    flex: 1, padding: '0.5rem', borderRadius: '8px', cursor: 'pointer',
-                    fontWeight: 600, fontSize: '0.8rem', transition: 'all 150ms ease',
-                    background: deleteScope === opt.key ? (opt.key === 'all' ? '#fef2f2' : '#fff7ed') : '#f8fafc',
-                    color: deleteScope === opt.key ? (opt.key === 'all' ? '#dc2626' : '#ea580c') : '#64748b',
-                    border: `1.5px solid ${deleteScope === opt.key ? (opt.key === 'all' ? '#fecaca' : '#fed7aa') : '#e2e8f0'}`,
-                  }}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-
             <div style={{
-              background: deleteScope === 'all' ? '#fef2f2' : '#fff7ed',
-              border: `1px solid ${deleteScope === 'all' ? '#fecaca' : '#fed7aa'}`,
+              background: '#fff7ed',
+              border: '1px solid #fed7aa',
               borderRadius: '8px', padding: '0.75rem', marginBottom: '1rem',
             }}>
               <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: 1.5 }}>
-                {deleteScope === 'week' ? (
-                  <>Vous allez supprimer <strong style={{ color: '#ea580c' }}>tous les shifts de la semaine du {weekStart.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' })}</strong>. Cette action est irréversible.</>
-                ) : (
-                  <>Vous allez supprimer <strong style={{ color: '#dc2626' }}>TOUS les shifts de la base de données</strong>. Cette action est irréversible et ne peut pas être annulée.</>
-                )}
+                Vous allez supprimer <strong style={{ color: '#ea580c' }}>tous les shifts de la semaine du {weekStart.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' })}</strong>. Cette action est irréversible.
               </p>
             </div>
 
-            {deleteScope === 'all' && (
-              <div style={{ marginBottom: '1rem' }}>
-                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
-                  Tapez <strong style={{ color: '#dc2626' }}>SUPPRIMER</strong> pour confirmer
-                </label>
-                <input
-                  type="text" value={deleteConfirmText}
-                  onChange={e => setDeleteConfirmText(e.target.value)}
-                  placeholder="SUPPRIMER"
-                  style={{
-                    width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px',
-                    border: '1.5px solid #e2e8f0', fontSize: '0.85rem', boxSizing: 'border-box',
-                    outline: 'none', transition: 'border-color 150ms ease',
-                  }}
-                  onFocus={e => e.target.style.borderColor = '#f87171'}
-                  onBlur={e => e.target.style.borderColor = '#e2e8f0'}
-                />
-              </div>
-            )}
-
             <button
               onClick={handleBulkDelete}
-              disabled={deleting || (deleteScope === 'all' && deleteConfirmText !== 'SUPPRIMER')}
+              disabled={deleting}
               className="haptic"
               style={{
                 width: '100%', padding: '0.65rem', borderRadius: '8px', cursor: 'pointer',
                 fontWeight: 700, fontSize: '0.85rem', border: 'none',
-                background: (deleting || (deleteScope === 'all' && deleteConfirmText !== 'SUPPRIMER')) ? '#e2e8f0' : '#ef4444',
-                color: (deleting || (deleteScope === 'all' && deleteConfirmText !== 'SUPPRIMER')) ? '#94a3b8' : 'white',
+                background: deleting ? '#e2e8f0' : '#ef4444',
+                color: deleting ? '#94a3b8' : 'white',
                 transition: 'all 150ms ease',
               }}>
               <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
                 <Trash2 size={16} />
-                {deleting ? 'Suppression...' : (deleteScope === 'week' ? 'Supprimer les shifts de la semaine' : 'Supprimer tous les shifts')}
+                {deleting ? 'Suppression...' : 'Supprimer les shifts de la semaine'}
               </span>
             </button>
           </div>

@@ -161,6 +161,9 @@ router.delete('/imports', authMiddleware, adminOnly, asyncHandler((req, res) => 
     WHERE notes LIKE 'Import Telegram%'
   `).all();
 
+  // Audit trail: log totals before deletion
+  const totalAmount = db.prepare("SELECT COALESCE(SUM(montant_brut), 0) as total FROM ventes WHERE notes LIKE 'Import Telegram%'").get();
+
   const result = db.prepare("DELETE FROM ventes WHERE notes LIKE 'Import Telegram%'").run();
 
   // Recalculate paies for all affected periods
@@ -170,7 +173,8 @@ router.delete('/imports', authMiddleware, adminOnly, asyncHandler((req, res) => 
     }
   }
 
-  logActivity(req.user.id, 'delete_all_telegram_imports', 'vente', null, `${result.changes} imports supprimés`);
+  logActivity(req.user.id, 'delete_all_telegram_imports', 'vente', null,
+    JSON.stringify({ count: result.changes, total_montant: totalAmount.total, periods: periods.length }));
   res.json({ message: `${result.changes} import(s) Telegram supprimé(s)`, count: result.changes });
 }));
 

@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { TIMEZONES, CRENEAUX } = require('../utils/constants');
 const { notifyChatteur } = require('../utils/notifier');
+const { logActivity } = require('../utils/activityLogger');
 
 const router = express.Router();
 
@@ -89,15 +90,14 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   res.status(201).json({ id: result.lastInsertRowid });
 }));
 
-// DELETE /api/shifts/bulk — Supprimer tous les shifts d'une semaine (ou tous)
+// DELETE /api/shifts/bulk — Supprimer les shifts d'une période (dates obligatoires)
 router.delete('/bulk', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { date_debut, date_fin } = req.query;
-  let result;
-  if (date_debut && date_fin) {
-    result = db.prepare('DELETE FROM shifts WHERE date >= ? AND date <= ?').run([date_debut, date_fin]);
-  } else {
-    result = db.prepare('DELETE FROM shifts').run();
+  if (!date_debut || !date_fin) {
+    throw new ApiError(400, 'date_debut et date_fin requis pour la suppression en masse');
   }
+  const result = db.prepare('DELETE FROM shifts WHERE date >= ? AND date <= ?').run([date_debut, date_fin]);
+  logActivity(req.user.id, 'bulk_delete_shifts', 'shift', null, `${result.changes} shifts supprimés (${date_debut} → ${date_fin})`);
   res.json({ message: `${result.changes} shift(s) supprimé(s)`, count: result.changes });
 }));
 

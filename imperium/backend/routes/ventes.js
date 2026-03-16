@@ -293,6 +293,10 @@ router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) =>
   const vente = db.prepare('SELECT chatteur_id, montant_brut, periode_debut, periode_fin FROM ventes WHERE id = ?').get(req.params.id);
   if (!vente) throw new ApiError(404, 'Vente introuvable');
 
+  // Audit trail: log full vente data before deletion
+  logActivity(req.user.id, 'delete_vente', 'vente', parseInt(req.params.id),
+    JSON.stringify({ montant_brut: vente.montant_brut, chatteur_id: vente.chatteur_id, periode_debut: vente.periode_debut, periode_fin: vente.periode_fin }));
+
   // Delete vente then recalculate paies (recalculatePaies has its own transaction)
   let recalcWarning = null;
   db.prepare('DELETE FROM ventes WHERE id = ?').run(req.params.id);
@@ -606,6 +610,10 @@ router.delete('/mes-ventes/:id', authMiddleware, asyncHandler((req, res) => {
   if (isPeriodeLocked(req.user.chatteur_id, vente.periode_debut, vente.periode_fin)) {
     throw new ApiError(403, 'Cette période est validée, les modifications ne sont plus possibles');
   }
+
+  // Audit trail before deletion
+  logActivity(req.user.id, 'delete_vente_chatteur', 'vente', parseInt(req.params.id),
+    JSON.stringify({ montant_brut: vente.montant_brut, chatteur_id: vente.chatteur_id, periode_debut: vente.periode_debut, periode_fin: vente.periode_fin }));
 
   db.prepare('DELETE FROM ventes WHERE id = ?').run(req.params.id);
 
