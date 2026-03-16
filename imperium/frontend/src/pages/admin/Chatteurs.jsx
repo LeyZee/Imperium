@@ -415,6 +415,14 @@ export default function Chatteurs({ embedded = false }) {
                 <label className="label">Prénom *</label>
                 <input className="input-field" value={form.prenom} onChange={e => setForm({...form, prenom: e.target.value})} required />
               </div>
+              {!editId && (
+                <div className="form-group">
+                  <label className="label">Email</label>
+                  <input className="input-field" type="email" value={form.email || ''}
+                    onChange={e => setForm({...form, email: e.target.value})}
+                    placeholder="Une invitation sera envoyée automatiquement" />
+                </div>
+              )}
               {!isManager && (
                 <div className="form-group">
                   <label className="label">Rôle</label>
