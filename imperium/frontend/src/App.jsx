@@ -5,10 +5,15 @@ import { ToastProvider } from './components/Toast.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import PageLoader from './components/PageLoader.jsx';
+import FloatingContact from './components/FloatingContact.jsx';
 import Navbar from './components/Navbar.jsx';
 import Sidebar from './components/Sidebar.jsx';
 
 // Lazy-loaded pages — code splitting
+const AgencyHome = lazy(() => import('./pages/AgencyHome.jsx'));
+const TeamPage = lazy(() => import('./pages/TeamPage.jsx'));
+const ImperiumPage = lazy(() => import('./pages/ImperiumPage.jsx'));
+const ContactPage = lazy(() => import('./pages/ContactPage.jsx'));
 const Login = lazy(() => import('./pages/Login.jsx'));
 const SetupPassword = lazy(() => import('./pages/SetupPassword.jsx'));
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail.jsx'));
@@ -26,6 +31,7 @@ const Settings = lazy(() => import('./pages/admin/Settings.jsx'));
 const ActivityLog = lazy(() => import('./pages/admin/ActivityLog.jsx'));
 const MalusPage = lazy(() => import('./pages/admin/Malus.jsx'));
 const Objectifs = lazy(() => import('./pages/admin/Objectifs.jsx'));
+const Annonces = lazy(() => import('./pages/admin/Annonces.jsx'));
 const ChatteurDetail = lazy(() => import('./pages/admin/ChatteurDetail.jsx'));
 const ChatteurDashboard = lazy(() => import('./pages/chatteur/Dashboard.jsx'));
 const MonPlanning = lazy(() => import('./pages/chatteur/MonPlanning.jsx'));
@@ -59,9 +65,10 @@ function AdminLayout() {
                 <Route path="facturation-modeles" element={<FacturationModeles />} />
                 <Route path="malus" element={<MalusPage />} />
                 <Route path="objectifs" element={<Objectifs />} />
+                <Route path="annonces" element={<Annonces />} />
                 <Route path="journal" element={<Navigate to="/admin/parametres?tab=journal" replace />} />
                 <Route path="settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="dashboard" replace />} />
+                <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
               </Routes>
             </Suspense>
           </ErrorBoundary>
@@ -89,7 +96,7 @@ function ChatteurLayout() {
                 <Route path="factures" element={<MesFactures />} />
                 <Route path="performance" element={<MaPerformance />} />
                 <Route path="profil" element={<MonProfil />} />
-                <Route path="*" element={<Navigate to="dashboard" replace />} />
+                <Route path="*" element={<Navigate to="/chatteur/dashboard" replace />} />
               </Routes>
             </Suspense>
           </ErrorBoundary>
@@ -120,9 +127,10 @@ function ManagerLayout() {
                 <Route path="facturation-modeles" element={<FacturationModeles />} />
                 <Route path="malus" element={<MalusPage />} />
                 <Route path="objectifs" element={<Objectifs />} />
+                <Route path="annonces" element={<Annonces />} />
                 <Route path="journal" element={<Navigate to="/manager/parametres?tab=journal" replace />} />
                 <Route path="settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="dashboard" replace />} />
+                <Route path="*" element={<Navigate to="/manager/dashboard" replace />} />
               </Routes>
             </Suspense>
           </ErrorBoundary>
@@ -189,10 +197,15 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/" element={<RootRedirect />} />
+          <Route path="/" element={<AgencyHome />} />
+          <Route path="/equipe" element={<TeamPage />} />
+          <Route path="/imperium" element={<ImperiumPage />} />
+          <Route path="/contact" element={<ContactPage />} />
+          <Route path="/dashboard" element={<RootRedirect />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
+      <FloatingContact />
     </ToastProvider>
   );
 }

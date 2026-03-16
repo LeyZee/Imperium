@@ -7,92 +7,6 @@ const { logActivity } = require('../utils/activityLogger');
 
 const router = express.Router();
 
-// GET /api/objectifs
-router.get('/', authMiddleware, asyncHandler((req, res) => {
-  const { periode_debut, periode_fin, chatteur_id } = req.query;
-  const isChatteur = req.user.role === 'chatteur';
-
-  let where = 'o.actif = 1';
-  const params = [];
-
-  if (isChatteur) {
-    where += ' AND (o.chatteur_id = ? OR o.chatteur_id IS NULL)';
-    params.push(req.user.chatteur_id);
-  } else if (chatteur_id) {
-    where += ' AND (o.chatteur_id = ? OR o.chatteur_id IS NULL)';
-    params.push(chatteur_id);
-  }
-
-  if (periode_debut) { where += ' AND o.periode_debut >= ?'; params.push(periode_debut); }
-  if (periode_fin) { where += ' AND o.periode_fin <= ?'; params.push(periode_fin); }
-
-  const rows = db.prepare(`
-    SELECT o.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
-      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte
-    FROM objectifs o
-    LEFT JOIN chatteurs c ON c.id = o.chatteur_id
-    LEFT JOIN modeles m ON m.id = o.modele_id
-    WHERE ${where}
-    ORDER BY o.created_at DESC
-  `).all(...params);
-
-  res.json(rows);
-}));
-
-// GET /api/objectifs/progress?periode_debut=&periode_fin=
-router.get('/progress', authMiddleware, asyncHandler((req, res) => {
-  const { periode_debut, periode_fin } = req.query;
-  if (!periode_debut || !periode_fin) throw new ApiError(400, 'periode_debut et periode_fin requis');
-
-  const isChatteur = req.user.role === 'chatteur';
-
-  let objWhere = 'o.actif = 1 AND o.periode_debut = ? AND o.periode_fin = ?';
-  const objParams = [periode_debut, periode_fin];
-
-  if (isChatteur) {
-    objWhere += ' AND (o.chatteur_id = ? OR o.chatteur_id IS NULL)';
-    objParams.push(req.user.chatteur_id);
-  }
-
-  const objectifs = db.prepare(`
-    SELECT o.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
-      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte
-    FROM objectifs o
-    LEFT JOIN chatteurs c ON c.id = o.chatteur_id
-    LEFT JOIN modeles m ON m.id = o.modele_id
-    WHERE ${objWhere}
-  `).all(...objParams);
-
-  // Compute progress for each objectif
-  const results = objectifs.map(obj => {
-    let venteWhere = 'v.periode_debut >= ? AND v.periode_fin <= ?';
-    const venteParams = [periode_debut, periode_fin];
-
-    if (obj.chatteur_id) {
-      venteWhere += ' AND v.chatteur_id = ?';
-      venteParams.push(obj.chatteur_id);
-    }
-    if (obj.modele_id) {
-      venteWhere += ' AND v.modele_id = ?';
-      venteParams.push(obj.modele_id);
-    }
-
-    const actual = db.prepare(`
-      SELECT COALESCE(SUM(v.montant_brut), 0) as total
-      FROM ventes v
-      WHERE ${venteWhere}
-    `).get(...venteParams);
-
-    return {
-      ...obj,
-      actual: actual.total,
-      progress: obj.montant_cible > 0 ? Math.round((actual.total / obj.montant_cible) * 100) : 0,
-    };
-  });
-
-  res.json(results);
-}));
-
 // GET /api/objectifs/suggestions?chatteur_id=X — data-driven goal suggestions
 router.get('/suggestions', authMiddleware, asyncHandler((req, res) => {
   let { chatteur_id } = req.query;
@@ -235,46 +149,243 @@ router.delete('/mon-objectif', authMiddleware, asyncHandler((req, res) => {
   res.json({ message: 'Objectif supprimé' });
 }));
 
-// POST /api/objectifs
-router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
-  const { chatteur_id, modele_id, montant_cible, periode_debut, periode_fin } = req.body;
+// ========== OBJECTIF COLLECTIF (must be before /:id routes) ==========
 
-  if (!montant_cible || !periode_debut || !periode_fin) {
-    throw new ApiError(400, 'montant_cible, periode_debut et periode_fin requis');
+// GET /api/objectifs/collectif?periode_debut=&periode_fin=
+router.get('/collectif', authMiddleware, asyncHandler((req, res) => {
+  const { periode_debut, periode_fin } = req.query;
+  if (!periode_debut || !periode_fin) throw new ApiError(400, 'periode_debut et periode_fin requis');
+
+  const objectif = db.prepare(
+    'SELECT * FROM objectifs_collectifs WHERE periode_debut = ? AND periode_fin = ? AND actif = 1'
+  ).get(periode_debut, periode_fin);
+
+  if (!objectif) return res.json(null);
+
+  const paliers = db.prepare(
+    'SELECT * FROM paliers_collectifs WHERE objectif_collectif_id = ? ORDER BY seuil_pct ASC'
+  ).all(objectif.id);
+
+  // Compute current team net_ht from paies
+  const actual = db.prepare(
+    'SELECT COALESCE(SUM(net_ht_eur), 0) as total FROM paies WHERE periode_debut = ? AND periode_fin = ?'
+  ).get(periode_debut, periode_fin);
+
+  let actual_net_ht = actual.total;
+
+  // Fallback: estimate from ventes when paies haven't been generated yet
+  if (actual_net_ht === 0) {
+    const ventesRows = db.prepare(
+      `SELECT v.montant_brut, pl.devise, pl.tva_rate, pl.commission_rate
+       FROM ventes v
+       JOIN plateformes pl ON pl.id = v.plateforme_id
+       WHERE v.periode_debut = ? AND v.periode_fin = ?
+         AND v.statut != 'rejetée'`
+    ).all(periode_debut, periode_fin);
+    actual_net_ht = ventesRows.reduce((sum, v) => {
+      const brut = v.montant_brut || 0;
+      const tva = v.tva_rate ?? 0.2;
+      const comm = v.commission_rate ?? 0.2;
+      const brutEur = v.devise === 'USD' ? brut * 0.92 : brut;
+      return sum + (brutEur / (1 + tva)) * (1 - comm);
+    }, 0);
   }
-  if (montant_cible <= 0) throw new ApiError(400, 'Le montant cible doit être positif');
+  const progress_pct = objectif.montant_cible > 0
+    ? Math.round((actual_net_ht / objectif.montant_cible) * 10000) / 100
+    : 0;
 
-  const result = db.prepare(
-    'INSERT INTO objectifs (chatteur_id, modele_id, montant_cible, periode_debut, periode_fin, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(chatteur_id ?? null, modele_id ?? null, montant_cible, periode_debut, periode_fin, req.user.id);
+  // Highest reached palier
+  const palier_atteint = paliers
+    .filter(p => progress_pct >= p.seuil_pct)
+    .sort((a, b) => b.seuil_pct - a.seuil_pct)[0] || null;
 
-  logActivity(req.user.id, 'create_objectif', 'objectif', result.lastInsertRowid, `${montant_cible}€`);
-
-  res.status(201).json({ id: result.lastInsertRowid });
+  res.json({
+    ...objectif,
+    paliers,
+    actual_net_ht: Math.round(actual_net_ht * 100) / 100,
+    progress_pct,
+    palier_atteint,
+  });
 }));
 
-// PUT /api/objectifs/:id
-router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
-  const { id } = req.params;
-  const { montant_cible } = req.body;
+// POST /api/objectifs/collectif
+router.post('/collectif', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { montant_cible, periode_debut, periode_fin, description, paliers } = req.body;
 
-  const existing = db.prepare('SELECT id FROM objectifs WHERE id = ? AND actif = 1').get(id);
-  if (!existing) throw new ApiError(404, 'Objectif non trouvé');
+  if (!montant_cible || montant_cible <= 0) throw new ApiError(400, 'montant_cible doit être positif');
+  if (!periode_debut || !periode_fin) throw new ApiError(400, 'periode_debut et periode_fin requis');
+  if (!paliers || !Array.isArray(paliers) || paliers.length === 0) {
+    throw new ApiError(400, 'Au moins un palier requis');
+  }
 
-  db.prepare('UPDATE objectifs SET montant_cible = COALESCE(?, montant_cible) WHERE id = ?')
-    .run(montant_cible ?? null, id);
+  for (const p of paliers) {
+    if (!p.seuil_pct || p.seuil_pct <= 0) throw new ApiError(400, 'seuil_pct doit être positif');
+    if (!p.bonus_par_chatteur || p.bonus_par_chatteur <= 0) throw new ApiError(400, 'bonus_par_chatteur doit être positif');
+    if (!p.label) throw new ApiError(400, 'label requis pour chaque palier');
+  }
 
-  logActivity(req.user.id, 'update_objectif', 'objectif', parseInt(id));
+  const existingActive = db.prepare(
+    'SELECT id FROM objectifs_collectifs WHERE periode_debut = ? AND periode_fin = ? AND actif = 1'
+  ).get(periode_debut, periode_fin);
+  if (existingActive) throw new ApiError(409, 'Un objectif collectif existe déjà pour cette période');
 
-  res.json({ message: 'Objectif mis à jour' });
+  // Check for soft-deleted record (UNIQUE constraint on periode_debut, periode_fin)
+  const existingSoft = db.prepare(
+    'SELECT id FROM objectifs_collectifs WHERE periode_debut = ? AND periode_fin = ? AND actif = 0'
+  ).get(periode_debut, periode_fin);
+
+  const insertPalier = db.prepare(
+    'INSERT INTO paliers_collectifs (objectif_collectif_id, seuil_pct, bonus_par_chatteur, label, emoji) VALUES (?, ?, ?, ?, ?)'
+  );
+
+  const txn = db.transaction(() => {
+    let objId;
+    if (existingSoft) {
+      // Reactivate soft-deleted record
+      db.prepare(
+        'UPDATE objectifs_collectifs SET montant_cible = ?, description = ?, actif = 1, created_by = ? WHERE id = ?'
+      ).run(montant_cible, description ?? null, req.user.id, existingSoft.id);
+      objId = existingSoft.id;
+      // Clear old paliers
+      db.prepare('DELETE FROM paliers_collectifs WHERE objectif_collectif_id = ?').run(objId);
+    } else {
+      const result = db.prepare(
+        'INSERT INTO objectifs_collectifs (montant_cible, periode_debut, periode_fin, description, created_by) VALUES (?, ?, ?, ?, ?)'
+      ).run(montant_cible, periode_debut, periode_fin, description ?? null, req.user.id);
+      objId = result.lastInsertRowid;
+    }
+    for (const p of paliers) {
+      insertPalier.run(objId, p.seuil_pct, p.bonus_par_chatteur, p.label, p.emoji ?? null);
+    }
+    return objId;
+  });
+
+  const id = txn();
+  logActivity(req.user.id, 'create_objectif_collectif', 'objectif_collectif', id, `${montant_cible}€`);
+  res.status(201).json({ id });
 }));
 
-// DELETE /api/objectifs/:id (soft delete)
-router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+// PUT /api/objectifs/collectif/:id
+router.put('/collectif/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;
-  db.prepare('UPDATE objectifs SET actif = 0 WHERE id = ?').run(id);
-  logActivity(req.user.id, 'delete_objectif', 'objectif', parseInt(id));
-  res.json({ message: 'Objectif supprimé' });
+  const { montant_cible, description, paliers } = req.body;
+
+  const existing = db.prepare('SELECT id FROM objectifs_collectifs WHERE id = ? AND actif = 1').get(id);
+  if (!existing) throw new ApiError(404, 'Objectif collectif non trouvé');
+
+  const txn = db.transaction(() => {
+    if (montant_cible !== undefined || description !== undefined) {
+      db.prepare(
+        'UPDATE objectifs_collectifs SET montant_cible = COALESCE(?, montant_cible), description = COALESCE(?, description) WHERE id = ?'
+      ).run(montant_cible ?? null, description ?? null, id);
+    }
+
+    if (paliers && Array.isArray(paliers)) {
+      db.prepare('DELETE FROM paliers_collectifs WHERE objectif_collectif_id = ?').run(id);
+      const ins = db.prepare(
+        'INSERT INTO paliers_collectifs (objectif_collectif_id, seuil_pct, bonus_par_chatteur, label, emoji) VALUES (?, ?, ?, ?, ?)'
+      );
+      for (const p of paliers) {
+        ins.run(id, p.seuil_pct, p.bonus_par_chatteur, p.label, p.emoji ?? null);
+      }
+    }
+  });
+
+  txn();
+  logActivity(req.user.id, 'update_objectif_collectif', 'objectif_collectif', parseInt(id));
+  res.json({ message: 'Objectif collectif mis à jour' });
+}));
+
+// DELETE /api/objectifs/collectif/:id (soft delete)
+router.delete('/collectif/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { id } = req.params;
+  db.prepare('UPDATE objectifs_collectifs SET actif = 0 WHERE id = ?').run(id);
+  logActivity(req.user.id, 'delete_objectif_collectif', 'objectif_collectif', parseInt(id));
+  res.json({ message: 'Objectif collectif supprimé' });
+}));
+
+// ========== PALIERS PRIMES INDIVIDUELLES (must be before /:id routes) ==========
+
+// GET /api/objectifs/paliers-primes — global (not period-specific)
+router.get('/paliers-primes', authMiddleware, asyncHandler((req, res) => {
+  const paliers = db.prepare(
+    'SELECT * FROM paliers_primes WHERE actif = 1 ORDER BY seuil_net_ht ASC'
+  ).all();
+
+  res.json(paliers);
+}));
+
+// POST /api/objectifs/paliers-primes — global (not period-specific)
+router.post('/paliers-primes', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { paliers } = req.body;
+
+  if (!paliers || !Array.isArray(paliers) || paliers.length === 0) {
+    throw new ApiError(400, 'Au moins un palier requis');
+  }
+
+  for (const p of paliers) {
+    if (!p.seuil_net_ht || p.seuil_net_ht <= 0) throw new ApiError(400, 'seuil_net_ht doit être positif');
+    if (!p.bonus || p.bonus <= 0) throw new ApiError(400, 'bonus doit être positif');
+    if (!p.label) throw new ApiError(400, 'label requis pour chaque palier');
+  }
+
+  const existing = db.prepare(
+    'SELECT id FROM paliers_primes WHERE actif = 1 LIMIT 1'
+  ).get();
+  if (existing) throw new ApiError(409, 'Des paliers existent déjà');
+
+  const ins = db.prepare(
+    "INSERT INTO paliers_primes (periode_debut, periode_fin, seuil_net_ht, bonus, label, emoji, couleur) VALUES ('global', 'global', ?, ?, ?, ?, ?)"
+  );
+
+  const txn = db.transaction(() => {
+    for (const p of paliers) {
+      ins.run(p.seuil_net_ht, p.bonus, p.label, p.emoji ?? null, p.couleur ?? null);
+    }
+  });
+
+  txn();
+  logActivity(req.user.id, 'create_paliers_primes', 'paliers_primes', null, `${paliers.length} paliers`);
+  res.status(201).json({ message: 'Paliers créés', count: paliers.length });
+}));
+
+// PUT /api/objectifs/paliers-primes — replace all paliers (global)
+router.put('/paliers-primes', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { paliers } = req.body;
+
+  if (!paliers || !Array.isArray(paliers) || paliers.length === 0) {
+    throw new ApiError(400, 'Au moins un palier requis');
+  }
+
+  for (const p of paliers) {
+    if (!p.seuil_net_ht || p.seuil_net_ht <= 0) throw new ApiError(400, 'seuil_net_ht doit être positif');
+    if (!p.bonus || p.bonus <= 0) throw new ApiError(400, 'bonus doit être positif');
+    if (!p.label) throw new ApiError(400, 'label requis pour chaque palier');
+  }
+
+  const del = db.prepare('DELETE FROM paliers_primes WHERE actif = 1');
+  const ins = db.prepare(
+    "INSERT INTO paliers_primes (periode_debut, periode_fin, seuil_net_ht, bonus, label, emoji, couleur) VALUES ('global', 'global', ?, ?, ?, ?, ?)"
+  );
+
+  const txn = db.transaction(() => {
+    del.run();
+    for (const p of paliers) {
+      ins.run(p.seuil_net_ht, p.bonus, p.label, p.emoji ?? null, p.couleur ?? null);
+    }
+  });
+
+  txn();
+  logActivity(req.user.id, 'update_paliers_primes', 'paliers_primes', null, `${paliers.length} paliers`);
+  res.json({ message: 'Paliers mis à jour', count: paliers.length });
+}));
+
+// DELETE /api/objectifs/paliers-primes (soft delete — global)
+router.delete('/paliers-primes', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  db.prepare('UPDATE paliers_primes SET actif = 0 WHERE actif = 1').run();
+
+  logActivity(req.user.id, 'delete_paliers_primes', 'paliers_primes');
+  res.json({ message: 'Paliers supprimés' });
 }));
 
 module.exports = router;

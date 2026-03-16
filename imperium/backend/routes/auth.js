@@ -82,7 +82,7 @@ router.post('/login', asyncHandler((req, res) => {
   res.cookie('token', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
     maxAge: 24 * 60 * 60 * 1000 // 24h
   });
 
@@ -101,7 +101,7 @@ router.post('/login', asyncHandler((req, res) => {
 
 // POST /api/auth/logout — clear auth cookie
 router.post('/logout', asyncHandler((req, res) => {
-  res.clearCookie('token', { httpOnly: true, sameSite: 'strict' });
+  res.clearCookie('token', { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict' });
   res.json({ message: 'Déconnexion réussie' });
 }));
 
@@ -112,7 +112,17 @@ router.get('/me', authMiddleware, asyncHandler((req, res) => {
 
   const chatteur = db.prepare('SELECT * FROM chatteurs WHERE user_id = ?').get(user.id) || null;
 
-  res.json({ ...user, chatteur });
+  res.json({
+    user: {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      prenom: user.prenom || chatteur?.prenom || null,
+      chatteur_id: chatteur?.id || null,
+      photo: user.photo || null,
+      couleur: chatteur?.couleur ?? null,
+    }
+  });
 }));
 
 // POST /api/auth/register (admin only — create user)
@@ -294,7 +304,7 @@ router.post('/setup-password/:token', asyncHandler((req, res) => {
   res.cookie('token', jwtToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
     maxAge: 24 * 60 * 60 * 1000,
   });
 

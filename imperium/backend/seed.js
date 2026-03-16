@@ -9,14 +9,23 @@ async function login() {
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: 'admin', password: 'admin123' })
+    body: JSON.stringify({ email: 'admin@impera-agency.com', password: process.env.ADMIN_DEFAULT_PASSWORD || 'Admin123!' })
   });
-  const { token } = await res.json();
-  return token;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Login failed: ${err.error || res.statusText}`);
+  }
+  // Extract token from Set-Cookie header
+  const setCookie = res.headers.get('set-cookie') || '';
+  const match = setCookie.match(/token=([^;]+)/);
+  if (match) return match[1];
+  // Fallback: try JSON body
+  const data = await res.json().catch(() => ({}));
+  return data.token;
 }
 
 function api(token) {
-  const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+  const headers = { 'Content-Type': 'application/json', 'Cookie': `token=${token}` };
   return {
     get: async (path) => { const r = await fetch(`${BASE}${path}`, { headers }); return r.json(); },
     post: async (path, body) => {

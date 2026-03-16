@@ -1,54 +1,40 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Target, Plus, Edit2, Trash2 } from 'lucide-react';
+import { Target, Plus, Edit2, Trash2, Trophy } from 'lucide-react';
 import api from '../../utils/api';
 import { useToast } from '../../components/Toast.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
-import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
 function getPeriode() {
   const now = new Date();
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
-  if (now.getDate() <= 15) {
+  if (now.getDate() < 15) {
     return { debut: `${y}-${m}-01`, fin: `${y}-${m}-15` };
   }
-  const lastDay = new Date(y, now.getMonth() + 1, 0).getDate();
-  return { debut: `${y}-${m}-16`, fin: `${y}-${m}-${lastDay}` };
+  const next = new Date(y, now.getMonth() + 1, 1);
+  const ny = next.getFullYear(), nm = String(next.getMonth() + 1).padStart(2, '0');
+  return { debut: `${y}-${m}-15`, fin: `${ny}-${nm}-01` };
 }
 
-function progressColor(pct) {
-  if (pct >= 100) return '#f5b731';
-  if (pct >= 80) return '#22c55e';
-  if (pct >= 50) return '#f59e0b';
-  return '#ef4444';
-}
+const DEFAULT_PALIERS = [
+  { seuil_pct: 100, bonus_par_chatteur: 20, label: 'Objectif', emoji: '\uD83C\uDFAF' },
+];
 
 export default function Objectifs() {
   const [periode, setPeriode] = useState(getPeriode);
-  const [objectifs, setObjectifs] = useState([]);
-  const [progress, setProgress] = useState([]);
-  const [chatteurs, setChatteurs] = useState([]);
-  const [modeles, setModeles] = useState([]);
+  const [collectif, setCollectif] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
-  const [modal, setModal] = useState(null);
-  const [deleteId, setDeleteId] = useState(null);
+  const [collectifModal, setCollectifModal] = useState(null);
+  const [deleteCollectif, setDeleteCollectif] = useState(false);
   const toast = useToast();
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
     setFetchError(null);
     try {
-      const [oRes, pRes, cRes, mRes] = await Promise.all([
-        api.get(`/api/objectifs?periode_debut=${periode.debut}&periode_fin=${periode.fin}`),
-        api.get(`/api/objectifs/progress?periode_debut=${periode.debut}&periode_fin=${periode.fin}`),
-        api.get('/api/chatteurs'),
-        api.get('/api/modeles'),
-      ]);
-      setObjectifs(oRes.data);
-      setProgress(pRes.data);
-      setChatteurs(cRes.data);
-      setModeles(mRes.data);
+      const colRes = await api.get(`/api/objectifs/collectif?periode_debut=${periode.debut}&periode_fin=${periode.fin}`);
+      setCollectif(colRes.data);
     } catch {
       setFetchError('Impossible de charger les données.');
     }
@@ -57,27 +43,39 @@ export default function Objectifs() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  const handleSave = async (form) => {
+  const handleSaveCollectif = async (form) => {
     try {
       if (form.id) {
-        await api.put(`/api/objectifs/${form.id}`, { montant_cible: form.montant_cible });
-        toast('Objectif mis à jour', 'success');
+        await api.put(`/api/objectifs/collectif/${form.id}`, {
+          montant_cible: form.montant_cible,
+          description: form.description,
+          paliers: form.paliers,
+        });
+        toast('Objectif collectif mis à jour', 'success');
       } else {
-        await api.post('/api/objectifs', form);
-        toast('Objectif créé', 'success');
+        await api.post('/api/objectifs/collectif', {
+          montant_cible: form.montant_cible,
+          periode_debut: form.periode_debut,
+          periode_fin: form.periode_fin,
+          description: form.description,
+          paliers: form.paliers,
+        });
+        toast('Objectif collectif créé', 'success');
+        // Update periode to match the new objective so fetchAll loads it
+        setPeriode({ debut: form.periode_debut, fin: form.periode_fin });
       }
-      setModal(null);
+      setCollectifModal(null);
       fetchAll();
     } catch (err) {
       toast(err.response?.data?.error || 'Erreur', 'error');
     }
   };
 
-  const handleDelete = async () => {
+  const handleDeleteCollectif = async () => {
     try {
-      await api.delete(`/api/objectifs/${deleteId}`);
-      toast('Objectif supprimé', 'success');
-      setDeleteId(null);
+      await api.delete(`/api/objectifs/collectif/${collectif.id}`);
+      toast('Objectif collectif supprimé', 'success');
+      setDeleteCollectif(false);
       fetchAll();
     } catch (err) {
       toast(err.response?.data?.error || 'Erreur', 'error');
@@ -90,16 +88,6 @@ export default function Objectifs() {
         <h1 style={{ fontWeight: 700, color: '#1a1f2e', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <Target size={24} color="#f5b731" /> Objectifs
         </h1>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <input type="date" value={periode.debut} onChange={e => setPeriode(p => ({ ...p, debut: e.target.value }))}
-            className="input-field" style={{ width: 'auto', minWidth: 0 }} />
-          <span style={{ color: '#94a3b8' }}>→</span>
-          <input type="date" value={periode.fin} onChange={e => setPeriode(p => ({ ...p, fin: e.target.value }))}
-            className="input-field" style={{ width: 'auto', minWidth: 0 }} />
-          <button onClick={() => setModal({})} className="btn-primary haptic">
-            <Plus size={16} /> Ajouter
-          </button>
-        </div>
       </div>
 
       {fetchError ? (
@@ -109,232 +97,361 @@ export default function Objectifs() {
         </div>
       ) : loading ? (
         <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner" /></div>
-      ) : progress.length === 0 ? (
-        <div className="card" style={{ padding: '3rem', textAlign: 'center', color: '#94a3b8' }}>
-          Aucun objectif pour cette période
-        </div>
       ) : (
-        <div className="stagger-children" style={{ display: 'grid', gap: '1rem' }}>
-          {progress.map(obj => {
-            const color = progressColor(obj.progress);
-            return (
-              <div key={obj.id} className="card hover-lift">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', fontWeight: 700, color: '#1a1f2e', fontSize: '0.95rem' }}>
-                      {obj.chatteur_couleur != null && (
-                        <span style={{
-                          width: 28, height: 28, borderRadius: '50%', display: 'inline-flex', flexShrink: 0,
-                          background: `${CHATTEUR_COLORS[obj.chatteur_couleur]?.bg || '#94a3b8'}20`,
-                          border: `1.5px solid ${CHATTEUR_COLORS[obj.chatteur_couleur]?.bg || '#94a3b8'}50`,
-                          alignItems: 'center', justifyContent: 'center',
-                          fontSize: '0.65rem', fontWeight: 700,
-                          color: CHATTEUR_COLORS[obj.chatteur_couleur]?.bg || '#94a3b8',
-                        }}>
-                          {obj.chatteur_prenom?.[0]?.toUpperCase() || '?'}
-                        </span>
-                      )}
-                      {obj.chatteur_prenom || 'Global'}
-                    </span>
-                    {obj.modele_pseudo && (
-                      <span className="badge" style={{
-                        fontSize: '0.7rem', padding: '2px 8px', borderRadius: '99px', fontWeight: 600,
-                        background: obj.modele_couleur_fond || '#f1f5f9',
-                        color: obj.modele_couleur_texte || '#475569',
-                      }}>
-                        {obj.modele_pseudo}
-                      </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{ fontWeight: 700, color, fontSize: '1.1rem' }}>{obj.progress}%</span>
-                    <button onClick={() => setModal(obj)} className="icon-btn" title="Modifier"><Edit2 size={14} /></button>
-                    <button onClick={() => setDeleteId(obj.id)} className="icon-btn" style={{ color: '#ef4444' }} title="Supprimer"><Trash2 size={14} /></button>
-                  </div>
-                </div>
-
-                <div style={{ background: '#f1f5f9', borderRadius: '999px', height: '10px', overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${Math.min(obj.progress, 100)}%`, height: '100%',
-                    background: color, borderRadius: '999px', transition: 'width 500ms ease',
-                  }} />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.75rem', color: '#64748b' }}>
-                  <span>Réalisé: {obj.actual.toFixed(2)} €</span>
-                  <span>Objectif: {obj.montant_cible.toFixed(2)} €</span>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <>
+          {/* ========== OBJECTIF COLLECTIF ========== */}
+          <CollectifSection
+            collectif={collectif}
+            onEdit={() => setCollectifModal(collectif || {})}
+            onDelete={() => setDeleteCollectif(true)}
+          />
+        </>
       )}
 
-      {modal && (
-        <ObjectifModal data={modal} chatteurs={chatteurs} modeles={modeles} periode={periode}
-          onClose={() => setModal(null)} onSave={handleSave} />
+      {collectifModal && (
+        <CollectifModal data={collectifModal}
+          onClose={() => setCollectifModal(null)} onSave={handleSaveCollectif} />
       )}
 
-      {deleteId && (
-        <ConfirmModal message="Supprimer cet objectif ?" onConfirm={handleDelete} onCancel={() => setDeleteId(null)} />
+      {deleteCollectif && (
+        <ConfirmModal message="Supprimer l'objectif collectif ?" onConfirm={handleDeleteCollectif} onCancel={() => setDeleteCollectif(false)} />
       )}
     </div>
   );
 }
 
-function ObjectifModal({ data, chatteurs, modeles, periode, onClose, onSave }) {
-  const isEdit = !!data.id;
-  const [form, setForm] = useState({
-    chatteur_id: data.chatteur_id || '',
-    modele_id: data.modele_id || '',
-    montant_cible: data.montant_cible || '',
-    periode_debut: data.periode_debut || periode.debut,
-    periode_fin: data.periode_fin || periode.fin,
-    ...(isEdit ? { id: data.id } : {}),
-  });
-  const [suggestions, setSuggestions] = useState(null);
-  const [loadingSugg, setLoadingSugg] = useState(false);
+/* ─── Tier colors now come from DB via shared utility ─── */
 
-  // Fetch suggestions when chatteur changes
-  useEffect(() => {
-    if (isEdit) return;
-    setLoadingSugg(true);
-    const url = form.chatteur_id
-      ? `/api/objectifs/suggestions?chatteur_id=${form.chatteur_id}`
-      : '/api/objectifs/suggestions';
-    api.get(url)
-      .then(res => setSuggestions(res.data))
-      .catch(() => setSuggestions(null))
-      .finally(() => setLoadingSugg(false));
-  }, [form.chatteur_id, isEdit]);
+/* ========== COLLECTIF SECTION ========== */
+
+function CollectifSection({ collectif, onEdit, onDelete }) {
+  if (!collectif) {
+    return (
+      <div className="card" style={{
+        padding: '2rem', textAlign: 'center',
+        background: 'linear-gradient(135deg, #fefce8 0%, #fff7ed 100%)',
+        border: '1px solid rgba(245,183,49,0.2)',
+      }}>
+        <Trophy size={32} color="#f5b731" style={{ margin: '0 auto 0.75rem' }} />
+        <p style={{ fontWeight: 600, color: '#1a1f2e', marginBottom: '0.5rem' }}>
+          Objectif collectif
+        </p>
+        <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
+          {`D\u00e9finissez un objectif de chiffre d'affaires Net HT pour toute l'\u00e9quipe. Quand l'objectif est atteint, chaque chatteur re\u00e7oit un bonus.`}
+        </p>
+        <button onClick={onEdit} className="btn-primary haptic">
+          <Plus size={14} /> {`Cr\u00e9er un objectif collectif`}
+        </button>
+      </div>
+    );
+  }
+
+  const { actual_net_ht = 0, montant_cible = 1, progress_pct = 0, palier_atteint, description, paliers = [] } = collectif;
+  const reached = progress_pct >= 100;
+  const bonus = paliers.length > 0 ? paliers[paliers.length - 1].bonus_par_chatteur : 0;
+  const barPct = Math.min(100, progress_pct);
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-        <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem' }}>
-          {isEdit ? 'Modifier' : 'Nouvel'} objectif
-        </h2>
+    <div className="card" style={{
+      background: 'linear-gradient(135deg, #fefce8 0%, #fff7ed 100%)',
+      border: '1px solid rgba(245,183,49,0.2)',
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <span style={{ animation: reached ? 'trophyBounce 1.5s ease-in-out infinite' : 'none', display: 'inline-flex' }}>
+            <Trophy size={20} color="#f5b731" />
+          </span>
+          <h2 style={{ fontSize: '1rem', fontWeight: 700, color: '#1a1f2e', margin: 0 }}>
+            Objectif collectif
+          </h2>
+          {reached && (
+            <span style={{
+              fontSize: '0.7rem', padding: '2px 10px', borderRadius: '99px', fontWeight: 600,
+              background: 'rgba(16,185,129,0.1)', color: '#059669', border: '1px solid rgba(16,185,129,0.3)',
+            }}>
+              {'\u2705'} Atteint !
+            </span>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button onClick={onEdit} className="icon-btn" title="Modifier" aria-label="Modifier l'objectif collectif"><Edit2 size={14} /></button>
+          <button onClick={onDelete} className="icon-btn" style={{ color: '#ef4444' }} title="Supprimer" aria-label="Supprimer l'objectif collectif"><Trash2 size={14} /></button>
+        </div>
+      </div>
 
-        {!isEdit && (
-          <>
-            <label className="label">Chatteur (vide = global)</label>
-            <select value={form.chatteur_id} onChange={e => setForm(f => ({ ...f, chatteur_id: e.target.value }))}
-              className="input-field">
-              <option value="">Global (tous)</option>
-              {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
-            </select>
+      <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '0.75rem' }}>
+        {`Quand l'\u00e9quipe atteint l'objectif de CA Net HT, chaque chatteur re\u00e7oit `}
+        <strong style={{ color: '#10b981' }}>+{bonus}{'\u20ac'}</strong> de bonus.
+      </p>
 
-            <label className="label" style={{ marginTop: '0.75rem' }}>Modèle (optionnel)</label>
-            <select value={form.modele_id} onChange={e => setForm(f => ({ ...f, modele_id: e.target.value }))}
-              className="input-field">
-              <option value="">Tous les modèles</option>
-              {modeles.map(m => <option key={m.id} value={m.id}>{m.pseudo}</option>)}
-            </select>
-          </>
-        )}
+      {description && (
+        <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '0.75rem', fontStyle: 'italic' }}>
+          {description}
+        </p>
+      )}
 
-        <label className="label" style={{ marginTop: '0.75rem' }}>Montant cible (€)</label>
-        <input type="number" step="0.01" value={form.montant_cible}
-          onChange={e => setForm(f => ({ ...f, montant_cible: e.target.value }))}
-          className="input-field" placeholder="Ex: 500" />
+      {/* Progress numbers */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+        <span style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1a1f2e' }}>
+          {actual_net_ht.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {'\u20ac'}
+        </span>
+        <span style={{ fontSize: '0.85rem', color: '#64748b' }}>
+          / {montant_cible.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {'\u20ac'} ({progress_pct.toFixed(1)}%)
+        </span>
+      </div>
 
-        {/* Suggestions basées sur l'historique */}
-        {!isEdit && suggestions && !loadingSugg && suggestions.periodes?.length > 0 && (
+      {/* Thermometer */}
+      <div style={{ position: 'relative', marginBottom: '1rem' }}>
+        <div style={{
+          background: '#e2e8f0', borderRadius: '999px', height: '16px', overflow: 'hidden',
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.06)',
+          position: 'relative',
+        }}>
           <div style={{
-            marginTop: '0.75rem', padding: '0.75rem',
-            background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0',
+            width: `${barPct}%`, height: '100%', borderRadius: '999px',
+            background: reached
+              ? 'linear-gradient(90deg, #f5b731cc, #f5b731)'
+              : 'linear-gradient(90deg, #94a3b8, #64748b)',
+            transition: 'width 800ms ease',
+            animation: reached ? 'glowPulseGold 2s ease-in-out infinite' : 'none',
+          }} />
+          {reached && (
+            <div style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              borderRadius: '999px',
+              background: 'linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.35) 50%, transparent 100%)',
+              backgroundSize: '200% 100%',
+              animation: 'shimmer 2s linear infinite',
+              pointerEvents: 'none',
+            }} />
+          )}
+        </div>
+
+        {/* Target marker at 100% */}
+        <div style={{
+          position: 'absolute', right: 0, top: '-5px',
+          transform: 'translateX(50%)',
+        }}>
+          <div style={{
+            width: '26px', height: '26px', borderRadius: '50%',
+            background: reached ? '#f5b731' : '#cbd5e1',
+            border: `2.5px solid ${reached ? '#f5b731' : '#fff'}`,
+            boxShadow: reached ? '0 3px 10px rgba(245,183,49,0.4)' : '0 1px 3px rgba(0,0,0,0.15)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '0.7rem', fontWeight: 700,
           }}>
-            {/* Mini sparkline historique */}
-            <div style={{ marginBottom: '0.6rem' }}>
-              <p style={{ fontSize: '0.68rem', color: '#94a3b8', marginBottom: '0.3rem' }}>
-                Historique ({suggestions.periodes.length} dernières périodes)
-                {suggestions.tendance !== 0 && (
-                  <span style={{
-                    marginLeft: '0.5rem', fontWeight: 600,
-                    color: suggestions.tendance > 0 ? '#10b981' : '#ef4444',
-                  }}>
-                    {suggestions.tendance > 0 ? '↗' : '↘'} {Math.abs(suggestions.tendance)}%
-                  </span>
-                )}
-              </p>
-              <div style={{ display: 'flex', gap: '3px', alignItems: 'flex-end', height: '28px' }}>
-                {(() => {
-                  const maxVal = Math.max(...suggestions.periodes.map(p => p.total_brut), 1);
-                  return suggestions.periodes.map((p, i) => {
-                    const h = Math.max((p.total_brut / maxVal) * 24, 2);
-                    const isLast = i === suggestions.periodes.length - 1;
-                    return (
-                      <div key={p.debut} title={`${p.total_brut.toLocaleString('fr-FR')} $`}
-                        style={{
-                          flex: 1, height: `${h}px`, borderRadius: '3px 3px 0 0',
-                          background: isLast ? '#f5b731' : '#cbd5e1',
-                          cursor: 'default', transition: 'height 300ms ease',
-                        }} />
-                    );
-                  });
-                })()}
-              </div>
-            </div>
-
-            {/* Stats */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#64748b', marginBottom: '0.6rem' }}>
-              <span>Moy: <strong>{suggestions.moyenne.toLocaleString('fr-FR')} $</strong></span>
-              <span>Meilleure: <strong>{suggestions.meilleure.toLocaleString('fr-FR')} $</strong></span>
-            </div>
-
-            {/* 3 suggestion buttons */}
-            <div style={{ display: 'flex', gap: '0.4rem' }}>
-              {[
-                { label: 'Réaliste', value: suggestions.suggestions.realiste, color: '#10b981', bg: 'rgba(16,185,129,0.08)' },
-                { label: 'Ambitieux', value: suggestions.suggestions.ambitieux, color: '#f59e0b', bg: 'rgba(245,158,11,0.08)' },
-                { label: 'Challenge', value: suggestions.suggestions.challenge, color: '#ef4444', bg: 'rgba(239,68,68,0.08)' },
-              ].map(s => (
-                <button key={s.label}
-                  onClick={() => setForm(f => ({ ...f, montant_cible: s.value }))}
-                  style={{
-                    flex: 1, padding: '0.4rem 0.3rem', borderRadius: '8px',
-                    border: `1px solid ${s.color}30`, background: s.bg,
-                    cursor: 'pointer', textAlign: 'center', transition: 'all 150ms',
-                  }}
-                  className="hover-lift"
-                >
-                  <p style={{ fontSize: '0.62rem', color: s.color, fontWeight: 600, margin: 0, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                    {s.label}
-                  </p>
-                  <p style={{ fontSize: '0.82rem', fontWeight: 700, color: '#1a1f2e', margin: '0.1rem 0 0' }}>
-                    {s.value.toLocaleString('fr-FR')} $
-                  </p>
-                </button>
-              ))}
-            </div>
+            {reached ? '\uD83C\uDFC6' : '\uD83C\uDFAF'}
           </div>
-        )}
-        {!isEdit && loadingSugg && (
-          <div style={{ marginTop: '0.5rem', textAlign: 'center', padding: '0.5rem' }}>
-            <span className="spinner" style={{ width: 16, height: 16 }} />
-          </div>
-        )}
+        </div>
+      </div>
 
-        {!isEdit && (
-          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-            <div style={{ flex: 1 }}>
-              <label className="label">Début</label>
-              <input type="date" value={form.periode_debut}
-                onChange={e => setForm(f => ({ ...f, periode_debut: e.target.value }))} className="input-field" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label className="label">Fin</label>
-              <input type="date" value={form.periode_fin}
-                onChange={e => setForm(f => ({ ...f, periode_fin: e.target.value }))} className="input-field" />
-            </div>
+      {/* Bonus card */}
+      <div style={{
+        padding: '0.75rem 1rem', borderRadius: '10px',
+        background: reached ? 'rgba(16,185,129,0.08)' : '#f8fafc',
+        border: `1px solid ${reached ? 'rgba(16,185,129,0.2)' : '#e2e8f0'}`,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      }}>
+        <div>
+          <div style={{ fontSize: '0.78rem', fontWeight: 600, color: '#1a1f2e' }}>
+            {reached ? 'Bonus collectif activ\u00e9 !' : `Objectif : ${montant_cible.toLocaleString('fr-FR')} \u20ac Net HT`}
           </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} className="btn-secondary">Annuler</button>
-          <button onClick={() => onSave(form)} className="btn-primary haptic">{isEdit ? 'Modifier' : 'Créer'}</button>
+          <div style={{ fontSize: '0.68rem', color: '#64748b', marginTop: '0.15rem' }}>
+            {reached ? 'Chaque chatteur re\u00e7oit le bonus' : `Il reste ${Math.max(0, montant_cible - actual_net_ht).toLocaleString('fr-FR')} \u20ac \u00e0 atteindre`}
+          </div>
+        </div>
+        <div style={{
+          padding: '0.4rem 0.8rem', borderRadius: '20px',
+          background: reached ? 'rgba(16,185,129,0.15)' : 'rgba(245,183,49,0.1)',
+          fontSize: '1rem', fontWeight: 800,
+          color: reached ? '#059669' : '#f5b731',
+        }}>
+          +{bonus}{'\u20ac'}
         </div>
       </div>
     </div>
   );
 }
+
+/* ========== COLLECTIF MODAL ========== */
+
+/* ─── Duration helpers for collective objective ─── */
+function computePeriodDates(duree) {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth(); // 0-indexed
+  const mStr = String(m + 1).padStart(2, '0');
+
+  if (duree === 'periode') {
+    // Current quinzaine
+    if (now.getDate() < 15) {
+      return { debut: `${y}-${mStr}-01`, fin: `${y}-${mStr}-15` };
+    }
+    const next = new Date(y, m + 1, 1);
+    return { debut: `${y}-${mStr}-15`, fin: `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01` };
+  }
+  if (duree === 'mois') {
+    const last = new Date(y, m + 1, 0).getDate();
+    return { debut: `${y}-${mStr}-01`, fin: `${y}-${mStr}-${last}` };
+  }
+  // annee
+  return { debut: `${y}-01-01`, fin: `${y}-12-31` };
+}
+
+function dureeLabel(duree) {
+  const dates = computePeriodDates(duree);
+  const fmt = d => new Date(d + 'T00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${fmt(dates.debut)} — ${fmt(dates.fin)}`;
+}
+
+const DUREE_OPTIONS = [
+  { value: 'periode', label: 'Quinzaine', desc: 'Période de paie en cours' },
+  { value: 'mois', label: 'Mois', desc: 'Mois calendaire en cours' },
+  { value: 'annee', label: 'Ann\u00e9e', desc: 'Ann\u00e9e en cours' },
+];
+
+function CollectifModal({ data, onClose, onSave }) {
+  const isEdit = !!data.id;
+  const existingBonus = (data.paliers && data.paliers.length > 0) ? data.paliers[data.paliers.length - 1].bonus_par_chatteur : '';
+  const [form, setForm] = useState({
+    id: data.id || null,
+    montant_cible: data.montant_cible || '',
+    description: data.description || '',
+    bonus: existingBonus,
+    duree: 'periode',
+  });
+  const [suggestions, setSuggestions] = useState(null);
+
+  useEffect(() => {
+    if (isEdit) return;
+    api.get('/api/objectifs/suggestions')
+      .then(res => setSuggestions(res.data))
+      .catch(() => {});
+  }, [isEdit]);
+
+  const handleSubmit = () => {
+    const dates = computePeriodDates(form.duree);
+    const parsed = {
+      ...form,
+      montant_cible: parseFloat(form.montant_cible),
+      periode_debut: dates.debut,
+      periode_fin: dates.fin,
+      paliers: [{
+        seuil_pct: 100,
+        bonus_par_chatteur: parseFloat(form.bonus),
+        label: 'Objectif',
+        emoji: '\uD83C\uDFAF',
+      }],
+    };
+    onSave(parsed);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+        <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Trophy size={18} color="#f5b731" />
+          {isEdit ? 'Modifier' : 'Nouvel'} objectif collectif
+        </h2>
+
+        <p style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '1rem' }}>
+          {`D\u00e9finissez un objectif de chiffre d'affaires Net HT pour l'\u00e9quipe. Quand l'objectif est atteint, chaque chatteur actif re\u00e7oit le bonus.`}
+        </p>
+
+        {/* Duration selector — only for creation */}
+        {!isEdit && (
+          <>
+            <label className="label">{`Dur\u00e9e`}</label>
+            <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '0.5rem' }}>
+              {DUREE_OPTIONS.map(opt => {
+                const active = form.duree === opt.value;
+                return (
+                  <button key={opt.value}
+                    onClick={() => setForm(f => ({ ...f, duree: opt.value }))}
+                    style={{
+                      flex: 1, padding: '0.5rem 0.4rem', borderRadius: '10px',
+                      border: `2px solid ${active ? '#f5b731' : '#e2e8f0'}`,
+                      background: active ? 'rgba(245,183,49,0.08)' : '#fff',
+                      cursor: 'pointer', textAlign: 'center',
+                      transition: 'all 200ms ease',
+                    }}
+                    className="hover-lift"
+                  >
+                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: active ? '#92400e' : '#1a1f2e' }}>
+                      {opt.label}
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '0.1rem' }}>
+                      {opt.desc}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '0.75rem' }}>
+              {dureeLabel(form.duree)}
+            </div>
+          </>
+        )}
+
+        <label className="label">Objectif CA Net HT ({'\u20ac'})</label>
+        <input type="number" step="0.01" value={form.montant_cible}
+          onChange={e => setForm(f => ({ ...f, montant_cible: e.target.value }))}
+          className="input-field" placeholder="Ex: 10000" />
+
+        {/* Suggestions — scaled by duration (API returns quinzaine-based values) */}
+        {!isEdit && suggestions && suggestions.periodes?.length > 0 && (() => {
+          const mult = form.duree === 'annee' ? 24 : form.duree === 'mois' ? 2 : 1;
+          const scale = v => Math.round(v * mult);
+          return (
+          <div style={{
+            marginTop: '0.5rem', display: 'flex', gap: '0.4rem',
+          }}>
+            {[
+              { label: 'R\u00e9aliste', value: scale(suggestions.suggestions.realiste), color: '#10b981' },
+              { label: 'Ambitieux', value: scale(suggestions.suggestions.ambitieux), color: '#f59e0b' },
+              { label: 'Challenge', value: scale(suggestions.suggestions.challenge), color: '#ef4444' },
+            ].map(s => (
+              <button key={s.label}
+                onClick={() => setForm(f => ({ ...f, montant_cible: s.value }))}
+                style={{
+                  flex: 1, padding: '0.35rem', borderRadius: '8px',
+                  border: `1px solid ${s.color}30`, background: `${s.color}08`,
+                  cursor: 'pointer', textAlign: 'center',
+                }}
+                className="hover-lift"
+              >
+                <p style={{ fontSize: '0.6rem', color: s.color, fontWeight: 600, margin: 0, textTransform: 'uppercase' }}>
+                  {s.label}
+                </p>
+                <p style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1a1f2e', margin: '0.1rem 0 0' }}>
+                  {s.value.toLocaleString('fr-FR')} {'\u20ac'}
+                </p>
+              </button>
+            ))}
+          </div>
+          );
+        })()}
+
+        <label className="label" style={{ marginTop: '0.75rem' }}>Bonus par chatteur ({'\u20ac'})</label>
+        <input type="number" step="0.01" value={form.bonus}
+          onChange={e => setForm(f => ({ ...f, bonus: e.target.value }))}
+          className="input-field" placeholder="Ex: 10" />
+        <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.15rem', display: 'block' }}>
+          Montant en {'\u20ac'} que chaque chatteur recevra quand l'objectif est atteint
+        </span>
+
+        <label className="label" style={{ marginTop: '0.75rem' }}>Description (optionnel)</label>
+        <input type="text" value={form.description}
+          onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+          className="input-field" placeholder={`Message motivant pour l'\u00e9quipe...`} />
+
+        <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} className="btn-secondary">Annuler</button>
+          <button onClick={handleSubmit} className="btn-primary haptic">{isEdit ? 'Modifier' : 'Cr\u00e9er'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+

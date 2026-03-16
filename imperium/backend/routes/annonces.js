@@ -5,6 +5,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { logActivity } = require('../utils/activityLogger');
 const { notifyAllChatteurs } = require('../utils/notifier');
+const { broadcastAnnouncement } = require('../utils/telegramSender');
 
 const router = express.Router();
 
@@ -26,8 +27,8 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 }));
 
 // POST /api/annonces
-router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
-  const { title, content } = req.body;
+router.post('/', authMiddleware, adminOrManager, asyncHandler(async (req, res) => {
+  const { title, content, sendTelegram } = req.body;
   if (!title?.trim() || !content?.trim()) throw new ApiError(400, 'Titre et contenu requis');
 
   const result = db.prepare(
@@ -36,10 +37,19 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 
   logActivity(req.user.id, 'create_annonce', 'annonce', result.lastInsertRowid, title.trim());
 
-  // Notify all active chatteurs
+  // Notify all active chatteurs (in-app)
   notifyAllChatteurs('annonce', 'Nouvelle annonce', title.trim(), '/chatteur/dashboard');
 
-  res.status(201).json({ id: result.lastInsertRowid });
+  // Also send via Telegram DM if requested
+  let telegramStats = null;
+  if (sendTelegram) {
+    const authorName = req.user.prenom || req.user.email || null;
+    telegramStats = await broadcastAnnouncement(title.trim(), content.trim(), authorName);
+    logActivity(req.user.id, 'telegram_annonce', 'annonce', result.lastInsertRowid,
+      `Telegram: ${telegramStats.sent} envoyés, ${telegramStats.failed} échoués, ${telegramStats.skipped} non liés`);
+  }
+
+  res.status(201).json({ id: result.lastInsertRowid, telegramStats });
 }));
 
 // PUT /api/annonces/:id

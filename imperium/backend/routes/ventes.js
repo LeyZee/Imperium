@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../database');
 const { authMiddleware, adminOnly, adminOrManager } = require('../middleware/auth');
-const { recalculatePaies } = require('../services/paie-calculator');
+const { recalculatePaies: _recalculatePaies } = require('../services/paie-calculator');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
@@ -10,6 +10,19 @@ const { getExchangeRate } = require('../utils/rateCache');
 const { validateDate } = require('../utils/validation');
 const { notifyAdminsAndManagers, notifyChatteur } = require('../utils/notifier');
 const { logActivity } = require('../utils/activityLogger');
+const { snapshotPaliers, checkPalierChanges } = require('../services/palier-notifier');
+
+/**
+ * Wrapper around recalculatePaies that also checks for palier changes
+ * and sends notifications (async, fire-and-forget).
+ */
+function recalculatePaies(debut, fin) {
+  const snap = snapshotPaliers(debut, fin);
+  const result = _recalculatePaies(debut, fin);
+  // Async check — fire-and-forget, never blocks
+  checkPalierChanges(snap, debut, fin).catch(() => {});
+  return result;
+}
 
 const router = express.Router();
 
@@ -187,23 +200,21 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     }
   }
 
-  // Atomic: insert vente + recalculate paies in a single transaction
-  let recalcWarning = null;
-  const insertAndRecalc = db.transaction(() => {
-    const r = db.prepare(`
-      INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?)
-    `).run(chatteur_id, effectiveModeleId || null, effectivePlateformeId, montant_brut, periode_debut, periode_fin, notes || null, shift_id ?? null);
-    recalculatePaies(periode_debut, periode_fin);
-    return r;
-  });
+  // Determine source based on user role
+  const source = req.user.role === 'manager' ? 'manager' : 'admin';
 
-  let result;
+  // Insert vente then recalculate paies (recalculatePaies has its own transaction)
+  let recalcWarning = null;
+  const result = db.prepare(`
+    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?, ?)
+  `).run(chatteur_id, effectiveModeleId || null, effectivePlateformeId, montant_brut, periode_debut, periode_fin, notes || null, shift_id ?? null, source);
+
   try {
-    result = insertAndRecalc();
+    recalculatePaies(periode_debut, periode_fin);
   } catch (err) {
-    logger.error('Erreur insert vente + recalcul paies', { error: err.message });
-    throw new ApiError(500, 'Erreur lors de l\'enregistrement de la vente');
+    logger.error('Recalcul paies échoué après insert vente', { error: err.message });
+    recalcWarning = 'Vente enregistrée mais recalcul des paies échoué';
   }
 
   // Notify the chatteur
@@ -243,33 +254,29 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     }
   }
 
-  // Atomic: update vente + recalculate paies in a single transaction
+  // Update vente then recalculate paies (recalculatePaies has its own transaction)
   let recalcWarning = null;
-  const updateAndRecalc = db.transaction(() => {
-    db.prepare(`
-      UPDATE ventes SET
-        montant_brut = COALESCE(?, montant_brut),
-        modele_id = COALESCE(?, modele_id),
-        plateforme_id = COALESCE(?, plateforme_id),
-        periode_debut = COALESCE(?, periode_debut),
-        periode_fin = COALESCE(?, periode_fin),
-        notes = COALESCE(?, notes),
-        shift_id = COALESCE(?, shift_id)
-      WHERE id = ?
-    `).run(montant_brut ?? null, modele_id ?? null, plateforme_id ?? null, periode_debut ?? null, periode_fin ?? null, notes ?? null, shift_id ?? null, req.params.id);
+  db.prepare(`
+    UPDATE ventes SET
+      montant_brut = COALESCE(?, montant_brut),
+      modele_id = COALESCE(?, modele_id),
+      plateforme_id = COALESCE(?, plateforme_id),
+      periode_debut = COALESCE(?, periode_debut),
+      periode_fin = COALESCE(?, periode_fin),
+      notes = COALESCE(?, notes),
+      shift_id = COALESCE(?, shift_id)
+    WHERE id = ?
+  `).run(montant_brut ?? null, modele_id ?? null, plateforme_id ?? null, periode_debut ?? null, periode_fin ?? null, notes ?? null, shift_id ?? null, req.params.id);
 
+  try {
     const newPeriod = db.prepare('SELECT periode_debut, periode_fin FROM ventes WHERE id = ?').get(req.params.id);
     if (newPeriod) recalculatePaies(newPeriod.periode_debut, newPeriod.periode_fin);
     if (current && (current.periode_debut !== newPeriod?.periode_debut || current.periode_fin !== newPeriod?.periode_fin)) {
       recalculatePaies(current.periode_debut, current.periode_fin);
     }
-  });
-
-  try {
-    updateAndRecalc();
   } catch (err) {
-    logger.error('Erreur update vente + recalcul paies', { error: err.message });
-    throw new ApiError(500, 'Erreur lors de la modification de la vente');
+    logger.error('Recalcul paies échoué après update vente', { error: err.message });
+    recalcWarning = 'Vente modifiée mais recalcul des paies échoué';
   }
 
   notifyChatteur(current.chatteur_id, 'vente', 'Vente modifiée',
@@ -286,17 +293,15 @@ router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) =>
   const vente = db.prepare('SELECT chatteur_id, montant_brut, periode_debut, periode_fin FROM ventes WHERE id = ?').get(req.params.id);
   if (!vente) throw new ApiError(404, 'Vente introuvable');
 
-  // Atomic: delete vente + recalculate paies
+  // Delete vente then recalculate paies (recalculatePaies has its own transaction)
   let recalcWarning = null;
-  const deleteAndRecalc = db.transaction(() => {
-    db.prepare('DELETE FROM ventes WHERE id = ?').run(req.params.id);
-    recalculatePaies(vente.periode_debut, vente.periode_fin);
-  });
+  db.prepare('DELETE FROM ventes WHERE id = ?').run(req.params.id);
+
   try {
-    deleteAndRecalc();
+    recalculatePaies(vente.periode_debut, vente.periode_fin);
   } catch (err) {
-    logger.error('Erreur suppression vente + recalcul paies', { error: err.message });
-    throw new ApiError(500, 'Erreur lors de la suppression de la vente');
+    logger.error('Recalcul paies échoué après suppression vente', { error: err.message });
+    recalcWarning = 'Vente supprimée mais recalcul des paies échoué';
   }
 
   notifyChatteur(vente.chatteur_id, 'vente', 'Vente supprimée',
@@ -356,12 +361,30 @@ router.get('/summary', authMiddleware, asyncHandler((req, res) => {
     LIMIT 1
   `).get(...params);
 
+  // Fetch primes & total payé from paies table for this period
+  let totalPrimes = 0, totalPaye = 0;
+  if (periode_debut && periode_fin) {
+    const paiesSummary = db.prepare(`
+      SELECT
+        COALESCE(SUM(prime), 0) as total_primes,
+        COALESCE(SUM(total_chatteur), 0) as total_paye
+      FROM paies
+      WHERE periode_debut = ? AND periode_fin = ?
+    `).get(periode_debut, periode_fin);
+    if (paiesSummary) {
+      totalPrimes = paiesSummary.total_primes;
+      totalPaye = paiesSummary.total_paye;
+    }
+  }
+
   res.json({
     taux_change: tauxChange,
     total_brut_usd: totalBrut,
     total_ttc_eur: totalTTC,
     total_ht_eur: totalHT,
     total_net_ht_eur: totalNetHT,
+    total_primes: totalPrimes,
+    total_paye: totalPaye,
     by_plateforme: byPlateforme,
     top_chatteur: topChatteur
   });
@@ -482,8 +505,8 @@ router.post('/mes-ventes', authMiddleware, asyncHandler((req, res) => {
   const autoNotes = notes || `Ajout manuel — ${chatteur?.prenom || 'Chatteur'}`;
 
   const result = db.prepare(`
-    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'en_attente', ?)
+    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'en_attente', ?, 'chatteur')
   `).run(req.user.chatteur_id, modele_id || null, plateforme_id, montant, periode.debut, periode.fin, autoNotes, shift_id ?? null);
 
   // Recalculate paies (vente counts in paie preview even before validation)
@@ -548,8 +571,7 @@ router.put('/mes-ventes/:id', authMiddleware, asyncHandler((req, res) => {
       modele_id = COALESCE(?, modele_id),
       plateforme_id = COALESCE(?, plateforme_id),
       notes = COALESCE(?, notes),
-      shift_id = COALESCE(?, shift_id),
-      updated_at = CURRENT_TIMESTAMP
+      shift_id = COALESCE(?, shift_id)
     WHERE id = ?
   `).run(montant_brut ?? null, modele_id ?? null, plateforme_id ?? null, notes ?? null, shift_id ?? null, req.params.id);
 

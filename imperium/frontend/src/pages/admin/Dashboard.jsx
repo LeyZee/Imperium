@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, ChevronDown, ArrowRight, AlertTriangle, RefreshCw, Gift, Clock } from 'lucide-react';
+import { Euro, Building2, Users, Trophy, TrendingUp, TrendingDown, Calendar, ChevronDown, ArrowRight, AlertTriangle, RefreshCw, Gift, Clock, LayoutDashboard } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/index.js';
 import StatCard from '../../components/StatCard.jsx';
@@ -8,6 +8,7 @@ import { CardSkeleton } from '../../components/Skeleton.jsx';
 import usePolling from '../../hooks/usePolling.js';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 import { CHATTEUR_COLORS } from '../../constants/colors';
+import { buildPalierColorsMap } from '../../utils/palierColors.js';
 
 function formatPeriodLabel(debut, fin) {
   const d = new Date(debut + 'T00:00:00');
@@ -43,6 +44,7 @@ function TrendBadge({ value }) {
 
 
 /* ── Feature B: Widget Cagnotte Prime ── */
+
 function CagnotteWidget({ classementData, historiqueData }) {
   if (!classementData) {
     return (
@@ -53,16 +55,19 @@ function CagnotteWidget({ classementData, historiqueData }) {
     );
   }
 
-  const { classement, total_net_ht_equipe, prime_rates } = classementData;
-  const top3 = (classement || []).slice(0, 3);
-  const totalPrimePool = top3.reduce((s, _, i) => s + (total_net_ht_equipe * (prime_rates[i] || 0)), 0);
+  const { classement, total_net_ht_equipe, paliers_primes } = classementData;
+  const top5 = (classement || []).slice(0, 5);
+  const paliers = paliers_primes || [];
+  const PALIER_COLORS = buildPalierColorsMap(paliers);
+  const maxSeuil = paliers.length > 0 ? paliers[paliers.length - 1].seuil_net_ht : 0;
 
-  const moyennePrime = historiqueData?.moyenne_prime_pool || 0;
-  const trendPct = moyennePrime > 0
-    ? parseFloat((((totalPrimePool - moyennePrime) / moyennePrime) * 100).toFixed(1))
-    : null;
-
-  const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
+  const RANK_BADGES = [
+    { rank: '1er', color: '#f5b731', bg: 'rgba(245,183,49,0.12)', badgeBg: 'linear-gradient(135deg, #f5b731, #e6a817)' },
+    { rank: '2e', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', badgeBg: 'linear-gradient(135deg, #94a3b8, #64748b)' },
+    { rank: '3e', color: '#cd7f32', bg: 'rgba(205,127,50,0.12)', badgeBg: 'linear-gradient(135deg, #cd7f32, #a0522d)' },
+    { rank: '4e', color: '#6366f1', bg: 'rgba(99,102,241,0.08)', badgeBg: 'linear-gradient(135deg, #6366f1, #4f46e5)' },
+    { rank: '5e', color: '#14b8a6', bg: 'rgba(20,184,166,0.08)', badgeBg: 'linear-gradient(135deg, #14b8a6, #0d9488)' },
+  ];
 
   return (
     <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -71,40 +76,112 @@ function CagnotteWidget({ classementData, historiqueData }) {
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Gift size={16} color="#f5b731" />
-          <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Cagnotte Prime</h3>
+          <Gift size={16} color="#3b82f6" />
+          <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Classement & Primes</h3>
         </div>
-        {trendPct !== null && <TrendBadge value={trendPct} />}
       </div>
       <div style={{ padding: '1.25rem' }}>
+        {/* Net HT \u00e9quipe */}
         <div style={{ marginBottom: '1rem' }}>
           <p style={{ fontSize: '0.72rem', fontWeight: 500, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.25rem' }}>
-            {"Pool total (p\u00e9riode)"}
+            {"Net HT \u00e9quipe (p\u00e9riode)"}
           </p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#f5b731' }}>
-            {totalPrimePool.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {"\u20ac"}
-          </p>
-          <p style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-            Sur {total_net_ht_equipe.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"} net HT {"\u00e9quipe"}
+          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: '#1b2e4b' }}>
+            {(total_net_ht_equipe || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"}
           </p>
         </div>
 
-        {top3.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-            {top3.map((c, i) => {
-              const primeAmount = total_net_ht_equipe * (prime_rates[i] || 0);
+        {/* Paliers bar */}
+        {paliers.length > 0 && (
+          <div style={{ marginBottom: '1.25rem' }}>
+            <div style={{ display: 'flex', gap: '0.35rem' }}>
+              {paliers.map((p, i) => {
+                const colors = PALIER_COLORS[p.label] || { bg: '#f0f4ff', border: '#3b82f6', text: '#3b82f6' };
+                return (
+                  <div key={i} style={{
+                    flex: 1, textAlign: 'center', padding: '0.4rem 0.2rem',
+                    borderRadius: '6px', border: `1.5px solid ${colors.border}`,
+                    background: colors.bg,
+                  }}>
+                    <div style={{ fontSize: '0.9rem', lineHeight: 1 }}>{p.emoji || ''}</div>
+                    <div style={{ fontSize: '0.62rem', fontWeight: 700, color: colors.text, marginTop: '0.15rem' }}>
+                      {p.seuil_net_ht}{"\u20ac"}
+                    </div>
+                    <div style={{ fontSize: '0.58rem', color: colors.text, opacity: 0.8 }}>
+                      +{p.bonus}{"\u20ac"}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Classement */}
+        {top5.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {top5.map((c, i) => {
+              const palierAtteint = paliers.length > 0
+                ? [...paliers].reverse().find(p => c.total_net_ht >= p.seuil_net_ht)
+                : null;
+              const nextPalier = paliers.find(p => c.total_net_ht < p.seuil_net_ht);
+              const progressMax = nextPalier ? nextPalier.seuil_net_ht : maxSeuil;
+              const progressMin = palierAtteint ? palierAtteint.seuil_net_ht : 0;
+              const progressPct = progressMax > progressMin
+                ? Math.min(100, ((c.total_net_ht - progressMin) / (progressMax - progressMin)) * 100)
+                : 100;
+              const palierColors = palierAtteint ? (PALIER_COLORS[palierAtteint.label] || PALIER_COLORS['Bronze']) : null;
+              const badge = RANK_BADGES[i] || { rank: `${i+1}e`, color: '#94a3b8', bg: 'rgba(0,0,0,0.03)', badgeBg: 'linear-gradient(135deg, #94a3b8, #64748b)' };
+
               return (
                 <div key={c.id} style={{
-                  display: 'flex', alignItems: 'center', gap: '0.6rem',
-                  padding: '0.5rem 0.75rem', borderRadius: '8px',
-                  background: i === 0 ? 'rgba(245,183,49,0.08)' : 'transparent',
+                  padding: '0.6rem 0.75rem', borderRadius: '10px',
+                  background: badge.bg,
+                  border: `1px solid ${badge.color}20`,
+                  transition: 'transform 200ms ease, box-shadow 200ms ease',
                 }}>
-                  <span style={{ fontSize: '1rem' }}>{medals[i]}</span>
-                  <span style={{ flex: 1, fontWeight: 600, fontSize: '0.82rem', color: '#1b2e4b' }}>{c.prenom}</span>
-                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{(prime_rates[i] * 100).toFixed(2)}%</span>
-                  <span style={{ fontWeight: 700, fontSize: '0.82rem', color: '#10b981' }}>
-                    +{primeAmount.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {"\u20ac"}
-                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.3rem' }}>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: '1.6rem', height: '1.6rem', borderRadius: '50%',
+                      background: badge.badgeBg,
+                      color: '#fff', fontSize: '0.65rem', fontWeight: 800,
+                      flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                      letterSpacing: '-0.02em',
+                    }}>{badge.rank}</span>
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: '0.82rem', color: '#1b2e4b' }}>{c.prenom}</span>
+                    {palierAtteint && (
+                      <span style={{
+                        fontSize: '0.6rem', fontWeight: 700, padding: '0.1rem 0.4rem',
+                        borderRadius: '10px', border: `1px solid ${palierColors?.border || '#ccc'}`,
+                        background: palierColors?.bg || '#f5f5f5', color: palierColors?.text || '#666',
+                      }}>
+                        {palierAtteint.emoji} {palierAtteint.label}
+                      </span>
+                    )}
+                    <span style={{ fontWeight: 700, fontSize: '0.78rem', color: '#1b2e4b' }}>
+                      {(c.total_net_ht || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"}
+                    </span>
+                  </div>
+                  {/* Mini progress bar */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', paddingLeft: '2.1rem' }}>
+                    <div style={{
+                      flex: 1, height: '4px', borderRadius: '2px',
+                      background: 'rgba(0,0,0,0.06)', overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        height: '100%', borderRadius: '2px',
+                        width: `${progressPct}%`,
+                        background: palierColors?.border || badge.color,
+                        transition: 'width 0.5s ease',
+                      }} />
+                    </div>
+                    {nextPalier && (
+                      <span style={{ fontSize: '0.55rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                        {nextPalier.emoji} {nextPalier.seuil_net_ht}{"\u20ac"}
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -115,14 +192,6 @@ function CagnotteWidget({ classementData, historiqueData }) {
           </p>
         )}
 
-        {moyennePrime > 0 && (
-          <div style={{
-            marginTop: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '8px',
-            background: '#f8fafc', fontSize: '0.72rem', color: '#64748b',
-          }}>
-            {"Moyenne historique : "}{moyennePrime.toLocaleString('fr-FR', { maximumFractionDigits: 2 })} {"\u20ac"} / {"p\u00e9riode"}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -255,6 +324,79 @@ function SalesEvolutionChart({ historiqueData }) {
   );
 }
 
+/* ── Objectif Collectif Widget (admin version) ── */
+function ObjectifCollectifWidget({ data, navigate }) {
+  if (!data || !data.montant_cible) return null;
+
+  const { actual_net_ht = 0, montant_cible = 1, progress_pct = 0, palier_atteint, description } = data;
+  const reached = progress_pct >= 100;
+  const barPct = Math.min(100, progress_pct);
+  const remaining = Math.max(0, montant_cible - actual_net_ht);
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: 'hidden', border: reached ? '2px solid rgba(16,185,129,0.2)' : '2px solid rgba(245,183,49,0.12)' }}>
+      <div style={{
+        padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        background: reached ? 'rgba(16,185,129,0.04)' : 'rgba(245,183,49,0.04)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <Users size={16} color={reached ? '#10b981' : '#1b2e4b'} />
+          <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Objectif Collectif</h3>
+        </div>
+        <span style={{
+          fontSize: '0.68rem', fontWeight: 700,
+          color: reached ? '#059669' : '#f5b731',
+          background: reached ? 'rgba(16,185,129,0.1)' : 'rgba(245,183,49,0.1)',
+          padding: '0.15rem 0.45rem', borderRadius: '12px',
+        }}>
+          {reached ? '✅ Atteint' : `${progress_pct.toFixed(0)}%`}
+        </span>
+      </div>
+      <div style={{ padding: '1rem 1.25rem' }}>
+        {description && <p style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '0.5rem' }}>{description}</p>}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '0.5rem' }}>
+          <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#1b2e4b' }}>
+            {actual_net_ht.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €
+          </span>
+          <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8' }}>
+            / {montant_cible.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €
+          </span>
+        </div>
+        {/* Progress bar */}
+        <div style={{
+          height: '10px', borderRadius: '5px',
+          background: '#f1f5f9', overflow: 'hidden', marginBottom: '0.6rem',
+        }}>
+          <div style={{
+            height: '100%', borderRadius: '5px',
+            background: reached ? 'linear-gradient(90deg, #10b981, #34d399)' : 'linear-gradient(90deg, #f5b731, #fbbf24)',
+            width: `${barPct}%`, transition: 'width 600ms ease',
+          }} />
+        </div>
+        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+          {reached
+            ? '🎉 L\'équipe a atteint l\'objectif !'
+            : `🚀 Encore ${remaining.toLocaleString('fr-FR')} € pour atteindre l'objectif`}
+        </div>
+      </div>
+      <button
+        onClick={() => navigate('/admin/objectifs')}
+        style={{
+          width: '100%', padding: '0.55rem', borderTop: '1px solid rgba(0,0,0,0.04)',
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: '0.72rem', fontWeight: 600, color: '#f5b731',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem',
+          transition: 'background 150ms',
+        }}
+        className="hover-row"
+      >
+        Gérer les objectifs <ArrowRight size={12} />
+      </button>
+    </div>
+  );
+}
+
 /* ── Main Dashboard ── */
 export default function AdminDashboard() {
   const [data, setData] = useState(null);
@@ -268,6 +410,7 @@ export default function AdminDashboard() {
   const [enLigne, setEnLigne] = useState(null);
   const [previsionnel, setPrevisionnel] = useState(null);
   const [conflits, setConflits] = useState(null);
+  const [objectifCollectif, setObjectifCollectif] = useState(null);
   const [expandedCreneau, setExpandedCreneau] = useState(null);
   const navigate = useNavigate();
 
@@ -296,13 +439,14 @@ export default function AdminDashboard() {
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 13);
 
-      const [modeleRes, classementRes, histRes, enLigneRes, prevRes, conflitsRes] = await Promise.all([
+      const [modeleRes, classementRes, histRes, enLigneRes, prevRes, conflitsRes, objCollRes] = await Promise.all([
         api.get(`/api/ventes/par-modele?periode_debut=${pd}&periode_fin=${pf}`).catch(() => ({ data: [] })),
         api.get(`/api/chatteurs/classement?periode_debut=${pd}&periode_fin=${pf}`).catch(() => ({ data: null })),
         api.get('/api/chatteurs/classement/historique-cagnotte?nb_periodes=6').catch(() => ({ data: null })),
         api.get('/api/shifts/en-ligne').catch(() => ({ data: null })),
         api.get(`/api/paies/previsionnel?debut=${pd}&fin=${pf}`).catch(() => ({ data: null })),
         api.get(`/api/shifts/conflits?date_debut=${fmtDate(weekStart)}&date_fin=${fmtDate(weekEnd)}`).catch(() => ({ data: null })),
+        api.get(`/api/objectifs/collectif?periode_debut=${pd}&periode_fin=${pf}`).catch(() => ({ data: null })),
       ]);
 
       setVentesParModele(Array.isArray(modeleRes.data) ? modeleRes.data : []);
@@ -311,6 +455,7 @@ export default function AdminDashboard() {
       setEnLigne(enLigneRes.data || null);
       setPrevisionnel(prevRes.data || null);
       setConflits(conflitsRes.data || null);
+      setObjectifCollectif(objCollRes.data || null);
     } catch {
       setError('Impossible de charger les données du dashboard.');
     } finally {
@@ -358,7 +503,7 @@ export default function AdminDashboard() {
           color: '#f5b731',
         },
         {
-          title: 'Net Agence',
+          title: 'Net HT Équipe',
           value: `${(data.totalNetHt || 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} \u20ac`,
           subtitle: <TrendBadge value={data.tendances?.netAgence} />,
           icon: Building2,
@@ -390,19 +535,20 @@ export default function AdminDashboard() {
       {/* Header with period selector */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.5rem' }}>
         <div>
-          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Dashboard</h1>
+          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><LayoutDashboard size={22} color="#f5b731" /> Dashboard</h1>
           <p style={{ fontSize: '0.85rem', color: '#64748b' }}>{"Vue d'ensemble de l'agence"}</p>
         </div>
 
         {/* Period selector */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button onClick={() => fetchDashboard(selectedPeriod?.debut, selectedPeriod?.fin)} className="btn-ghost" title="Rafra\u00eechir" style={{ padding: '0.5rem' }}>
+          <button onClick={() => fetchDashboard(selectedPeriod?.debut, selectedPeriod?.fin)} className="btn-ghost" title="Rafraîchir" aria-label="Rafraîchir le dashboard" style={{ padding: '0.5rem' }}>
             <RefreshCw size={16} />
           </button>
         <div style={{ position: 'relative' }}>
           <button
             onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
             className="btn-secondary"
+            aria-label="Sélectionner la période" aria-haspopup="true" aria-expanded={showPeriodDropdown}
             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', padding: '0.5rem 1rem' }}
           >
             <Calendar size={14} />
@@ -497,10 +643,86 @@ export default function AdminDashboard() {
         </div>
       ) : null}
 
-      {/* ── En ligne + Prévisionnel ── */}
-      {!loading && (enLigne || previsionnel) && (
+      {/* ── Objectif Collectif + Prévisionnel ── */}
+      {!loading && (objectifCollectif || previsionnel) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-          {/* Shifts en cours */}
+          <ObjectifCollectifWidget data={objectifCollectif} navigate={navigate} />
+          {/* Prévisionnel */}
+          {previsionnel && previsionnel.elapsed_days > 0 && (
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Prévisionnel période</h3>
+                {previsionnel.historique?.tendance != null && previsionnel.historique.tendance !== 0 && (
+                  <span style={{
+                    fontSize: '0.68rem', fontWeight: 600,
+                    color: previsionnel.historique.tendance > 0 ? '#10b981' : '#ef4444',
+                    background: previsionnel.historique.tendance > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                    padding: '0.1rem 0.4rem', borderRadius: '10px',
+                  }}>
+                    {previsionnel.historique.tendance > 0 ? '↗' : '↘'} {Math.abs(previsionnel.historique.tendance).toFixed(0)}%
+                  </span>
+                )}
+              </div>
+              <div style={{ padding: '0.75rem 1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.8rem' }}>
+                  <span style={{ color: '#64748b' }}>Progression</span>
+                  <span style={{ fontWeight: 600 }}>{previsionnel.elapsed_days}/{previsionnel.total_days} jours</span>
+                </div>
+                <div style={{ background: '#f1f5f9', borderRadius: '999px', height: '8px', marginBottom: '0.75rem' }}>
+                  <div style={{
+                    width: `${Math.round((previsionnel.elapsed_days / previsionnel.total_days) * 100)}%`,
+                    height: '100%', background: '#f5b731', borderRadius: '999px',
+                    transition: 'width 500ms ease',
+                  }} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', fontSize: '0.8rem' }}>
+                  <div>
+                    <p style={{ color: '#64748b', fontSize: '0.68rem' }}>Actuel</p>
+                    <p style={{ fontWeight: 700, color: '#1a1f2e', fontSize: '0.85rem' }}>{(previsionnel.actuals?.total_net_ht || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#64748b', fontSize: '0.68rem' }}>Prévu</p>
+                    <p style={{ fontWeight: 700, color: '#f5b731', fontSize: '0.85rem' }}>{(previsionnel.forecasts?.total_net_ht || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#64748b', fontSize: '0.68rem' }}>Moy. historique</p>
+                    <p style={{ fontWeight: 700, color: '#6366f1', fontSize: '0.85rem' }}>{(previsionnel.historique?.moyennes?.total_net_ht || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</p>
+                  </div>
+                </div>
+                {previsionnel.historique?.periodes?.length > 0 && (
+                  <div style={{ marginTop: '0.75rem', borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: '0.6rem' }}>
+                    <p style={{ fontSize: '0.65rem', color: '#94a3b8', marginBottom: '0.35rem' }}>
+                      Historique ({previsionnel.historique.nb_periodes} dernières périodes)
+                    </p>
+                    <div style={{ display: 'flex', gap: '3px', alignItems: 'flex-end', height: '32px' }}>
+                      {(() => {
+                        const periodes = [...previsionnel.historique.periodes].reverse();
+                        const maxVal = Math.max(...periodes.map(p => p.net_ht), 1);
+                        return periodes.map((p, i) => {
+                          const h = Math.max((p.net_ht / maxVal) * 28, 2);
+                          return (
+                            <div key={p.debut} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                              <div style={{
+                                width: '100%', height: `${h}px`, borderRadius: '3px 3px 0 0',
+                                background: i === periodes.length - 1 ? '#f5b731' : '#e2e8f0',
+                                transition: 'height 400ms ease',
+                              }} />
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Shifts en cours + Classement ── */}
+      {!loading && (enLigne || cagnotteData) && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
           {enLigne && (() => {
             const CRENEAU_LABELS = { 1: '08h-14h', 2: '14h-20h', 3: '20h-02h', 4: '02h-08h' };
             const currentCreneau = enLigne.creneau_actuel;
@@ -620,81 +842,18 @@ export default function AdminDashboard() {
             );
           })()}
 
-          {/* Prévisionnel — basé sur données historiques */}
-          {previsionnel && previsionnel.elapsed_days > 0 && (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Prévisionnel période</h3>
-                {previsionnel.historique?.tendance != null && previsionnel.historique.tendance !== 0 && (
-                  <span style={{
-                    fontSize: '0.68rem', fontWeight: 600,
-                    color: previsionnel.historique.tendance > 0 ? '#10b981' : '#ef4444',
-                    background: previsionnel.historique.tendance > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                    padding: '0.1rem 0.4rem', borderRadius: '10px',
-                  }}>
-                    {previsionnel.historique.tendance > 0 ? '↗' : '↘'} {Math.abs(previsionnel.historique.tendance).toFixed(0)}%
-                  </span>
-                )}
-              </div>
-              <div style={{ padding: '0.75rem 1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.8rem' }}>
-                  <span style={{ color: '#64748b' }}>Progression</span>
-                  <span style={{ fontWeight: 600 }}>{previsionnel.elapsed_days}/{previsionnel.total_days} jours</span>
-                </div>
-                <div style={{ background: '#f1f5f9', borderRadius: '999px', height: '8px', marginBottom: '0.75rem' }}>
-                  <div style={{
-                    width: `${Math.round((previsionnel.elapsed_days / previsionnel.total_days) * 100)}%`,
-                    height: '100%', background: '#f5b731', borderRadius: '999px',
-                    transition: 'width 500ms ease',
-                  }} />
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem', fontSize: '0.8rem' }}>
-                  <div>
-                    <p style={{ color: '#64748b', fontSize: '0.68rem' }}>Actuel</p>
-                    <p style={{ fontWeight: 700, color: '#1a1f2e', fontSize: '0.85rem' }}>{(previsionnel.actuals?.total_net_ht || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</p>
-                  </div>
-                  <div>
-                    <p style={{ color: '#64748b', fontSize: '0.68rem' }}>Prévu</p>
-                    <p style={{ fontWeight: 700, color: '#f5b731', fontSize: '0.85rem' }}>{(previsionnel.forecasts?.total_net_ht || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</p>
-                  </div>
-                  <div>
-                    <p style={{ color: '#64748b', fontSize: '0.68rem' }}>Moy. historique</p>
-                    <p style={{ fontWeight: 700, color: '#6366f1', fontSize: '0.85rem' }}>{(previsionnel.historique?.moyennes?.total_net_ht || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €</p>
-                  </div>
-                </div>
-                {/* Mini sparkline des périodes historiques */}
-                {previsionnel.historique?.periodes?.length > 0 && (
-                  <div style={{ marginTop: '0.75rem', borderTop: '1px solid rgba(0,0,0,0.04)', paddingTop: '0.6rem' }}>
-                    <p style={{ fontSize: '0.65rem', color: '#94a3b8', marginBottom: '0.35rem' }}>
-                      Historique ({previsionnel.historique.nb_periodes} dernières périodes)
-                    </p>
-                    <div style={{ display: 'flex', gap: '3px', alignItems: 'flex-end', height: '32px' }}>
-                      {(() => {
-                        const periodes = [...previsionnel.historique.periodes].reverse();
-                        const maxVal = Math.max(...periodes.map(p => p.net_ht), 1);
-                        return periodes.map((p, i) => {
-                          const h = Math.max((p.net_ht / maxVal) * 28, 2);
-                          return (
-                            <div key={p.debut} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                              <div style={{
-                                width: '100%', height: `${h}px`, borderRadius: '3px 3px 0 0',
-                                background: i === periodes.length - 1 ? '#f5b731' : '#e2e8f0',
-                                transition: 'height 400ms ease',
-                              }} />
-                            </div>
-                          );
-                        });
-                      })()}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+          <CagnotteWidget classementData={cagnotteData} historiqueData={cagnotteHistorique} />
         </div>
       )}
 
-      {/* ── Répartition : Donut Plateforme + Donut Modèles ── */}
+      {/* ── Évolution Net HT ── */}
+      {!loading && (
+        <div style={{ marginBottom: '1rem' }}>
+          <SalesEvolutionChart historiqueData={cagnotteHistorique} />
+        </div>
+      )}
+
+      {/* ── Répartition + Dernières ventes ── */}
       {!loading && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
           <DonutChart
@@ -712,10 +871,9 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ── Dernières ventes + Cagnotte Prime ── */}
+      {/* ── Dernières ventes ── */}
       {!loading && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-          {/* Recent sales */}
+        <div style={{ marginBottom: '1rem' }}>
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{"Derni\u00e8res ventes"}</h3>
@@ -785,14 +943,6 @@ export default function AdminDashboard() {
               </table>
             </div>
           </div>
-          <CagnotteWidget classementData={cagnotteData} historiqueData={cagnotteHistorique} />
-        </div>
-      )}
-
-      {/* ── Évolution Net HT ── */}
-      {!loading && (
-        <div style={{ marginBottom: '1rem' }}>
-          <SalesEvolutionChart historiqueData={cagnotteHistorique} />
         </div>
       )}
     </div>

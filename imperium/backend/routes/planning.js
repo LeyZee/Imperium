@@ -89,6 +89,18 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   res.status(201).json({ id: result.lastInsertRowid });
 }));
 
+// DELETE /api/shifts/bulk — Supprimer tous les shifts d'une semaine (ou tous)
+router.delete('/bulk', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+  const { date_debut, date_fin } = req.query;
+  let result;
+  if (date_debut && date_fin) {
+    result = db.prepare('DELETE FROM shifts WHERE date >= ? AND date <= ?').run([date_debut, date_fin]);
+  } else {
+    result = db.prepare('DELETE FROM shifts').run();
+  }
+  res.json({ message: `${result.changes} shift(s) supprimé(s)`, count: result.changes });
+}));
+
 // DELETE /api/shifts/:id
 router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   db.prepare('DELETE FROM shifts WHERE id = ?').run([req.params.id]);
@@ -353,13 +365,14 @@ router.post('/bulk', authMiddleware, adminOrManager, asyncHandler((req, res) => 
   res.status(201).json({ created, replaced });
 }));
 
-// GET /api/shifts/en-ligne — who is currently online based on today's shifts
+// GET /api/shifts/en-ligne — who is currently online based on today's shifts (incl. templates)
 router.get('/en-ligne', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const now = new Date();
   const pad = n => String(n).padStart(2, '0');
   const today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
-  const shifts = db.prepare(`
+  // Real shifts for today
+  const realShifts = db.prepare(`
     SELECT s.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
       m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
       p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte
@@ -371,6 +384,54 @@ router.get('/en-ligne', authMiddleware, adminOrManager, asyncHandler((req, res) 
     ORDER BY s.creneau, c.prenom
   `).all(today);
 
+  // Build occupied set from real shifts
+  const occupied = new Set();
+  for (const s of realShifts) {
+    occupied.add(`${s.creneau}|${s.modele_id || 0}|${s.plateforme_id || 0}`);
+  }
+
+  // Merge template shifts for today's day_of_week
+  const todayDate = new Date(today + 'T00:00:00');
+  const jsDay = todayDate.getDay(); // 0=Sun, 1=Mon...
+  const dow = jsDay === 0 ? 7 : jsDay; // Convert to 1=Mon..7=Sun
+
+  const templates = db.prepare(`
+    SELECT t.*, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+      m.pseudo as modele_pseudo, m.couleur_fond as modele_couleur_fond, m.couleur_texte as modele_couleur_texte,
+      p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte
+    FROM shift_templates t
+    JOIN chatteurs c ON c.id = t.chatteur_id
+    LEFT JOIN modeles m ON m.id = t.modele_id
+    LEFT JOIN plateformes p ON p.id = t.plateforme_id
+    WHERE t.day_of_week = ?
+  `).all(dow);
+
+  const allShifts = realShifts.map(s => ({ ...s, from_template: false }));
+  for (const t of templates) {
+    const key = `${t.creneau}|${t.modele_id || 0}|${t.plateforme_id || 0}`;
+    if (occupied.has(key)) continue; // Real shift exists, skip template
+    allShifts.push({
+      id: `tpl_${t.id}`,
+      chatteur_id: t.chatteur_id,
+      modele_id: t.modele_id,
+      plateforme_id: t.plateforme_id,
+      date: today,
+      creneau: t.creneau,
+      fuseau_horaire: t.fuseau_horaire,
+      chatteur_prenom: t.chatteur_prenom,
+      chatteur_couleur: t.chatteur_couleur,
+      modele_pseudo: t.modele_pseudo,
+      modele_couleur_fond: t.modele_couleur_fond,
+      modele_couleur_texte: t.modele_couleur_texte,
+      plateforme_nom: t.plateforme_nom,
+      plateforme_couleur_fond: t.plateforme_couleur_fond,
+      plateforme_couleur_texte: t.plateforme_couleur_texte,
+      from_template: true,
+    });
+  }
+
+  allShifts.sort((a, b) => a.creneau - b.creneau || (a.chatteur_prenom || '').localeCompare(b.chatteur_prenom || ''));
+
   // Determine current creneau based on France timezone
   const frHour = parseInt(new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', hour: 'numeric', hour12: false }).format(now));
   let currentCreneau;
@@ -379,14 +440,14 @@ router.get('/en-ligne', authMiddleware, adminOrManager, asyncHandler((req, res) 
   else if (frHour >= 20 || frHour < 2) currentCreneau = 3;
   else currentCreneau = 4;
 
-  const enLigne = shifts.filter(s => s.creneau === currentCreneau);
+  const enLigne = allShifts.filter(s => s.creneau === currentCreneau);
 
   res.json({
     en_ligne: enLigne,
-    all_shifts: shifts,
+    all_shifts: allShifts,
     creneau_actuel: currentCreneau,
     creneau_label: CRENEAUX[currentCreneau]?.label || '',
-    total_shifts_today: shifts.length,
+    total_shifts_today: allShifts.length,
   });
 }));
 

@@ -8,6 +8,7 @@ backend/imperium.db
 backend/imperium.db.lock
 backend/*.db
 backend/*.db-lock
+backend/backups/
 
 # Variables d'environnement
 .env
@@ -18,6 +19,7 @@ frontend/.env
 frontend/dist/
 
 # Logs
+logs/
 *.log
 npm-debug.log*
 

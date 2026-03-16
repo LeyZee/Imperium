@@ -70,5 +70,27 @@
 - Table `migrations` dans database.js — `runMigration(name, fn)` track les migrations appliquées
 - Utiliser `actif` (INTEGER) comme source de vérité pour soft delete (pas `statut`)
 
+## CRITIQUE : Protection base de données SQLite
+### Cause de la corruption du 16/03/2026
+La DB a été corrompue à cause de **scripts externes exécutés pendant que le backend tournait**. Deux processus node ont ouvert simultanément le fichier `imperium.db` : le serveur Express et un script de seed/migration. SQLite en mode WAL supporte les lectures concurrentes mais PAS les écritures concurrentes depuis des processus séparés. Résultat : rootpages invalides, tables illisibles, VACUUM impossible.
+
+### Règles ABSOLUES à ne JAMAIS enfreindre
+1. **JAMAIS exécuter un script qui écrit dans la DB pendant que le backend tourne** — toujours arrêter le serveur AVANT (preview_stop), exécuter le script, puis relancer
+2. **JAMAIS utiliser `require('./database')` dans un script standalone** quand le backend est actif — database.js ouvre la DB et la garde ouverte
+3. **Pour les scripts de seed/migration** : soit les intégrer comme endpoint API (le backend gère l'accès), soit stopper le backend d'abord
+4. **Migrations dangereuses (DROP TABLE + INSERT)** : toujours les entourer de `BEGIN/COMMIT` et tester AVANT en prod
+5. **Backup automatique** : faire un backup avant toute migration ou seed
+
+### En cas de problème DB
+- Vérifier : `PRAGMA integrity_check`
+- Backup : `imperium.db.backup` existe toujours
+- Script de repair : `backend/repair-db.js` (export/reimport table par table)
+- Dernier recours : supprimer la DB, laisser database.js recréer le schema, re-seeder avec `seed-direct.js` + `seed-shifts.js`
+
+## Rôle directeur
+- Le rôle `directeur` a les mêmes droits que `admin` dans tous les middlewares
+- Le compte directeur (SACHA) est protégé : impossible de le supprimer ou désactiver
+- CHECK constraint chatteurs : `('chatteur', 'manager', 'va', 'directeur')`
+
 ## Google Sheets de reference
 https://docs.google.com/spreadsheets/d/1FNR6Yj_k1jt5-2a2zUSYrjZJb6VzQBGSarVrdbU4NTA/edit

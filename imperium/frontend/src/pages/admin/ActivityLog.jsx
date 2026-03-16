@@ -91,7 +91,7 @@ export default function ActivityLog({ embedded = false, canClear = true }) {
         )}
         <div className="activity-actions" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginLeft: 'auto' }}>
           <select value={entityType} onChange={e => { setEntityType(e.target.value); setPage(1); }}
-            className="input-field" style={{ width: 'auto' }}>
+            className="input-field" style={{ width: 'auto' }} aria-label="Filtrer par type d'entité">
             <option value="">Tous les types</option>
             <option value="malus">Malus</option>
             <option value="prime">Primes</option>
@@ -104,13 +104,13 @@ export default function ActivityLog({ embedded = false, canClear = true }) {
           </select>
           <button onClick={fetchLogs} className="btn-secondary"
             style={{ padding: '0.5rem', display: 'flex', alignItems: 'center' }}
-            title="Rafraîchir">
+            title="Rafraîchir" aria-label="Rafraîchir">
             <RefreshCw size={16} />
           </button>
           {canClear && logs.length > 0 && (
             <button onClick={() => setClearConfirm(true)} className="btn-secondary"
               style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', color: '#ef4444' }}
-              title="Nettoyer le journal">
+              title="Nettoyer le journal" aria-label="Nettoyer le journal">
               <Trash2 size={16} />
             </button>
           )}

@@ -47,8 +47,14 @@ function findChatteur(name, telegramUserId) {
   // 3. Auto-save telegram_user_id if matched by name and no ID stored yet
   if (match && telegramUserId && !match.telegram_user_id) {
     try {
-      db.prepare('UPDATE chatteurs SET telegram_user_id = ? WHERE id = ?').run(telegramUserId, match.id);
-      logger.info(`Telegram ID ${telegramUserId} auto-lié à ${match.prenom}`);
+      // Double-check: ensure no other chatteur already has this telegram_user_id
+      const existing = db.prepare('SELECT id, prenom FROM chatteurs WHERE telegram_user_id = ?').get(String(telegramUserId));
+      if (existing) {
+        logger.warn(`Telegram ID ${telegramUserId} déjà lié à ${existing.prenom}, pas de re-link vers ${match.prenom}`);
+      } else {
+        db.prepare('UPDATE chatteurs SET telegram_user_id = ? WHERE id = ?').run(String(telegramUserId), match.id);
+        logger.info(`Telegram ID ${telegramUserId} auto-lié à ${match.prenom}`);
+      }
     } catch (e) {
       logger.warn(`Auto-link telegram_user_id échoué pour ${match.prenom}`, { error: e.message });
     }
@@ -148,18 +154,20 @@ function findShiftForVente(chatteur_id, plateforme_id, dateStr) {
 }
 
 /**
- * Insert a vente from Telegram + recalculate paies atomically
+ * Insert a vente from Telegram then recalculate paies
+ * (recalculatePaies has its own internal transaction)
  */
 function insertVente(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id, modele_id) {
-  const insertAndRecalc = db.transaction(() => {
-    const result = db.prepare(`
-      INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?)
-    `).run(chatteur_id, modele_id ?? null, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id ?? null);
+  const result = db.prepare(`
+    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id, source)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?, 'telegram')
+  `).run(chatteur_id, modele_id ?? null, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id ?? null);
+  try {
     recalculatePaies(periode_debut, periode_fin);
-    return result;
-  });
-  return insertAndRecalc();
+  } catch (err) {
+    logger.error('Recalcul paies échoué après import Telegram', { error: err.message });
+  }
+  return result;
 }
 
 // In-memory set of recently processed message IDs for idempotence (cleared every hour)

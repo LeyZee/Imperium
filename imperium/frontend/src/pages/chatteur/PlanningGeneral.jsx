@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { ChevronLeft, ChevronRight, Clock, Users, Eye } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, Users, Eye, Calendar } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
 const CRENEAUX = [
@@ -50,9 +50,13 @@ function getCreneauShort(cr, tzOffset) {
 }
 
 function useIsMobile(breakpoint = 480) {
-  const [isMobile, setIsMobile] = useState(() => typeof window !== 'undefined' && window.innerWidth <= breakpoint);
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(`(max-width: ${breakpoint}px)`).matches;
+  });
   useEffect(() => {
     const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    setIsMobile(mql.matches);
     const handler = (e) => setIsMobile(e.matches);
     mql.addEventListener('change', handler);
     return () => mql.removeEventListener('change', handler);
@@ -143,7 +147,7 @@ export default function PlanningGeneral() {
     <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.5rem' }}>
         <div>
-          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Planning Général</h1>
+          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Calendar size={22} color="#f5b731" /> Planning Général</h1>
           <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
             <Users size={13} style={{ display: 'inline', verticalAlign: '-2px', marginRight: '0.3rem' }} />
             {uniqueChatteurs} chatteur{uniqueChatteurs !== 1 ? 's' : ''} actif{uniqueChatteurs !== 1 ? 's' : ''} cette semaine
@@ -211,7 +215,7 @@ export default function PlanningGeneral() {
           ))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.75rem', color: '#1b2e4b', fontWeight: 600 }}>
-          <Clock size={13} style={{ color: '#f5b731' }} />
+          <Clock size={13} style={{ color: '#f5b731', animation: 'pulse-soft 2s ease infinite' }} />
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{currentTime}</span>
         </div>
       </div>
@@ -273,12 +277,17 @@ export default function PlanningGeneral() {
 /* ─── Small reusable components ─── */
 
 function NavButton({ onClick, children }) {
+  const [pressed, setPressed] = useState(false);
   return (
     <button
       onClick={onClick}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => setPressed(false)}
       className="card"
       style={{
         padding: '0.5rem', lineHeight: 1, cursor: 'pointer',
+        transform: pressed ? 'scale(0.9)' : 'scale(1)',
         transition: 'transform 120ms ease, box-shadow 200ms ease',
       }}
     >
@@ -309,7 +318,7 @@ function PlatformTab({ active, last, onClick, label, bgColor, textColor }) {
       }}
     >
       {active && (
-        <span style={{ width: 6, height: 6, borderRadius: '50%', background: textColor, flexShrink: 0 }} />
+        <span style={{ width: 6, height: 6, borderRadius: '50%', background: textColor, flexShrink: 0, animation: 'ripple 0.4s ease' }} />
       )}
       {label}
     </button>
@@ -381,6 +390,8 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isM
           <img src={model.photo} alt="" style={{
             width: 28, height: 28, borderRadius: '50%', objectFit: 'cover',
             border: `2px solid ${model.couleur_fond || 'rgba(245,183,49,0.3)'}`, flexShrink: 0,
+            transition: 'transform 300ms ease',
+            transform: hovered ? 'scale(1.1)' : 'scale(1)',
           }} />
         ) : (
           <div style={{
@@ -390,6 +401,8 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isM
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: '0.65rem', fontWeight: 700,
             color: model.couleur_texte || '#1b2e4b', flexShrink: 0,
+            transition: 'transform 300ms ease, background 300ms ease',
+            transform: hovered ? 'scale(1.1) rotate(5deg)' : 'scale(1)',
           }}>
             {model.pseudo?.charAt(0) || '?'}
           </div>
@@ -400,6 +413,7 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isM
           background: count > 0 ? 'rgba(245,183,49,0.12)' : 'rgba(0,0,0,0.04)',
           color: count > 0 ? '#b8860b' : '#94a3b8',
           padding: '0.15rem 0.45rem', borderRadius: '20px',
+          transition: 'all 200ms ease',
         }}>
           {count} shift{count !== 1 ? 's' : ''}
         </span>
@@ -416,8 +430,9 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isM
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: '0.5rem',
                 padding: '0.4rem 0.5rem', borderRadius: '8px',
-                background: isToday ? 'rgba(245,183,49,0.08)' : '#fafaf8',
-                borderLeft: isToday ? '2px solid #f5b731' : '2px solid transparent',
+                background: isToday ? 'rgba(245,183,49,0.06)' : 'transparent',
+                borderLeft: isToday ? '3px solid #f5b731' : '3px solid transparent',
+                transition: 'all 200ms ease',
               }}>
                 <div style={{ width: 36, textAlign: 'center', flexShrink: 0 }}>
                   <div style={{ fontSize: '0.55rem', color: '#94a3b8', fontWeight: 500 }}>
@@ -443,7 +458,8 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isM
                         borderWidth: isMe ? '1.5px' : '1px',
                         borderStyle: shift.from_template ? 'dashed' : 'solid',
                         borderColor: isMe ? '#f5b731' : color.border,
-                        opacity: shift.from_template ? 0.6 : 1,
+                        opacity: shift.from_template ? 0.85 : 1,
+                        transition: 'all 150ms ease',
                       }}>
                         {getCreneauShort(creneau, tzOffset)} {shift.chatteur_prenom}
                       </span>
@@ -464,9 +480,10 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isM
             return (
               <div key={i} style={{
                 textAlign: 'center', padding: '2px 0', borderRadius: '4px',
-                background: isToday ? 'rgba(245,183,49,0.1)' : 'transparent',
+                background: isToday ? 'rgba(245,183,49,0.12)' : 'transparent',
+                transition: 'background 200ms ease',
               }}>
-                <div style={{ fontSize: '0.5rem', color: '#94a3b8', fontWeight: 500 }}>{JOURS_SHORT[i]}</div>
+                <div style={{ fontSize: '0.5rem', color: isToday ? '#b8860b' : '#94a3b8', fontWeight: isToday ? 700 : 500 }}>{JOURS_SHORT[i]}</div>
                 <div style={{ fontSize: '0.65rem', fontWeight: 600, color: isToday ? '#b8860b' : '#1a1f2e' }}>
                   {d.getDate()}
                 </div>
@@ -483,6 +500,7 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isM
               days={days}
               shiftMap={shiftMap}
               currentUserId={currentUserId}
+              todayISO={todayISO}
             />
           ))}
         </div>
@@ -492,7 +510,7 @@ function ModelCard({ model, shifts, days, tzOffset, currentUserId, todayISO, isM
 }
 
 /* ─── Single creneau row ─── */
-function ShiftRow({ creneau, tzOffset, days, shiftMap, currentUserId }) {
+function ShiftRow({ creneau, tzOffset, days, shiftMap, currentUserId, todayISO }) {
   return (
     <>
       <div style={{
@@ -502,12 +520,15 @@ function ShiftRow({ creneau, tzOffset, days, shiftMap, currentUserId }) {
         {getCreneauShort(creneau, tzOffset)}
       </div>
       {days.map((d, i) => {
-        const shift = shiftMap[`${toISO(d)}-${creneau.id}`];
+        const iso = toISO(d);
+        const shift = shiftMap[`${iso}-${creneau.id}`];
+        const isToday = iso === todayISO;
         return (
           <ShiftCell
             key={i}
             shift={shift}
             currentUserId={currentUserId}
+            isToday={isToday}
           />
         );
       })}
@@ -516,7 +537,7 @@ function ShiftRow({ creneau, tzOffset, days, shiftMap, currentUserId }) {
 }
 
 /* ─── Individual shift cell (read-only, no click) ─── */
-function ShiftCell({ shift, currentUserId }) {
+function ShiftCell({ shift, currentUserId, isToday }) {
   const [hovered, setHovered] = useState(false);
   const isMe = shift && shift.chatteur_id === currentUserId;
   const isTemplate = shift?.from_template;
@@ -527,6 +548,10 @@ function ShiftCell({ shift, currentUserId }) {
         : CHATTEUR_COLORS[0])
     : null;
 
+  const emptyBg = isToday
+    ? (hovered ? 'rgba(245,183,49,0.1)' : 'rgba(245,183,49,0.04)')
+    : (hovered ? 'rgba(245,183,49,0.06)' : '#fafafa');
+
   return (
     <div
       onMouseEnter={() => setHovered(true)}
@@ -536,18 +561,18 @@ function ShiftCell({ shift, currentUserId }) {
         minHeight: '30px',
         borderRadius: '5px',
         borderWidth: shift ? (isMe ? '2px' : '1.5px') : '1.5px',
-        borderStyle: shift ? (isTemplate ? 'dashed' : 'solid') : 'solid',
+        borderStyle: shift ? (isTemplate ? 'dashed' : 'solid') : (isToday ? 'dashed' : 'solid'),
         borderColor: shift
           ? (isMe ? '#f5b731' : (isTemplate ? color.border : (hovered ? color.text : color.border)))
-          : '#f1f5f9',
+          : (isToday ? '#f5b73180' : '#f1f5f9'),
         background: shift
           ? (hovered ? color.border + '30' : color.bg)
-          : '#fafafa',
+          : emptyBg,
         padding: '2px 1px',
         fontSize: '0.55rem',
         fontWeight: 600,
         color: shift ? color.text : 'transparent',
-        opacity: isTemplate ? 0.6 : 1,
+        opacity: isTemplate ? (hovered ? 1 : 0.85) : 1,
         textAlign: 'center',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         overflow: 'hidden',
@@ -555,7 +580,7 @@ function ShiftCell({ shift, currentUserId }) {
         transition: 'all 180ms cubic-bezier(0.4, 0, 0.2, 1)',
         boxShadow: isMe ? '0 0 0 1px #f5b731' : (hovered && shift ? `0 2px 8px ${color.border}40` : 'none'),
         transform: hovered && shift ? 'scale(1.05)' : 'scale(1)',
-        cursor: shift ? 'default' : 'default',
+        cursor: 'default',
       }}
     >
       {shift ? shift.chatteur_prenom : ''}

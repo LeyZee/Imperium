@@ -114,10 +114,13 @@ export default function NotificationPanel() {
       <button
         onClick={() => setOpen(!open)}
         title="Notifications"
+        className="navbar-icon-btn"
         style={{
           background: 'none', border: 'none', cursor: 'pointer',
-          position: 'relative', padding: '0.4rem',
+          position: 'relative', padding: '0.5rem',
           display: 'flex', alignItems: 'center',
+          borderRadius: '12px',
+          transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         <Bell size={20} color="#1b2e4b" />

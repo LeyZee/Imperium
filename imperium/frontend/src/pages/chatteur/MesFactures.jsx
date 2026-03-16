@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
-import { FileText, AlertTriangle, ChevronDown, ChevronUp, Calculator, BookOpen, ArrowLeftRight, Euro, TrendingUp } from 'lucide-react';
+import { FileText, AlertTriangle, ChevronDown, ChevronUp, Calculator, BookOpen, ArrowLeftRight, Euro, TrendingUp, CreditCard } from 'lucide-react';
 
 const STATUT_STYLES = {
-  'calculé': { background: 'rgba(245,183,49,0.12)', color: '#b8860b' },
-  'validé': { background: 'rgba(27,46,75,0.1)', color: '#1b2e4b' },
+  'estimé': { background: 'rgba(148,163,184,0.12)', color: '#64748b' },
+  'calculé': { background: 'rgba(249,115,22,0.1)', color: '#c2410c' },
+  'validé': { background: 'rgba(59,130,246,0.1)', color: '#1d4ed8' },
   'payé': { background: 'rgba(16,185,129,0.1)', color: '#059669' },
 };
 
@@ -63,7 +64,7 @@ function PaieDetail({ paie, tauxCommission, malusForPeriod }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
               <Step label={`Ta commission (${pct(tauxCommission)}%)`} value={`${fmt(paie.commission_chatteur)} \u20ac`} highlight />
               {(paie.prime || 0) > 0 && (
-                <Step label={"Prime top 3 \uD83C\uDFC6"} value={`+${fmt(paie.prime)} \u20ac`} color="#10b981" />
+                <Step label={"Prime \uD83C\uDFC6"} value={`+${fmt(paie.prime)} \u20ac`} color="#10b981" />
               )}
               {(paie.malus_total || 0) > 0 && (
                 malusForPeriod.length > 0 ? (
@@ -255,7 +256,7 @@ export default function MesFactures() {
   return (
     <div className="page-enter">
       <div style={{ marginBottom: '1rem' }}>
-        <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Mes Paies</h1>
+        <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><CreditCard size={22} color="#f5b731" /> Mes Paies</h1>
         {!loading && paies.length > 0 && (
           <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
             Commission : {pct(tauxCommission)}%
@@ -356,7 +357,7 @@ export default function MesFactures() {
                 { num: '2', title: 'Conversion devise', desc: 'Si la plateforme est en USD, on convertit en euros au taux du jour.' },
                 { num: '3', title: 'Déductions', desc: 'On retire la TVA (20%) puis la commission plateforme (20%) pour obtenir le « Net HT ».' },
                 { num: '4', title: 'Ta commission', desc: `Tu reçois ${pct(tauxCommission)}% du Net HT. C\u2019est ton taux de commission personnel.` },
-                { num: '5', title: 'Primes & Malus', desc: 'Les 3 meilleurs vendeurs de la période reçoivent un bonus (0.50%, 0.25%, 0.12% du net total équipe). Les malus éventuels sont soustraits.' },
+                { num: '5', title: 'Primes & Malus', desc: "En atteignant des paliers de Net HT individuel, tu débloques des primes fixes. Un bonus d'équipe collectif peut aussi s'ajouter. Les malus éventuels sont soustraits." },
               ].map(step => (
                 <div key={step.num} style={{ display: 'flex', gap: '0.6rem', alignItems: 'flex-start' }}>
                   <span style={{
@@ -416,27 +417,36 @@ export default function MesFactures() {
 
           {groupedPaies.map(group => {
             const isCurrent = group.debut === periodeCourante.debut && group.fin === periodeCourante.fin;
+            const isEstimated = group.paies.some(p => p.statut === 'estimé');
             return (
               <div
                 key={`${group.debut}-${group.fin}`}
                 className="card"
                 style={{
                   padding: 0, overflow: 'hidden',
-                  border: isCurrent ? '2px solid rgba(245,183,49,0.4)' : undefined,
+                  border: isEstimated ? '2px solid rgba(14,165,233,0.3)' : isCurrent ? '2px solid rgba(245,183,49,0.4)' : undefined,
                 }}
               >
                 {/* Period header */}
                 <div style={{
                   padding: '0.75rem 1.25rem',
                   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                  background: isCurrent ? 'rgba(245,183,49,0.06)' : '#fafaf8',
+                  background: isEstimated ? 'rgba(14,165,233,0.04)' : isCurrent ? 'rgba(245,183,49,0.06)' : '#fafaf8',
                   borderBottom: '1px solid rgba(0,0,0,0.06)',
                 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                     <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#1b2e4b' }}>
                       {formatPeriod(group.debut, group.fin)}
                     </span>
-                    {isCurrent && (
+                    {isEstimated ? (
+                      <span style={{
+                        fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.5rem',
+                        borderRadius: '20px', background: '#0284c7', color: '#fff',
+                        letterSpacing: '0.03em',
+                      }}>
+                        ESTIMATION
+                      </span>
+                    ) : isCurrent && (
                       <span style={{
                         fontSize: '0.65rem', fontWeight: 700, padding: '0.15rem 0.5rem',
                         borderRadius: '20px', background: '#f5b731', color: '#fff',
@@ -448,11 +458,19 @@ export default function MesFactures() {
                   </div>
                   <span style={{
                     fontSize: '1rem', fontWeight: 700,
-                    color: isCurrent ? '#f5b731' : '#1b2e4b',
+                    color: isEstimated ? '#0284c7' : isCurrent ? '#f5b731' : '#1b2e4b',
                   }}>
-                    {fmt(group.total)} {"€"}
+                    {isEstimated ? '~' : ''}{fmt(group.total)} {"€"}
                   </span>
                 </div>
+                {isEstimated && (
+                  <div style={{
+                    padding: '0.5rem 1.25rem', fontSize: '0.75rem', color: '#0369a1',
+                    background: 'rgba(14,165,233,0.06)', borderBottom: '1px solid rgba(14,165,233,0.1)',
+                  }}>
+                    Estimation basée sur tes ventes en cours, le montant définitif sera calculé après validation.
+                  </div>
+                )}
 
                 {/* Paies table for this period */}
                 <div style={{ overflowX: 'auto' }}>
@@ -468,12 +486,13 @@ export default function MesFactures() {
                     <tbody>
                       {group.paies.map((p) => {
                         const statutStyle = STATUT_STYLES[p.statut] || STATUT_STYLES['calculé'];
-                        const isExpanded = expandedId === p.id;
+                        const pKey = p.id || `est-${p.periode_debut}-${p.plateforme_id}`;
+                        const isExpanded = expandedId === pKey;
                         const malusForPeriod = malusList.filter(m => m.periode >= p.periode_debut && m.periode <= p.periode_fin);
                         return [
                           <tr
-                            key={p.id}
-                            onClick={() => setExpandedId(isExpanded ? null : p.id)}
+                            key={pKey}
+                            onClick={() => setExpandedId(isExpanded ? null : pKey)}
                             style={{ cursor: 'pointer', background: isExpanded ? 'rgba(245,183,49,0.04)' : undefined }}
                           >
                             <td>
@@ -505,7 +524,7 @@ export default function MesFactures() {
                             </td>
                           </tr>,
                           isExpanded && (
-                            <PaieDetail key={`detail-${p.id}`} paie={p} tauxCommission={tauxCommission} malusForPeriod={malusForPeriod} />
+                            <PaieDetail key={`detail-${pKey}`} paie={p} tauxCommission={tauxCommission} malusForPeriod={malusForPeriod} />
                           ),
                         ];
                       })}

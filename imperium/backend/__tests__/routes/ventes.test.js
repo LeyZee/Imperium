@@ -129,6 +129,39 @@ describe('POST /api/ventes', () => {
     const res = await request(chatteurApp).post('/api/ventes').send(VALID_VENTE);
     expect(res.status).toBe(403);
   });
+
+  test('201 manager can create vente', async () => {
+    db.prepare
+      .mockReturnValueOnce(mockStmt({ get: jest.fn(() => ({ id: 1, chatteur_id: 1, modele_id: 1, plateforme_id: 1 })) }))
+      .mockReturnValueOnce(mockStmt({ get: jest.fn(() => ({ '1': 1 })) }))
+      .mockReturnValueOnce(mockStmt({ run: jest.fn(() => ({ lastInsertRowid: 6 })) }))
+      .mockReturnValueOnce(mockStmt({ get: jest.fn(() => ({ prenom: 'Test' })) }))
+      .mockReturnValueOnce(mockStmt({ get: jest.fn(() => ({ nom: 'OF', devise: 'EUR' })) }));
+    const res = await request(managerApp).post('/api/ventes').send(VALID_VENTE);
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBe(6);
+  });
+
+  test('201 with recalcul warning when recalculatePaies fails', async () => {
+    recalculatePaies.mockImplementationOnce(() => { throw new Error('DB error'); });
+    db.prepare
+      .mockReturnValueOnce(mockStmt({ get: jest.fn(() => ({ id: 1, chatteur_id: 1, modele_id: 1, plateforme_id: 1 })) }))
+      .mockReturnValueOnce(mockStmt({ get: jest.fn(() => ({ '1': 1 })) }))
+      .mockReturnValueOnce(mockStmt({ run: jest.fn(() => ({ lastInsertRowid: 7 })) }))
+      .mockReturnValueOnce(mockStmt({ get: jest.fn(() => ({ prenom: 'Test' })) }))
+      .mockReturnValueOnce(mockStmt({ get: jest.fn(() => ({ nom: 'OF', devise: 'EUR' })) }));
+    const res = await request(adminApp).post('/api/ventes').send(VALID_VENTE);
+    expect(res.status).toBe(201);
+    expect(res.body.warning).toContain('recalcul');
+  });
+
+  test('400 montant_brut exceeds max (100000)', async () => {
+    const res = await request(adminApp).post('/api/ventes').send({
+      ...VALID_VENTE, montant_brut: 100001,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('100 000');
+  });
 });
 
 describe('PUT /api/ventes/:id', () => {
@@ -155,6 +188,29 @@ describe('PUT /api/ventes/:id', () => {
     const res = await request(chatteurApp).put('/api/ventes/1').send({ montant_brut: 200 });
     expect(res.status).toBe(403);
   });
+
+  test('200 manager can update vente', async () => {
+    const current = { id: 1, chatteur_id: 1, modele_id: 1, plateforme_id: 1, periode_debut: '2026-03-01', periode_fin: '2026-03-15' };
+    db.prepare.mockReturnValue(mockStmt({
+      get: jest.fn(() => current),
+      run: jest.fn(),
+    }));
+    const res = await request(managerApp).put('/api/ventes/1').send({ montant_brut: 300 });
+    expect(res.status).toBe(200);
+    expect(recalculatePaies).toHaveBeenCalled();
+  });
+
+  test('200 with warning when recalculatePaies fails on update', async () => {
+    recalculatePaies.mockImplementationOnce(() => { throw new Error('DB error'); });
+    const current = { id: 1, chatteur_id: 1, modele_id: 1, plateforme_id: 1, periode_debut: '2026-03-01', periode_fin: '2026-03-15' };
+    db.prepare.mockReturnValue(mockStmt({
+      get: jest.fn(() => current),
+      run: jest.fn(),
+    }));
+    const res = await request(adminApp).put('/api/ventes/1').send({ montant_brut: 200 });
+    expect(res.status).toBe(200);
+    expect(res.body.warning).toContain('recalcul');
+  });
 });
 
 describe('DELETE /api/ventes/:id', () => {
@@ -180,6 +236,27 @@ describe('DELETE /api/ventes/:id', () => {
   test('403 for chatteur role', async () => {
     const res = await request(chatteurApp).delete('/api/ventes/1');
     expect(res.status).toBe(403);
+  });
+
+  test('200 with warning when recalculatePaies fails on delete', async () => {
+    recalculatePaies.mockImplementationOnce(() => { throw new Error('DB error'); });
+    db.prepare.mockReturnValue(mockStmt({
+      get: jest.fn(() => ({ id: 1, chatteur_id: 1, montant_brut: 100, periode_debut: '2026-03-01', periode_fin: '2026-03-15' })),
+      run: jest.fn(),
+    }));
+    const res = await request(adminApp).delete('/api/ventes/1');
+    expect(res.status).toBe(200);
+    expect(res.body.warning).toContain('recalcul');
+  });
+
+  test('200 manager can delete vente', async () => {
+    db.prepare.mockReturnValue(mockStmt({
+      get: jest.fn(() => ({ id: 1, chatteur_id: 1, montant_brut: 100, periode_debut: '2026-03-01', periode_fin: '2026-03-15' })),
+      run: jest.fn(),
+    }));
+    const res = await request(managerApp).delete('/api/ventes/1');
+    expect(res.status).toBe(200);
+    expect(recalculatePaies).toHaveBeenCalled();
   });
 });
 

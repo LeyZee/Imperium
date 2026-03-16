@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import usePolling from '../../hooks/usePolling.js';
-import { ChevronLeft, ChevronRight, Clock, Coffee, Globe } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Clock, Coffee, Globe, ClipboardList } from 'lucide-react';
 
 // Creneau start/end hours (in the shift's timezone)
 const CRENEAU_HOURS = {
@@ -110,7 +110,7 @@ export default function MonPlanning() {
     <div className="page-enter">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
         <div>
-          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Mon Planning</h1>
+          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><ClipboardList size={22} color="#f5b731" /> Mon Planning</h1>
           <p style={{ fontSize: '0.8rem', color: '#64748b' }}>
             {totalShifts} shift{totalShifts !== 1 ? 's' : ''} cette semaine
           </p>

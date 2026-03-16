@@ -1,12 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
 import {
   Plus, TrendingUp, ShoppingBag, BarChart3, X, Pencil, Trash2,
-  ChevronDown, Lock, Bot, User, AlertTriangle, Calendar, Clock, CheckCircle, XCircle
+  ChevronDown, Lock, Bot, User, Shield, AlertTriangle, Calendar, Clock, CheckCircle, XCircle,
+  RotateCcw
 } from 'lucide-react';
+import Pagination, { ITEMS_PER_PAGE } from '../../components/Pagination.jsx';
+import { useToast } from '../../components/Toast.jsx';
 
 /* ─── Period helpers ─── */
 function getPeriodeCourante() {
@@ -65,9 +68,17 @@ const CRENEAUX_LABELS = { 1: '08h-14h', 2: '14h-20h', 3: '20h-02h', 4: '02h-08h'
 
 const EMPTY_FORM = { modele_id: '', plateforme_id: '', montant_brut: '', date: today, notes: '', shift_id: '' };
 
+function getSource(vente) {
+  if (vente.source) return vente.source;
+  if (vente.notes?.startsWith('Import Telegram')) return 'telegram';
+  if (vente.notes?.startsWith('Ajout manuel')) return 'chatteur';
+  return 'admin';
+}
+
 /* ═══════════════════════════════════════════════ */
 export default function MesVentes() {
   const { user } = useAuth();
+  const toast = useToast();
   const [ventes, setVentes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -94,13 +105,18 @@ export default function MesVentes() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
 
-  /* Source filter */
-  const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'telegram' | 'manual' | 'admin'
+  /* Filters */
+  const [plateformeFilter, setPlateformeFilter] = useState('all'); // 'all' | plateforme_id
+  const [sourceFilter, setSourceFilter] = useState('all'); // 'all' | 'telegram' | 'chatteur' | 'manager' | 'admin'
+  const [statutFilter, setStatutFilter] = useState('all'); // 'all' | 'en_attente' | 'validée' | 'rejetée'
+  const [currentPage, setCurrentPage] = useState(1);
+
+  /* Exchange rate for EUR conversion */
+  const [tauxChange, setTauxChange] = useState(0.92); // fallback
 
   /* Feedback */
   const [error, setError] = useState('');
   const [fetchError, setFetchError] = useState('');
-  const [success, setSuccess] = useState('');
 
   /* ─── Fetch data ─── */
   const fetchVentes = useCallback(async (p) => {
@@ -132,7 +148,8 @@ export default function MesVentes() {
   const fetchPeriods = useCallback(async () => {
     try {
       const APP_START_DATE = '2026-03-01';
-      const { data } = await api.get('/api/ventes/summary');
+      const { data } = await api.get(`/api/ventes/summary?periode_debut=${periode.debut}&periode_fin=${periode.fin}`);
+      if (data.taux_change) setTauxChange(data.taux_change);
       // Build periods from current + past months (no earlier than app launch)
       const ps = [];
       const now = new Date();
@@ -140,14 +157,15 @@ export default function MesVentes() {
         const d = new Date(now.getFullYear(), now.getMonth(), 1);
         d.setMonth(d.getMonth() - Math.floor(i / 2));
         const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0');
+        const lastDay = new Date(y, d.getMonth() + 1, 0).getDate();
         let debut, fin;
         if (i % 2 === 0) {
-          // Second half
+          // Second half (15→next-01)
           const next = new Date(y, d.getMonth() + 1, 1);
           debut = `${y}-${m}-15`;
           fin = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`;
         } else {
-          // First half
+          // First half (01→15)
           debut = `${y}-${m}-01`;
           fin = `${y}-${m}-15`;
         }
@@ -174,22 +192,45 @@ export default function MesVentes() {
     fetchVentes();
   }, [periode]);
 
-  /* ─── Auto-clear success ─── */
-  useEffect(() => {
-    if (success) { const t = setTimeout(() => setSuccess(''), 3000); return () => clearTimeout(t); }
-  }, [success]);
-
   /* ─── Filtered ventes ─── */
-  const filteredVentes = sourceFilter === 'all' ? ventes : ventes.filter(v => getSource(v) === sourceFilter);
+  const filteredVentes = useMemo(() => ventes.filter(v => {
+    if (plateformeFilter !== 'all' && v.plateforme_id !== Number(plateformeFilter)) return false;
+    if (sourceFilter !== 'all' && getSource(v) !== sourceFilter) return false;
+    if (statutFilter !== 'all' && v.statut !== statutFilter) return false;
+    return true;
+  }), [ventes, plateformeFilter, sourceFilter, statutFilter]);
 
-  /* ─── Stats (based on filtered) ─── */
-  const totalBrut = filteredVentes.reduce((s, v) => s + v.montant_brut, 0);
-  const nbVentes = filteredVentes.length;
-  const moyenne = nbVentes > 0 ? totalBrut / nbVentes : 0;
+  // Reset page when filters change
+  useEffect(() => { setCurrentPage(1); }, [plateformeFilter, sourceFilter, statutFilter, periode]);
 
-  /* ─── Source counts ─── */
-  const sourceCounts = { telegram: 0, manual: 0, admin: 0 };
-  ventes.forEach(v => { sourceCounts[getSource(v)]++; });
+  const totalPages = Math.ceil(filteredVentes.length / ITEMS_PER_PAGE);
+  const paginatedVentes = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredVentes.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredVentes, currentPage]);
+
+  /* ─── Stats (based on filtered, converted to EUR) ─── */
+  const { totalEur, nbVentes, moyenneEur } = useMemo(() => {
+    const total = filteredVentes.reduce((s, v) => {
+      const eur = v.devise === 'USD' ? v.montant_brut * tauxChange : v.montant_brut;
+      return s + eur;
+    }, 0);
+    const nb = filteredVentes.length;
+    return { totalEur: total, nbVentes: nb, moyenneEur: nb > 0 ? total / nb : 0 };
+  }, [filteredVentes, tauxChange]);
+
+  /* ─── Source, statut & plateforme counts ─── */
+  const { sourceCounts, statutCounts, plateformeCounts } = useMemo(() => {
+    const sc = { telegram: 0, chatteur: 0, manager: 0, admin: 0 };
+    const stc = { en_attente: 0, 'validée': 0, 'rejetée': 0 };
+    const pc = {};
+    ventes.forEach(v => {
+      sc[getSource(v)]++;
+      if (v.statut) stc[v.statut]++;
+      pc[v.plateforme_id] = (pc[v.plateforme_id] || 0) + 1;
+    });
+    return { sourceCounts: sc, statutCounts: stc, plateformeCounts: pc };
+  }, [ventes]);
 
   /* ─── Fetch shifts for vente ─── */
   async function fetchShiftsForVente(modeleId, plateformeId) {
@@ -256,10 +297,10 @@ export default function MesVentes() {
 
       if (modal === 'add') {
         await api.post('/api/ventes/mes-ventes', payload);
-        setSuccess('Vente ajoutée !');
+        toast.success('Vente ajoutée !');
       } else {
         await api.put(`/api/ventes/mes-ventes/${modal.id}`, payload);
-        setSuccess('Vente modifiée !');
+        toast.success('Vente modifiée !');
       }
 
       closeModal();
@@ -279,11 +320,11 @@ export default function MesVentes() {
     setDeletingId(id);
     try {
       await api.delete(`/api/ventes/mes-ventes/${id}`);
-      setSuccess('Vente supprimée');
+      toast.success('Vente supprimée');
       setDeleteTarget(null);
       await fetchVentes();
     } catch (err) {
-      setError(err.response?.data?.error || 'Erreur lors de la suppression');
+      toast.error(err.response?.data?.error || 'Erreur lors de la suppression');
     } finally {
       setDeletingId(null);
     }
@@ -300,11 +341,12 @@ export default function MesVentes() {
   }
 
   /* ─── Source badge ─── */
-  function getSource(vente) {
-    if (vente.notes?.startsWith('Import Telegram')) return 'telegram';
-    if (vente.notes?.startsWith('Ajout manuel')) return 'manual';
-    return 'admin';
-  }
+  const SOURCE_CONFIG = {
+    telegram: { label: 'Telegram', icon: Bot, color: '#059669', bg: 'rgba(16,185,129,0.1)' },
+    chatteur: { label: 'Chatteur', icon: User, color: '#1e40af', bg: '#dbeafe' },
+    manager:  { label: 'Manager', icon: Shield, color: '#b45309', bg: '#fef3c7' },
+    admin:    { label: 'Directeur', icon: Shield, color: '#6366f1', bg: '#ede9fe' },
+  };
 
   if (loading) return (
     <div style={{ padding: '2rem' }}>
@@ -319,7 +361,7 @@ export default function MesVentes() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div>
-          <h1 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1b2e4b', margin: 0 }}>Mes Ventes</h1>
+          <h1 style={{ fontSize: '1.3rem', fontWeight: 700, color: '#1b2e4b', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><TrendingUp size={22} color="#f5b731" /> Mes Ventes</h1>
           <p style={{ fontSize: '0.8rem', color: '#94a3b8', margin: '0.25rem 0 0' }}>
             Ajoute et gère tes ventes pour chaque période
           </p>
@@ -394,11 +436,6 @@ export default function MesVentes() {
         </div>
       )}
 
-      {/* Success toast */}
-      {success && (
-        <div className="toast-success" style={{ marginBottom: '1rem' }}>{success}</div>
-      )}
-
       {/* Fetch error */}
       {fetchError && (
         <div className="alert alert-error" role="alert" style={{ marginBottom: '1rem' }}>
@@ -407,49 +444,66 @@ export default function MesVentes() {
         </div>
       )}
 
-      {/* Source filter */}
-      {ventes.length > 0 && (sourceCounts.telegram > 0 || sourceCounts.admin > 0) && (
-        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
-          {[
-            { key: 'all', label: 'Toutes', count: ventes.length, icon: null },
-            { key: 'telegram', label: 'Telegram', count: sourceCounts.telegram, icon: Bot, color: '#2563eb', bg: 'rgba(59,130,246,0.1)' },
-            { key: 'manual', label: 'Manuel', count: sourceCounts.manual, icon: User, color: '#059669', bg: 'rgba(16,185,129,0.1)' },
-            { key: 'admin', label: 'Admin', count: sourceCounts.admin, icon: User, color: '#64748b', bg: 'rgba(148,163,184,0.15)' },
-          ].filter(f => f.key === 'all' || f.count > 0).map(f => {
-            const active = sourceFilter === f.key;
-            return (
-              <button
-                key={f.key}
-                onClick={() => setSourceFilter(f.key)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '0.3rem',
-                  padding: '0.35rem 0.7rem', borderRadius: 8, border: '1px solid',
-                  borderColor: active ? (f.color || '#f5b731') : '#e2e8f0',
-                  background: active ? (f.bg || 'rgba(245,183,49,0.1)') : 'transparent',
-                  color: active ? (f.color || '#f5b731') : '#64748b',
-                  fontSize: '0.75rem', fontWeight: active ? 600 : 400,
-                  cursor: 'pointer', transition: 'all 150ms',
-                }}
-              >
-                {f.icon && <f.icon size={12} />}
-                {f.label}
-                <span style={{
-                  fontSize: '0.65rem', fontWeight: 700, padding: '0 0.3rem',
-                  borderRadius: 6, background: active ? 'rgba(0,0,0,0.08)' : '#f1f5f9',
-                }}>
-                  {f.count}
-                </span>
-              </button>
-            );
-          })}
+      {/* ─── Filter Bar ─── */}
+      {ventes.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+          padding: '0.6rem 0.85rem', marginBottom: '1rem',
+          background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0',
+        }}>
+          {plateformes.length > 1 && (
+            <select
+              className="input-field"
+              value={plateformeFilter}
+              onChange={e => setPlateformeFilter(e.target.value)}
+              style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+            >
+              <option value="all">Toutes les plateformes</option>
+              {plateformes.map(p => <option key={p.id} value={String(p.id)}>{p.nom} ({plateformeCounts[p.id] || 0})</option>)}
+            </select>
+          )}
+          <select
+            className="input-field"
+            value={sourceFilter}
+            onChange={e => setSourceFilter(e.target.value)}
+            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+          >
+            <option value="all">Toutes les sources</option>
+            <option value="telegram">Telegram ({sourceCounts.telegram})</option>
+            <option value="chatteur">Chatteur ({sourceCounts.chatteur})</option>
+            <option value="manager">Manager ({sourceCounts.manager})</option>
+            <option value="admin">Directeur ({sourceCounts.admin})</option>
+          </select>
+          <select
+            className="input-field"
+            value={statutFilter}
+            onChange={e => setStatutFilter(e.target.value)}
+            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+          >
+            <option value="all">Tous les statuts</option>
+            <option value="en_attente">En attente ({statutCounts.en_attente})</option>
+            <option value="validée">Validée ({statutCounts['validée']})</option>
+            <option value="rejetée">Rejetée ({statutCounts['rejetée']})</option>
+          </select>
+
+          {/* Reset button when filters are active */}
+          {(plateformeFilter !== 'all' || sourceFilter !== 'all' || statutFilter !== 'all') && (
+            <button
+              onClick={() => { setPlateformeFilter('all'); setSourceFilter('all'); setStatutFilter('all'); }}
+              className="btn-ghost"
+              style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+            >
+              <RotateCcw size={12} /> Reset
+            </button>
+          )}
         </div>
       )}
 
       {/* Stats cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
-        <StatCard icon={TrendingUp} title="Total brut" value={`${totalBrut.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} $`} color="#1b2e4b" />
+        <StatCard icon={TrendingUp} title="Total brut" value={`${totalEur.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €`} color="#1b2e4b" />
         <StatCard icon={ShoppingBag} title="Nombre de ventes" value={nbVentes} color="#f5b731" />
-        <StatCard icon={BarChart3} title="Moyenne / vente" value={`${moyenne.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} $`} color="#10b981" />
+        <StatCard icon={BarChart3} title="Moyenne / vente" value={`${moyenneEur.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €`} color="#10b981" />
       </div>
 
       {/* Ventes list */}
@@ -460,9 +514,9 @@ export default function MesVentes() {
         }}>
           <ShoppingBag size={40} color="#cbd5e1" style={{ marginBottom: '0.75rem' }} />
           <p style={{ color: '#94a3b8', fontSize: '0.9rem', margin: 0 }}>
-            {sourceFilter !== 'all' ? `Aucune vente ${sourceFilter === 'telegram' ? 'Telegram' : sourceFilter === 'manual' ? 'manuelle' : 'admin'} pour cette période` : 'Aucune vente pour cette période'}
+            {sourceFilter !== 'all' || statutFilter !== 'all' ? 'Aucun résultat avec ces filtres pour cette période' : 'Aucune vente pour cette période'}
           </p>
-          {!periodLocked && sourceFilter === 'all' && (
+          {!periodLocked && sourceFilter === 'all' && statutFilter === 'all' && (
             <button onClick={openAddModal} className="btn-primary" style={{ marginTop: '1rem', fontSize: '0.8rem' }}>
               <Plus size={14} style={{ marginRight: 4 }} /> Ajouter ma première vente
             </button>
@@ -470,7 +524,7 @@ export default function MesVentes() {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {filteredVentes.map(v => {
+          {paginatedVentes.map(v => {
             const source = getSource(v);
             return (
               <div
@@ -506,15 +560,19 @@ export default function MesVentes() {
                 </div>
 
                 {/* Source badge */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '0.25rem',
-                  padding: '0.15rem 0.4rem', borderRadius: 6, fontSize: '0.6rem', fontWeight: 600,
-                  background: source === 'telegram' ? 'rgba(59,130,246,0.1)' : source === 'manual' ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.15)',
-                  color: source === 'telegram' ? '#2563eb' : source === 'manual' ? '#059669' : '#64748b',
-                }}>
-                  {source === 'telegram' ? <Bot size={10} /> : <User size={10} />}
-                  {source === 'telegram' ? 'Telegram' : source === 'manual' ? 'Manuel' : 'Admin'}
-                </div>
+                {(() => {
+                  const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.admin;
+                  const Icon = cfg.icon;
+                  return (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '0.25rem',
+                      padding: '0.15rem 0.5rem', borderRadius: 6, fontSize: '0.6rem', fontWeight: 600,
+                      background: cfg.bg, color: cfg.color,
+                    }}>
+                      <Icon size={10} /> {cfg.label}
+                    </div>
+                  );
+                })()}
 
                 {/* Statut badge */}
                 {v.statut && v.statut !== 'validée' && (
@@ -560,6 +618,8 @@ export default function MesVentes() {
           })}
         </div>
       )}
+
+      <Pagination page={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
 
       {/* ─── Add/Edit Modal ─── */}
       {modal && (

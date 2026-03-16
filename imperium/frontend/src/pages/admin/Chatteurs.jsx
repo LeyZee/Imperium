@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../api/index';
-import { UserPlus, Edit, UserX, X, KeyRound, Camera, Search, MessageSquare, Trash2, Send, Eye, Clock, RefreshCw } from 'lucide-react';
+import { UserPlus, Edit, UserX, X, KeyRound, Camera, Search, MessageSquare, Trash2, Send, Eye, Clock, RefreshCw, Users } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors';
 import { STATUTS, STATUT_MAP } from '../../constants/statuses';
 import { useToast } from '../../components/Toast.jsx';
@@ -40,7 +40,7 @@ const COMMISSION_PRESETS = [
 ];
 
 export default function Chatteurs({ embedded = false }) {
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const navigate = useNavigate();
   const isManager = user?.role === 'manager';
   const basePath = user?.role === 'manager' ? '/manager' : '/admin';
@@ -142,6 +142,14 @@ export default function Chatteurs({ embedded = false }) {
       }
       setModal(false);
       toast.success(editId ? 'Chatteur mis à jour' : 'Chatteur créé');
+      // If editing own profile, refresh navbar avatar
+      if (editId && user?.chatteur_id === editId) {
+        const updates = {};
+        if (form.couleur !== undefined) updates.couleur = form.couleur;
+        if (form.prenom) updates.prenom = form.prenom;
+        if (form.photo !== undefined) updates.photo = form.photo;
+        if (Object.keys(updates).length > 0) refreshUser(updates);
+      }
       fetchChatteurs();
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur');
@@ -166,7 +174,7 @@ export default function Chatteurs({ embedded = false }) {
     <div className={embedded ? '' : 'page-enter'}>
       {!embedded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
-          <h1 className="text-navy" style={{ fontWeight: 700 }}>Équipe</h1>
+          <h1 className="text-navy" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Users size={22} color="#f5b731" /> Équipe</h1>
           <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}>
             <UserPlus size={16} /> Ajouter
           </button>
@@ -220,6 +228,7 @@ export default function Chatteurs({ embedded = false }) {
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{ paddingLeft: '2.25rem', fontSize: '0.85rem' }}
+          aria-label="Rechercher un chatteur"
         />
       </div>
 
@@ -344,12 +353,10 @@ export default function Chatteurs({ embedded = false }) {
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
-                          {c.role !== 'directeur' && (
-                            <button onClick={() => navigate(`${basePath}/chatteurs/${c.id}`)} className="btn-ghost" title="Voir détail" style={{ padding: '0.35rem' }}><Eye size={16} /></button>
-                          )}
-                          <button onClick={() => openEdit(c)} className="btn-ghost" title="Modifier" style={{ padding: '0.35rem' }}><Edit size={16} /></button>
-                          {c.statut !== 'inactif' && !(isManager && (c.id === user?.chatteur_id || c.role === 'manager' || c.role === 'directeur')) ? (
-                            <button onClick={() => setConfirmDel({ id: c.id, prenom: c.prenom })} className="btn-ghost" title="Désactiver" style={{ color: '#ef4444', padding: '0.35rem' }}><UserX size={16} /></button>
+                          <button onClick={() => navigate(`${basePath}/chatteurs/${c.id}`)} className="btn-ghost" title="Voir détail" aria-label={`Voir détail de ${c.prenom}`} style={{ padding: '0.35rem' }}><Eye size={16} /></button>
+                          <button onClick={() => openEdit(c)} className="btn-ghost" title="Modifier" aria-label={`Modifier ${c.prenom}`} style={{ padding: '0.35rem' }}><Edit size={16} /></button>
+                          {c.statut !== 'inactif' && c.role !== 'directeur' && !(isManager && (c.id === user?.chatteur_id || c.role === 'manager')) ? (
+                            <button onClick={() => setConfirmDel({ id: c.id, prenom: c.prenom })} className="btn-ghost" title="Désactiver" aria-label={`Désactiver ${c.prenom}`} style={{ color: '#ef4444', padding: '0.35rem' }}><UserX size={16} /></button>
                           ) : (
                             <span style={{ width: 30, display: 'inline-block' }} />
                           )}
@@ -411,7 +418,7 @@ export default function Chatteurs({ embedded = false }) {
               {!isManager && (
                 <div className="form-group">
                   <label className="label">Rôle</label>
-                  <select className="input-field" value={form.role} onChange={e => setForm({...form, role: e.target.value})}>
+                  <select className="input-field" value={form.role} onChange={e => setForm({...form, role: e.target.value})} aria-label="Rôle du chatteur">
                     <option value="chatteur">Chatteur</option>
                     <option value="manager">Manager</option>
                     <option value="directeur">Directeur</option>
@@ -615,13 +622,10 @@ export default function Chatteurs({ embedded = false }) {
                 </div>
               </div>
               <div className="form-row" style={{ marginBottom: '0.75rem' }}>
-                <div><label className="label">Email</label><input className="input-field" type="email" value={form.email || ''} onChange={e => setForm({...form, email: e.target.value})} /></div>
                 <div><label className="label">Pays</label><input className="input-field" value={form.pays || ''} onChange={e => setForm({...form, pays: e.target.value})} /></div>
-              </div>
-              <div className="form-row" style={{ marginBottom: '0.75rem' }}>
                 <div>
                   <label className="label">Telegram User ID</label>
-                  <input className="input-field" type="number" placeholder="Ex: 123456789" value={form.telegram_user_id || ''} onChange={e => setForm({...form, telegram_user_id: e.target.value ? parseInt(e.target.value) : ''})} />
+                  <input className="input-field" type="text" placeholder="Ex: 123456789" value={form.telegram_user_id || ''} onChange={e => setForm({...form, telegram_user_id: e.target.value.replace(/\D/g, '')})} />
                 </div>
               </div>
 
@@ -693,6 +697,7 @@ export default function Chatteurs({ embedded = false }) {
                     <input className="input-field" type="email"
                       value={form.user_email || form.email || ''}
                       onChange={e => setForm({...form, user_email: e.target.value, email: e.target.value})}
+                      autoComplete="off"
                       placeholder={form.user_id ? '' : 'Adresse email comme identifiant'} />
                   </div>
 
@@ -703,13 +708,13 @@ export default function Chatteurs({ embedded = false }) {
                         <label className="label">Nouveau mot de passe (laisser vide pour ne pas changer)</label>
                         <input className="input-field" type="password" value={form.new_password || ''}
                           onChange={e => setForm({...form, new_password: e.target.value})}
-                          placeholder="••••••••" />
+                          autoComplete="new-password" placeholder="••••••••" />
                       </div>
                       <div className="form-group">
                         <label className="label">Confirmer le mot de passe</label>
                         <input className="input-field" type="password" value={form.confirm_password || ''}
                           onChange={e => setForm({...form, confirm_password: e.target.value})}
-                          placeholder="Retapez le mot de passe" />
+                          autoComplete="new-password" placeholder="Retapez le mot de passe" />
                       </div>
                     </>
                   )}
@@ -721,13 +726,13 @@ export default function Chatteurs({ embedded = false }) {
                         <label className="label">Mot de passe *</label>
                         <input className="input-field" type="password" value={form.new_password || ''}
                           onChange={e => setForm({...form, new_password: e.target.value})}
-                          placeholder="Minimum 8 caractères" />
+                          autoComplete="new-password" placeholder="Minimum 8 caractères" />
                       </div>
                       <div className="form-group">
                         <label className="label">Confirmer le mot de passe</label>
                         <input className="input-field" type="password" value={form.confirm_password || ''}
                           onChange={e => setForm({...form, confirm_password: e.target.value})}
-                          placeholder="Retapez le mot de passe" />
+                          autoComplete="new-password" placeholder="Retapez le mot de passe" />
                       </div>
                     </>
                   )}

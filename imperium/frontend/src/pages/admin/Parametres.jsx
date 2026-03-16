@@ -39,9 +39,8 @@ export default function Parametres() {
   return (
     <div className="page-enter">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.25rem' }}>
-        <Settings size={22} color="#f5b731" />
-        <h1 className="text-navy" style={{ fontWeight: 700, margin: 0 }}>Paramètres</h1>
+      <div style={{ marginBottom: '1.25rem' }}>
+        <h1 className="text-navy" style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Settings size={22} color="#f5b731" /> Paramètres</h1>
       </div>
 
       {/* Tabs */}

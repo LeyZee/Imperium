@@ -9,6 +9,7 @@ const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
 const { logActivity } = require('../utils/activityLogger');
 const { notifyChatteur } = require('../utils/notifier');
+const { notifyPaieSummary } = require('../utils/telegramSender');
 const { getExchangeRate } = require('../utils/rateCache');
 const { validateDate } = require('../utils/validation');
 const { parsePagination, paginatedResponse } = require('../utils/pagination');
@@ -23,6 +24,20 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   }
   const dateErr = validateDate(debut) || validateDate(fin);
   if (dateErr) throw new ApiError(400, dateErr);
+
+  // Auto-recalculate: if there are validated ventes but no paies yet, trigger recalculation
+  const paieCount = db.prepare('SELECT COUNT(*) as cnt FROM paies WHERE periode_debut = ? AND periode_fin = ?').get(debut, fin);
+  if (paieCount.cnt === 0) {
+    const venteCount = db.prepare("SELECT COUNT(*) as cnt FROM ventes WHERE periode_debut = ? AND periode_fin = ? AND statut = 'validée'").get(debut, fin);
+    if (venteCount.cnt > 0) {
+      try {
+        recalculatePaies(debut, fin);
+        logger.info('Auto-recalcul des paies déclenché', { debut, fin, nb_ventes: venteCount.cnt });
+      } catch (err) {
+        logger.error('Auto-recalcul des paies échoué', { debut, fin, error: err.message });
+      }
+    }
+  }
 
   // Fetch paie rows with chatteur + plateforme info + user role
   const paies = db.prepare(`
@@ -98,16 +113,23 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     COUNT(*) as nb_pending
     FROM ventes v
     JOIN plateformes pl ON pl.id = v.plateforme_id
-    WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut = 'en_attente'
+    WHERE v.periode_debut = ? AND v.periode_fin = ? AND v.statut = 'en_attente'
   `).get(tauxChange, debut, fin);
+
+  // Fetch palier thresholds (global, not period-specific)
+  const paliersRow = db.prepare(
+    'SELECT * FROM paliers_primes WHERE actif = 1 ORDER BY seuil_net_ht DESC'
+  ).all();
 
   res.json({
     paies: normalPaies,
     managers: managerPaies,
     directeurs: directeurPaies,
+    paliers_primes: paliersRow,
     resume: {
       total_net_ht_equipe: totalNetHTEquipe,
       total_paye_equipe: totalPayeEquipe,
+      total_primes: Object.values(chatteurAgg).reduce((s, c) => s + c.prime, 0),
       part_agence_brut: agencyGross,
       tresorerie_agence: tresorerieAgence,
       taux_change: tauxChange,
@@ -153,23 +175,58 @@ router.put('/:id/statut', authMiddleware, adminOrManager, asyncHandler((req, res
 
   logActivity(req.user.id, 'update_paie_statut', 'paie', parseInt(req.params.id), statut);
 
-  // Notify chatteur when paie is validated or paid
+  // Notify chatteur when paie is validated or paid (in-app + Telegram DM)
   if (paie && (statut === 'validé' || statut === 'payé')) {
     const label = statut === 'validé' ? 'validée' : 'payée';
     notifyChatteur(paie.chatteur_id, 'paie_statut', `Paie ${label}`, `Votre paie a été ${label}.`, '/chatteur/factures');
+
+    // Send Telegram DM with paie summary
+    try {
+      const paieDetail = db.prepare(`
+        SELECT p.*, pl.nom as plateforme_nom
+        FROM paies p LEFT JOIN plateformes pl ON pl.id = p.plateforme_id
+        WHERE p.id = ?
+      `).get(req.params.id);
+      if (paieDetail) {
+        // Aggregate all paies for this chatteur+period for full summary
+        const allPaies = db.prepare(`
+          SELECT SUM(commission_chatteur) as total_commission, SUM(prime) as total_prime,
+            SUM(malus_total) as total_malus, SUM(total_chatteur) as grand_total
+          FROM paies WHERE chatteur_id = ? AND periode_debut = ? AND periode_fin = ?
+        `).get(paieDetail.chatteur_id, paieDetail.periode_debut, paieDetail.periode_fin);
+
+        if (allPaies) {
+          const rc = n => Math.round((n || 0) * 100) / 100;
+          notifyPaieSummary(
+            paieDetail.chatteur_id,
+            paieDetail.periode_debut,
+            paieDetail.periode_fin,
+            rc(allPaies.total_commission),
+            rc(allPaies.total_prime),
+            rc(allPaies.total_malus),
+            rc(allPaies.grand_total),
+            label
+          ).catch(() => {});
+        }
+      }
+    } catch (err) {
+      logger.warn('Telegram paie notification failed', { error: err.message });
+    }
   }
 
   res.json({ message: 'Statut mis à jour' });
 }));
 
-// GET /api/paies/mes-paies — chatteur: get own paies with full calculation details
+// GET /api/paies/mes-paies — chatteur: get own paies with full calculation details + estimates
 router.get('/mes-paies', authMiddleware, asyncHandler((req, res) => {
   if (req.user.role !== 'chatteur' || !req.user.chatteur_id) {
     throw new ApiError(403, 'Accès réservé aux chatteurs');
   }
 
+  const chatteurId = req.user.chatteur_id;
   const chatteur = db.prepare('SELECT taux_commission, role, taux_net_equipe FROM chatteurs WHERE id = ?')
-    .get(req.user.chatteur_id);
+    .get(chatteurId);
+  const tauxCommission = chatteur?.taux_commission || 0;
 
   const paies = db.prepare(`
     SELECT p.*,
@@ -180,11 +237,142 @@ router.get('/mes-paies', authMiddleware, asyncHandler((req, res) => {
     WHERE p.chatteur_id = ?
     ORDER BY p.periode_debut DESC
     LIMIT 50
-  `).all(req.user.chatteur_id);
+  `).all(chatteurId);
+
+  // Build set of periods that already have real paies
+  const existingPeriods = new Set(paies.map(p => `${p.periode_debut}|${p.periode_fin}`));
+
+  // Find periods with ventes but no paies → compute estimates
+  const ventePeriods = db.prepare(`
+    SELECT v.periode_debut, v.periode_fin, v.plateforme_id,
+      SUM(v.montant_brut) as total_brut,
+      COUNT(*) as nb_ventes,
+      pl.nom as plateforme_nom, pl.devise, pl.tva_rate, pl.commission_rate,
+      pl.couleur_fond, pl.couleur_texte
+    FROM ventes v
+    JOIN plateformes pl ON pl.id = v.plateforme_id
+    WHERE v.chatteur_id = ? AND v.statut != 'rejetée'
+    GROUP BY v.periode_debut, v.periode_fin, v.plateforme_id
+    ORDER BY v.periode_debut DESC
+  `).all(chatteurId);
+
+  const tauxChange = getExchangeRate();
+  const rc = (n) => Math.round((n || 0) * 100) / 100;
+
+  // Group ventePeriods by period key for multi-platform estimation
+  const periodGroups = {};
+  for (const vp of ventePeriods) {
+    const key = `${vp.periode_debut}|${vp.periode_fin}`;
+    if (existingPeriods.has(key)) continue;
+    if (!periodGroups[key]) periodGroups[key] = { debut: vp.periode_debut, fin: vp.periode_fin, rows: [] };
+    periodGroups[key].rows.push(vp);
+  }
+
+  const estimates = [];
+
+  for (const pg of Object.values(periodGroups)) {
+    // Step 1: compute base per-platform rows + total net HT
+    let chatteurTotalNetHT = 0;
+    const platformRows = [];
+
+    for (const vp of pg.rows) {
+      const brut = vp.total_brut;
+      const ttc = vp.devise === 'USD' ? brut * tauxChange : brut;
+      const ht = ttc / (1 + (vp.tva_rate || 0));
+      const netHT = ht * (1 - (vp.commission_rate || 0));
+      const commission = netHT * tauxCommission;
+      chatteurTotalNetHT += netHT;
+
+      platformRows.push({
+        id: null,
+        chatteur_id: chatteurId,
+        plateforme_id: vp.plateforme_id,
+        periode_debut: pg.debut,
+        periode_fin: pg.fin,
+        ventes_brutes: rc(brut),
+        nb_ventes: vp.nb_ventes,
+        taux_change: tauxChange,
+        ventes_ttc_eur: rc(ttc),
+        ventes_ht_eur: rc(ht),
+        net_ht_eur: rc(netHT),
+        commission_chatteur: rc(commission),
+        malus_total: 0,
+        prime: 0,
+        total_chatteur: 0,
+        statut: 'estimé',
+        plateforme_nom: vp.plateforme_nom,
+        devise: vp.devise,
+        tva_rate: vp.tva_rate,
+        commission_rate: vp.commission_rate,
+        couleur_fond: vp.couleur_fond,
+        couleur_texte: vp.couleur_texte,
+      });
+    }
+
+    // Step 2: Malus (fixe + pourcentage)
+    const malusFixeRow = db.prepare(`
+      SELECT COALESCE(SUM(montant), 0) as total
+      FROM malus WHERE chatteur_id = ? AND periode <= ? AND COALESCE(periode_fin, periode) >= ?
+        AND actif != 0 AND type_malus = 'montant'
+    `).get(chatteurId, pg.fin, pg.debut);
+    const malusPctRow = db.prepare(`
+      SELECT COALESCE(SUM(montant), 0) as total_pct
+      FROM malus WHERE chatteur_id = ? AND periode <= ? AND COALESCE(periode_fin, periode) >= ?
+        AND actif != 0 AND type_malus = 'pourcentage'
+    `).get(chatteurId, pg.fin, pg.debut);
+    let malusTotal = rc((malusFixeRow?.total || 0) + ((malusPctRow?.total_pct || 0) / 100) * chatteurTotalNetHT);
+    // Cap malus at total net HT
+    if (malusTotal > chatteurTotalNetHT) malusTotal = rc(chatteurTotalNetHT);
+
+    // Step 3: Primes (palier individuel + manuelles + collectif)
+    const palier = db.prepare(
+      'SELECT bonus FROM paliers_primes WHERE actif = 1 AND seuil_net_ht <= ? ORDER BY seuil_net_ht DESC LIMIT 1'
+    ).get(chatteurTotalNetHT);
+    const primeManuelle = db.prepare(
+      'SELECT COALESCE(SUM(montant), 0) as total FROM primes_manuelles WHERE chatteur_id = ? AND actif = 1 AND periode_debut >= ? AND periode_fin <= ?'
+    ).get(chatteurId, pg.debut, pg.fin);
+
+    // Collectif: need total net_ht of ALL chatteurs for this period
+    let collectifBonus = 0;
+    const objCollectif = db.prepare(
+      'SELECT * FROM objectifs_collectifs WHERE periode_debut = ? AND periode_fin = ? AND actif = 1'
+    ).get(pg.debut, pg.fin);
+    if (objCollectif && objCollectif.montant_cible > 0) {
+      // Sum all non-rejected ventes for ALL chatteurs in this period
+      const equipeNetHT = db.prepare(`
+        SELECT COALESCE(SUM(
+          CASE WHEN pl.devise = 'USD' THEN v.montant_brut * ? ELSE v.montant_brut END
+          / (1 + pl.tva_rate) * (1 - pl.commission_rate)
+        ), 0) as total
+        FROM ventes v JOIN plateformes pl ON pl.id = v.plateforme_id
+        WHERE v.statut != 'rejetée' AND v.periode_debut = ? AND v.periode_fin = ?
+      `).get(tauxChange, pg.debut, pg.fin);
+      const progressPct = ((equipeNetHT?.total || 0) / objCollectif.montant_cible) * 100;
+      const palierCol = db.prepare(
+        'SELECT bonus_par_chatteur FROM paliers_collectifs WHERE objectif_collectif_id = ? AND seuil_pct <= ? ORDER BY seuil_pct DESC LIMIT 1'
+      ).get(objCollectif.id, progressPct);
+      if (palierCol) collectifBonus = palierCol.bonus_par_chatteur;
+    }
+
+    const primeTotal = (palier?.bonus || 0) + (primeManuelle?.total || 0) + collectifBonus;
+
+    // Step 4: Distribute prime & malus across platforms proportionally
+    for (const row of platformRows) {
+      const ratio = chatteurTotalNetHT > 0 ? row.net_ht_eur / chatteurTotalNetHT : 0;
+      row.prime = rc(primeTotal * ratio);
+      row.malus_total = rc(malusTotal * ratio);
+      row.total_chatteur = rc(row.commission_chatteur + row.prime - row.malus_total);
+    }
+
+    estimates.push(...platformRows);
+  }
+
+  // Merge real paies + estimates, sorted by periode_debut DESC
+  const allPaies = [...paies, ...estimates].sort((a, b) => b.periode_debut.localeCompare(a.periode_debut));
 
   res.json({
-    paies,
-    taux_commission: chatteur?.taux_commission || 0,
+    paies: allPaies,
+    taux_commission: tauxCommission,
     role: chatteur?.role || 'chatteur',
   });
 }));

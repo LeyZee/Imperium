@@ -16,85 +16,45 @@ const router = require('../../routes/objectifs');
 const adminApp = createApp('/api/objectifs', router, 'admin');
 const chatteurApp = createApp('/api/objectifs', router, 'chatteur');
 
-describe('GET /api/objectifs', () => {
-  test('returns objectives', async () => {
-    db.prepare.mockReturnValue(mockStmt({ all: jest.fn(() => [{ id: 1, montant_cible: 1000 }]) }));
-    const res = await request(adminApp).get('/api/objectifs');
+describe('GET /api/objectifs/suggestions', () => {
+  test('returns suggestions', async () => {
+    db.prepare.mockReturnValue(mockStmt({ all: jest.fn(() => [{ total_brut: 500, debut: '2026-02-01' }]) }));
+    const res = await request(adminApp).get('/api/objectifs/suggestions');
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body).toHaveProperty('suggestions');
   });
 });
 
-describe('GET /api/objectifs/progress', () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  test('400 without params', async () => {
-    const res = await request(adminApp).get('/api/objectifs/progress');
-    expect(res.status).toBe(400);
-  });
-
-  test('returns progress', async () => {
-    db.prepare.mockReturnValue(mockStmt({
-      all: jest.fn(() => [{ id: 1, montant_cible: 1000, chatteur_id: null, modele_id: null }]),
-      get: jest.fn(() => ({ total: 500 })),
-    }));
-    const res = await request(adminApp).get('/api/objectifs/progress').query({ periode_debut: '2026-03-01', periode_fin: '2026-03-15' });
+describe('GET /api/objectifs/collectif', () => {
+  test('returns null when no collectif', async () => {
+    db.prepare.mockReturnValue(mockStmt({ get: jest.fn(() => null), all: jest.fn(() => []) }));
+    const res = await request(adminApp).get('/api/objectifs/collectif').query({ periode_debut: '2026-03-01', periode_fin: '2026-03-15' });
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
   });
 });
 
-describe('POST /api/objectifs', () => {
+describe('POST /api/objectifs/collectif', () => {
   beforeEach(() => jest.clearAllMocks());
-
-  test('201 success', async () => {
-    db.prepare.mockReturnValue(mockStmt({ run: jest.fn(() => ({ lastInsertRowid: 5 })) }));
-    const res = await request(adminApp).post('/api/objectifs').send({
-      montant_cible: 1000, periode_debut: '2026-03-01', periode_fin: '2026-03-15',
-    });
-    expect(res.status).toBe(201);
-  });
 
   test('400 missing fields', async () => {
-    const res = await request(adminApp).post('/api/objectifs').send({ montant_cible: 1000 });
-    expect(res.status).toBe(400);
-  });
-
-  test('400 montant <= 0', async () => {
-    const res = await request(adminApp).post('/api/objectifs').send({
-      montant_cible: -10, periode_debut: '2026-03-01', periode_fin: '2026-03-15',
-    });
+    const res = await request(adminApp).post('/api/objectifs/collectif').send({ montant_cible: 5000 });
     expect(res.status).toBe(400);
   });
 
   test('403 for chatteur', async () => {
-    const res = await request(chatteurApp).post('/api/objectifs').send({
-      montant_cible: 1000, periode_debut: '2026-03-01', periode_fin: '2026-03-15',
+    const res = await request(chatteurApp).post('/api/objectifs/collectif').send({
+      montant_cible: 5000, periode_debut: '2026-03-01', periode_fin: '2026-03-15',
+      paliers: [{ seuil_pct: 80, bonus_par_chatteur: 20, label: 'Bronze' }],
     });
     expect(res.status).toBe(403);
   });
 });
 
-describe('PUT /api/objectifs/:id', () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  test('updates', async () => {
-    db.prepare.mockReturnValue(mockStmt({ get: jest.fn(() => ({ id: 1 })), run: jest.fn() }));
-    const res = await request(adminApp).put('/api/objectifs/1').send({ montant_cible: 2000 });
+describe('GET /api/objectifs/paliers-primes', () => {
+  test('returns paliers', async () => {
+    db.prepare.mockReturnValue(mockStmt({ all: jest.fn(() => [{ id: 1, seuil_net_ht: 500, bonus: 15 }]) }));
+    const res = await request(adminApp).get('/api/objectifs/paliers-primes').query({ periode_debut: '2026-03-01', periode_fin: '2026-03-15' });
     expect(res.status).toBe(200);
-  });
-
-  test('404', async () => {
-    db.prepare.mockReturnValue(mockStmt({ get: jest.fn(() => null) }));
-    const res = await request(adminApp).put('/api/objectifs/999').send({ montant_cible: 2000 });
-    expect(res.status).toBe(404);
-  });
-});
-
-describe('DELETE /api/objectifs/:id', () => {
-  test('soft deletes', async () => {
-    db.prepare.mockReturnValue(mockStmt({ run: jest.fn() }));
-    const res = await request(adminApp).delete('/api/objectifs/1');
-    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
   });
 });

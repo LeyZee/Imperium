@@ -77,7 +77,7 @@ describe('GET /api/auth/me', () => {
     db.prepare.mockReturnValue(mockStmt({ get: jest.fn(() => ({ id: 1, role: 'admin', email: 'a@t.com' })) }));
     const res = await request(adminApp).get('/api/auth/me');
     expect(res.status).toBe(200);
-    expect(res.body.email).toBe('a@t.com');
+    expect(res.body.user.email).toBe('a@t.com');
   });
 
   test('404 if user not found', async () => {

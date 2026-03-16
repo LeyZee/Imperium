@@ -4,10 +4,36 @@ import StatCard from '../../components/StatCard.jsx';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import {
-  Euro, TrendingUp, Building2, Calendar,
-  Trophy, RefreshCw, ChevronDown, Crown, Users, Shield,
-  CheckCircle, Clock, AlertCircle, Download, FileText,
+  Euro, TrendingUp, Calendar, Gift,
+  Trophy, RefreshCw, ChevronDown, ChevronRight, Crown, Users, Shield,
+  CheckCircle, Clock, AlertCircle, Download, FileText, CreditCard,
 } from 'lucide-react';
+
+/* ─── Palier thresholds — built from API data (DB = single source of truth) ─── */
+import { getPalierHex } from '../../utils/palierColors.js';
+
+const DEFAULT_PALIER_THRESHOLDS = [
+  { seuil: 2500, label: 'Diamant', icon: '💎', color: '#06b6d4' },
+  { seuil: 1500, label: 'Or', icon: '🥇', color: '#f5b731' },
+  { seuil: 750, label: 'Argent', icon: '🥈', color: '#A8A9AD' },
+  { seuil: 250, label: 'Bronze', icon: '🥉', color: '#CD7F32' },
+];
+
+function buildPalierThresholds(apiPaliers) {
+  if (!apiPaliers || apiPaliers.length === 0) return DEFAULT_PALIER_THRESHOLDS;
+  return apiPaliers
+    .map((p, i) => ({
+      seuil: p.seuil_net_ht,
+      label: p.label || p.nom || 'Palier',
+      icon: p.emoji || '●',
+      color: getPalierHex(p, i),
+    }))
+    .sort((a, b) => b.seuil - a.seuil);
+}
+
+function getPalier(netHT, thresholds) {
+  return (thresholds || DEFAULT_PALIER_THRESHOLDS).find(p => netHT >= p.seuil) || null;
+}
 
 /* ─── Period generator (no periods before March 2026 — app launch) ─── */
 const APP_START_DATE = '2026-03-01';
@@ -75,15 +101,72 @@ function getChatteurColor(couleurIndex) {
 }
 
 const STATUT_STYLES = {
-  'calculé': { bg: 'rgba(100,116,139,0.1)', color: '#64748b', border: '1px solid rgba(100,116,139,0.2)' },
-  'validé': { bg: 'rgba(99,102,241,0.1)', color: '#6366f1', border: '1px solid rgba(99,102,241,0.2)' },
-  'payé': { bg: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.2)' },
+  'calculé': { bg: 'rgba(249,115,22,0.1)', color: '#c2410c', border: '1px solid rgba(249,115,22,0.25)', stripe: '#ea580c', icon: AlertCircle },
+  'validé': { bg: 'rgba(59,130,246,0.1)', color: '#1d4ed8', border: '1px solid rgba(59,130,246,0.25)', stripe: '#2563eb', icon: Clock },
+  'payé': { bg: 'rgba(16,185,129,0.1)', color: '#059669', border: '1px solid rgba(16,185,129,0.25)', stripe: '#059669', icon: CheckCircle },
 };
 
+/* Statut ordering for cycling + groupedPaies merge */
+const STATUT_ORDER = { 'calculé': 0, 'validé': 1, 'payé': 2 };
+
+const STATUT_ORDER_LIST = ['calculé', 'validé', 'payé'];
+const STATUT_ORDER_LIST_MANAGER = ['calculé', 'validé']; // managers can't set 'payé'
+
+function getNextStatut(current, isManager) {
+  const list = isManager ? STATUT_ORDER_LIST_MANAGER : STATUT_ORDER_LIST;
+  const idx = list.indexOf(current);
+  return list[(idx + 1) % list.length];
+}
+
+/* ─── Statut Badge Component ─── */
+function StatutBadge({ statut, onClick, label, isManager, loading, readOnly }) {
+  const style = STATUT_STYLES[statut] || STATUT_STYLES['calculé'];
+  const IconComponent = style.icon || AlertCircle;
+  if (readOnly) {
+    return (
+      <span
+        aria-label={`${label} — statut ${statut}`}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+          background: style.bg, color: style.color, border: style.border,
+          borderRadius: '20px', padding: '0.25rem 0.6rem',
+          fontSize: '0.72rem', fontWeight: 600, whiteSpace: 'nowrap',
+        }}
+      >
+        <IconComponent size={12} />
+        <span>{statut.charAt(0).toUpperCase() + statut.slice(1)}</span>
+      </span>
+    );
+  }
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      aria-label={`${label} — statut ${statut}, cliquer pour changer`}
+      title={`Cliquer pour passer à « ${getNextStatut(statut, isManager)} »`}
+      style={{
+        display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+        background: style.bg, color: style.color, border: style.border,
+        borderRadius: '20px', padding: '0.25rem 0.6rem 0.25rem 0.5rem',
+        fontSize: '0.72rem', fontWeight: 600, cursor: loading ? 'wait' : 'pointer',
+        outline: 'none', transition: 'all 200ms ease',
+        whiteSpace: 'nowrap', opacity: loading ? 0.6 : 1,
+      }}
+    >
+      {loading
+        ? <span className="spinner" style={{ width: 12, height: 12 }} />
+        : <IconComponent size={12} />
+      }
+      <span>{statut.charAt(0).toUpperCase() + statut.slice(1)}</span>
+      <ChevronRight size={11} style={{ opacity: 0.6, marginLeft: '-0.1rem' }} />
+    </button>
+  );
+}
+
 const PODIUM_ICONS = [
-  { emoji: '🥇', color: '#f5b731', bg: 'rgba(245,183,49,0.12)' },
-  { emoji: '🥈', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)' },
-  { emoji: '🥉', color: '#cd7f32', bg: 'rgba(205,127,50,0.12)' },
+  { rank: '1er', color: '#f5b731', bg: 'rgba(245,183,49,0.12)', badgeBg: 'linear-gradient(135deg, #f5b731, #e6a817)' },
+  { rank: '2e', color: '#94a3b8', bg: 'rgba(148,163,184,0.12)', badgeBg: 'linear-gradient(135deg, #94a3b8, #64748b)' },
+  { rank: '3e', color: '#cd7f32', bg: 'rgba(205,127,50,0.12)', badgeBg: 'linear-gradient(135deg, #cd7f32, #a0522d)' },
 ];
 
 /* ═══════════════════════════════════════════ */
@@ -98,6 +181,9 @@ export default function Paies() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
+  const [showRecalcModal, setShowRecalcModal] = useState(false);
+  const [showPayeConfirm, setShowPayeConfirm] = useState(null); // { ids, label } or null
+  const [changingStatut, setChangingStatut] = useState(new Set()); // ids currently changing
   const dropdownRef = useRef(null);
 
   const period = periods[selectedIdx];
@@ -147,13 +233,49 @@ export default function Paies() {
     }
   }
 
-  async function handleStatutChange(paieId, newStatut) {
+  function requestStatutChange(paieIdOrIds, newStatut, label) {
+    const ids = Array.isArray(paieIdOrIds) ? paieIdOrIds : [paieIdOrIds];
+    // Confirmation required for "payé" (irreversible financially)
+    if (newStatut === 'payé') {
+      setShowPayeConfirm({ ids, label: label || 'cette paie', newStatut });
+      return;
+    }
+    doStatutChange(ids, newStatut);
+  }
+
+  async function doStatutChange(ids, newStatut) {
+    const idSet = new Set(ids);
+    setChangingStatut(prev => new Set([...prev, ...ids]));
+    // Optimistic update
+    setData(prev => {
+      if (!prev) return prev;
+      const updateRows = rows => rows.map(p => idSet.has(p.id) ? { ...p, statut: newStatut } : p);
+      return { ...prev, paies: updateRows(prev.paies), managers: updateRows(prev.managers), directeurs: updateRows(prev.directeurs) };
+    });
     try {
-      await api.put(`/api/paies/${paieId}/statut`, { statut: newStatut });
-      await fetchPaies();
+      await Promise.all(ids.map(id => api.put(`/api/paies/${id}/statut`, { statut: newStatut })));
+      setSuccess(`Statut mis à jour → ${newStatut}`);
+      setTimeout(() => setSuccess(''), 2000);
     } catch {
       setError('Erreur changement de statut.');
+      await fetchPaies(); // Rollback: refetch real data
+    } finally {
+      setChangingStatut(prev => { const next = new Set(prev); ids.forEach(id => next.delete(id)); return next; });
     }
+  }
+
+  function handleBatchStatut(newStatut) {
+    const allPaieIds = [
+      ...paies.map(p => p.id),
+      ...managers.map(m => m.id),
+      ...directeurs.map(d => d.id),
+    ].filter(Boolean);
+    if (allPaieIds.length === 0) return;
+    if (newStatut === 'payé') {
+      setShowPayeConfirm({ ids: allPaieIds, label: 'toutes les paies', newStatut });
+      return;
+    }
+    doStatutChange(allPaieIds, newStatut);
   }
 
   const [downloadingId, setDownloadingId] = useState(null);
@@ -209,6 +331,70 @@ export default function Paies() {
   const resume = data?.resume || {};
   const top = resume.top_chatteurs || [];
 
+  // Group paie rows by chatteur (merge multi-platform rows into one)
+  const groupedPaies = useMemo(() => {
+    const grouped = {};
+    for (const p of paies) {
+      if (!grouped[p.chatteur_id]) {
+        grouped[p.chatteur_id] = {
+          chatteur_id: p.chatteur_id,
+          chatteur_prenom: p.chatteur_prenom,
+          chatteur_couleur: p.chatteur_couleur,
+          taux_commission: p.taux_commission,
+          platforms: [],
+          paie_ids: [],
+          ventes_brutes: 0,
+          ventes_ttc_eur: 0,
+          ventes_ht_eur: 0,
+          net_ht_eur: 0,
+          commission_chatteur: 0,
+          malus_total: 0,
+          prime: 0,
+          total_chatteur: 0,
+          statut: 'payé', // start high, will be set to lowest
+        };
+      }
+      const g = grouped[p.chatteur_id];
+      g.platforms.push({
+        nom: p.plateforme_nom,
+        couleur_fond: p.couleur_fond,
+        couleur_texte: p.couleur_texte,
+        devise: p.devise,
+        ventes_brutes: p.ventes_brutes,
+        ventes_ttc_eur: p.ventes_ttc_eur,
+        ventes_ht_eur: p.ventes_ht_eur,
+        net_ht_eur: p.net_ht_eur,
+        commission_chatteur: p.commission_chatteur,
+      });
+      g.paie_ids.push(p.id);
+      g.ventes_brutes += (p.ventes_brutes || 0);
+      g.ventes_ttc_eur += (p.ventes_ttc_eur || 0);
+      g.ventes_ht_eur += (p.ventes_ht_eur || 0);
+      g.net_ht_eur += (p.net_ht_eur || 0);
+      g.commission_chatteur += (p.commission_chatteur || 0);
+      g.malus_total += (p.malus_total || 0);
+      g.prime += (p.prime || 0);
+      g.total_chatteur += (p.total_chatteur || 0);
+      // Lowest statut wins: calculé < validé < payé
+      if ((STATUT_ORDER[p.statut] ?? 0) < (STATUT_ORDER[g.statut] ?? 0)) {
+        g.statut = p.statut;
+      }
+    }
+    return Object.values(grouped).sort((a, b) => b.net_ht_eur - a.net_ht_eur);
+  }, [paies]);
+
+  // Build dynamic palier thresholds from API data (fallback to defaults)
+  const palierThresholds = useMemo(() => buildPalierThresholds(data?.paliers_primes), [data?.paliers_primes]);
+
+  // Aggregate net_ht per chatteur for palier badges
+  const chatteurPaliers = useMemo(() => {
+    const result = {};
+    for (const g of groupedPaies) {
+      result[g.chatteur_id] = getPalier(g.net_ht_eur, palierThresholds);
+    }
+    return result;
+  }, [groupedPaies, palierThresholds]);
+
   return (
     <div className="page-enter">
       {/* Toast */}
@@ -222,7 +408,7 @@ export default function Paies() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
         <div>
-          <h1 style={{ fontWeight: 700, margin: 0 }}>Paies</h1>
+          <h1 style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><CreditCard size={22} color="#f5b731" /> Paies</h1>
           <p style={{ fontSize: '0.85rem', color: '#64748b' }}>Calcul automatique et suivi des rémunérations</p>
         </div>
 
@@ -233,7 +419,8 @@ export default function Paies() {
               className="btn-secondary haptic"
               onClick={handleDownloadAll}
               disabled={downloadingId !== null || batchProgress !== null}
-              title="T\u00e9l\u00e9charger toutes les factures PDF de la p\u00e9riode"
+              title="Télécharger toutes les factures PDF de la période"
+              aria-label="Télécharger toutes les factures PDF"
               style={{ padding: '0.5rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
             >
               {batchProgress ? (
@@ -254,9 +441,9 @@ export default function Paies() {
           {!isManager && (
             <button
               className="btn-secondary"
-              onClick={handleRecalculate}
+              onClick={() => setShowRecalcModal(true)}
               disabled={recalculating || loading}
-              title="Recalculer les paies"
+              title="Recalculer les paies" aria-label="Recalculer les paies"
               style={{ padding: '0.5rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
             >
               <RefreshCw size={15} style={{ animation: recalculating ? 'spin 1s linear infinite' : 'none' }} />
@@ -266,6 +453,7 @@ export default function Paies() {
 
           {period && (
             <button className="btn-secondary" style={{ fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+              aria-label="Exporter les paies en CSV"
               onClick={() => window.open(`/api/paies/export-csv?debut=${period.debut}&fin=${period.fin}`, '_blank')}>
               <Download size={14} /> CSV
             </button>
@@ -276,6 +464,8 @@ export default function Paies() {
             <button
               className="btn-secondary"
               onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
+              aria-expanded={showPeriodDropdown}
+              aria-label="Sélectionner la période"
               style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.5rem 1rem', minWidth: '160px', justifyContent: 'space-between' }}
             >
               <Calendar size={15} />
@@ -352,10 +542,10 @@ export default function Paies() {
               color="#f5b731"
             />
             <StatCard
-              title="Trésorerie Agence"
-              value={fmtEur(resume.tresorerie_agence)}
-              icon={Building2}
-              color="#10b981"
+              title="Total Primes"
+              value={fmtEur(resume.total_primes)}
+              icon={Gift}
+              color="#f59e0b"
             />
           </div>
 
@@ -379,7 +569,14 @@ export default function Paies() {
                     }}
                     className="hover-lift"
                   >
-                    <span style={{ fontSize: '1.3rem', flexShrink: 0 }}>{PODIUM_ICONS[i].emoji}</span>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: '1.6rem', height: '1.6rem', borderRadius: '50%',
+                      background: PODIUM_ICONS[i].badgeBg,
+                      color: '#fff', fontSize: '0.7rem', fontWeight: 800,
+                      flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                      letterSpacing: '-0.02em',
+                    }}>{PODIUM_ICONS[i].rank}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontWeight: 600, fontSize: '0.82rem', color: '#1a1f2e', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.nom}</p>
                       <p style={{ fontSize: '0.7rem', color: '#64748b', margin: '0.15rem 0 0', whiteSpace: 'nowrap' }}>
@@ -408,11 +605,31 @@ export default function Paies() {
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             }}>
               <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0 }}>Détail par chatteur</h3>
-              {paies.length > 0 && (
-                <span className="badge badge-navy" style={{ fontSize: '0.7rem' }}>
-                  {paies.length} ligne{paies.length > 1 ? 's' : ''}
-                </span>
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {groupedPaies.length > 0 && !isManager && (
+                  <>
+                    <button
+                      className="btn-ghost"
+                      onClick={() => handleBatchStatut('validé')}
+                      style={{ fontSize: '0.68rem', padding: '0.2rem 0.5rem', borderRadius: '6px', color: '#1d4ed8', border: '1px solid rgba(59,130,246,0.25)' }}
+                    >
+                      Tout valider
+                    </button>
+                    <button
+                      className="btn-ghost"
+                      onClick={() => handleBatchStatut('payé')}
+                      style={{ fontSize: '0.68rem', padding: '0.2rem 0.5rem', borderRadius: '6px', color: '#059669', border: '1px solid rgba(16,185,129,0.25)' }}
+                    >
+                      Tout payer
+                    </button>
+                  </>
+                )}
+                {groupedPaies.length > 0 && (
+                  <span className="badge badge-navy" style={{ fontSize: '0.7rem' }}>
+                    {groupedPaies.length} chatteur{groupedPaies.length > 1 ? 's' : ''}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -420,21 +637,21 @@ export default function Paies() {
                 <thead>
                   <tr>
                     <th>Chatteur</th>
-                    <th>Plateforme</th>
-                    <th style={{ textAlign: 'right' }}>Brut</th>
-                    <th style={{ textAlign: 'right' }}>TTC €</th>
-                    <th style={{ textAlign: 'right' }}>HT €</th>
+                    <th>Plateforme(s)</th>
+                    <th style={{ textAlign: 'right' }}>Ventes brutes</th>
+                    <th className="hide-mobile" style={{ textAlign: 'right' }}>TTC (EUR)</th>
+                    <th className="hide-mobile" style={{ textAlign: 'right' }}>HT (- TVA)</th>
                     <th style={{ textAlign: 'right' }}>Net HT</th>
-                    <th style={{ textAlign: 'right' }}>Commission</th>
-                    <th style={{ textAlign: 'right' }}>Malus</th>
+                    <th className="hide-mobile" style={{ textAlign: 'right' }}>Commission</th>
+                    <th className="hide-mobile" style={{ textAlign: 'right' }}>Malus</th>
                     <th style={{ textAlign: 'right' }}>Prime</th>
-                    <th style={{ textAlign: 'right' }}>TOTAL</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
                     <th style={{ textAlign: 'center' }}>Statut</th>
                     <th style={{ textAlign: 'center', width: '50px' }}>PDF</th>
                   </tr>
                 </thead>
                 <tbody className="stagger-rows">
-                  {paies.length === 0 ? (
+                  {groupedPaies.length === 0 ? (
                     <tr>
                       <td colSpan={12} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
                         <div style={{
@@ -448,98 +665,142 @@ export default function Paies() {
                       </td>
                     </tr>
                   ) : (
-                    paies.map(p => {
-                      const isUSD = p.devise === 'USD';
-                      const statutStyle = STATUT_STYLES[p.statut] || STATUT_STYLES['calculé'];
-                      const totalColor = p.total_chatteur > 0 ? '#f5b731' : '#ef4444';
+                    groupedPaies.map(g => {
+                      const statutStyle = STATUT_STYLES[g.statut] || STATUT_STYLES['calculé'];
+                      const totalColor = g.total_chatteur > 0 ? '#f5b731' : '#ef4444';
 
                       return (
                         <tr
-                          key={p.id}
+                          key={g.chatteur_id}
                           className="hover-gold-row"
                           style={{ cursor: 'default' }}
                         >
-                          <td>
+                          <td style={{ borderLeft: `4px solid ${statutStyle.stripe}` }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               <div style={{
                                 width: 32, height: 32, borderRadius: '50%',
-                                background: getChatteurColor(p.chatteur_couleur).bg,
+                                background: getChatteurColor(g.chatteur_couleur).bg,
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                fontSize: '0.7rem', fontWeight: 700, color: getChatteurColor(p.chatteur_couleur).text, flexShrink: 0,
+                                fontSize: '0.7rem', fontWeight: 700, color: getChatteurColor(g.chatteur_couleur).text, flexShrink: 0,
                               }}>
-                                {getInitials(p.chatteur_prenom)}
+                                {getInitials(g.chatteur_prenom)}
                               </div>
                               <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>
-                                {p.chatteur_prenom}
+                                {g.chatteur_prenom}
                               </span>
+                              {chatteurPaliers[g.chatteur_id] && (
+                                <span style={{
+                                  fontSize: '0.6rem', fontWeight: 600,
+                                  padding: '0.1rem 0.35rem', borderRadius: '6px',
+                                  background: `${chatteurPaliers[g.chatteur_id].color}18`,
+                                  color: chatteurPaliers[g.chatteur_id].color,
+                                  border: `1px solid ${chatteurPaliers[g.chatteur_id].color}30`,
+                                  whiteSpace: 'nowrap', marginLeft: '0.25rem',
+                                }}>
+                                  {chatteurPaliers[g.chatteur_id].icon} {chatteurPaliers[g.chatteur_id].label}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td>
-                            <span className="badge" style={{
-                              background: p.couleur_fond || '#1b2e4b',
-                              color: p.couleur_texte || '#ffffff',
-                            }}>
-                              {p.plateforme_nom || '—'}
-                            </span>
+                            <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
+                              {g.platforms.map((pl, i) => (
+                                <span key={i} className="badge" style={{
+                                  background: pl.couleur_fond || '#1b2e4b',
+                                  color: pl.couleur_texte || '#ffffff',
+                                  fontSize: '0.72rem',
+                                }}>
+                                  {pl.nom || '—'}
+                                </span>
+                              ))}
+                            </div>
                           </td>
+                          {/* Ventes brutes */}
                           <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
-                            {isUSD ? fmtUsd(p.ventes_brutes) : fmtEur(p.ventes_brutes)}
+                            {g.platforms.length > 1 ? (
+                              <div>
+                                <div style={{ fontWeight: 500 }}>{fmtEur(g.ventes_brutes)}</div>
+                                <div style={{ fontSize: '0.62rem', color: '#94a3b8', marginTop: '2px', lineHeight: 1.4 }}>
+                                  {g.platforms.map((pl, i) => (
+                                    <div key={i}>{pl.nom}: {pl.devise === 'USD' ? fmtUsd(pl.ventes_brutes) : fmtEur(pl.ventes_brutes)}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              g.platforms[0]?.devise === 'USD' ? fmtUsd(g.ventes_brutes) : fmtEur(g.ventes_brutes)
+                            )}
                           </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
-                            {fmtEur(p.ventes_ttc_eur)}
+                          {/* TTC (EUR) */}
+                          <td className="hide-mobile" style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {g.platforms.length > 1 ? (
+                              <div>
+                                <div style={{ fontWeight: 500 }}>{fmtEur(g.ventes_ttc_eur)}</div>
+                                <div style={{ fontSize: '0.62rem', color: '#94a3b8', marginTop: '2px', lineHeight: 1.4 }}>
+                                  {g.platforms.map((pl, i) => (
+                                    <div key={i}>{pl.nom}: {fmtEur(pl.ventes_ttc_eur)}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : fmtEur(g.ventes_ttc_eur)}
                           </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
-                            {fmtEur(p.ventes_ht_eur)}
+                          {/* HT (- TVA) */}
+                          <td className="hide-mobile" style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {g.platforms.length > 1 ? (
+                              <div>
+                                <div style={{ fontWeight: 500 }}>{fmtEur(g.ventes_ht_eur)}</div>
+                                <div style={{ fontSize: '0.62rem', color: '#94a3b8', marginTop: '2px', lineHeight: 1.4 }}>
+                                  {g.platforms.map((pl, i) => (
+                                    <div key={i}>{pl.nom}: {fmtEur(pl.ventes_ht_eur)}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : fmtEur(g.ventes_ht_eur)}
                           </td>
+                          {/* Net HT (- comm. plat.) */}
                           <td style={{ textAlign: 'right', fontSize: '0.82rem', fontWeight: 600 }}>
-                            {fmtEur(p.net_ht_eur)}
+                            {g.platforms.length > 1 ? (
+                              <div>
+                                <div>{fmtEur(g.net_ht_eur)}</div>
+                                <div style={{ fontSize: '0.62rem', color: '#94a3b8', fontWeight: 400, marginTop: '2px', lineHeight: 1.4 }}>
+                                  {g.platforms.map((pl, i) => (
+                                    <div key={i}>{pl.nom}: {fmtEur(pl.net_ht_eur)}</div>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : fmtEur(g.net_ht_eur)}
                           </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
-                            {fmtEur(p.commission_chatteur)}
+                          {/* Commission chatteur (merged total) */}
+                          <td className="hide-mobile" style={{ textAlign: 'right', fontSize: '0.82rem', color: '#64748b' }}>
+                            {fmtEur(g.commission_chatteur)}
                             <span style={{ fontSize: '0.65rem', color: '#94a3b8', marginLeft: '0.25rem' }}>
-                              ({fmtPercent(p.taux_commission)})
+                              ({fmtPercent(g.taux_commission)})
                             </span>
                           </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: p.malus_total > 0 ? '#ef4444' : '#94a3b8' }}>
-                            {p.malus_total > 0 ? `-${fmtEur(p.malus_total)}` : '—'}
+                          <td className="hide-mobile" style={{ textAlign: 'right', fontSize: '0.82rem', color: g.malus_total > 0 ? '#ef4444' : '#94a3b8' }}>
+                            {g.malus_total > 0 ? `-${fmtEur(g.malus_total)}` : '—'}
                           </td>
-                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: p.prime > 0 ? '#10b981' : '#94a3b8' }}>
-                            {p.prime > 0 ? `+${fmtEur(p.prime)}` : '—'}
+                          <td style={{ textAlign: 'right', fontSize: '0.82rem', color: g.prime > 0 ? '#10b981' : '#94a3b8' }}>
+                            {g.prime > 0 ? `+${fmtEur(g.prime)}` : '—'}
                           </td>
                           <td style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: totalColor }}>
-                            {fmtEur(p.total_chatteur)}
+                            {fmtEur(g.total_chatteur)}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <select
-                              value={p.statut}
-                              onChange={e => handleStatutChange(p.id, e.target.value)}
-                              style={{
-                                background: statutStyle.bg,
-                                color: statutStyle.color,
-                                border: statutStyle.border,
-                                borderRadius: '20px',
-                                padding: '0.2rem 0.5rem',
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                outline: 'none',
-                                appearance: 'none',
-                                WebkitAppearance: 'none',
-                                textAlign: 'center',
-                                minWidth: '75px',
-                              }}
-                            >
-                              <option value="calculé">Calculé</option>
-                              <option value="validé">Validé</option>
-                              {!isManager && <option value="payé">Payé</option>}
-                            </select>
+                            <StatutBadge
+                              statut={g.statut}
+                              onClick={() => requestStatutChange(g.paie_ids, getNextStatut(g.statut, isManager), g.chatteur_prenom)}
+                              label={`Statut de ${g.chatteur_prenom}`}
+                              isManager={isManager}
+                              loading={g.paie_ids.some(id => changingStatut.has(id))}
+                            />
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <button
                               className="haptic hover-icon"
-                              onClick={(e) => { e.stopPropagation(); handleDownloadFacture(p.chatteur_id, p.chatteur_prenom); }}
-                              disabled={downloadingId === p.chatteur_id}
-                              title={`T\u00e9l\u00e9charger la facture de ${p.chatteur_prenom}`}
+                              onClick={(e) => { e.stopPropagation(); handleDownloadFacture(g.chatteur_id, g.chatteur_prenom); }}
+                              disabled={downloadingId === g.chatteur_id}
+                              aria-label={`Télécharger la facture de ${g.chatteur_prenom}`}
+                              title={`Télécharger la facture de ${g.chatteur_prenom}`}
                               style={{
                                 background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)',
                                 borderRadius: '8px', padding: '0.35rem', cursor: 'pointer',
@@ -547,7 +808,7 @@ export default function Paies() {
                                 transition: 'all 200ms ease',
                               }}
                             >
-                              {downloadingId === p.chatteur_id
+                              {downloadingId === g.chatteur_id
                                 ? <span className="spinner" style={{ width: 14, height: 14 }} />
                                 : <Download size={14} color="#6366f1" />}
                             </button>
@@ -592,7 +853,7 @@ export default function Paies() {
                           key={m.id}
                           className="hover-gold-row"
                         >
-                          <td>
+                          <td style={{ borderLeft: `4px solid ${statutStyle.stripe}` }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                               <div style={{
                                 width: 32, height: 32, borderRadius: '50%',
@@ -617,35 +878,20 @@ export default function Paies() {
                             {fmtEur(m.total_chatteur)}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <select
-                              value={m.statut}
-                              onChange={e => handleStatutChange(m.id, e.target.value)}
-                              style={{
-                                background: statutStyle.bg,
-                                color: statutStyle.color,
-                                border: statutStyle.border,
-                                borderRadius: '20px',
-                                padding: '0.2rem 0.5rem',
-                                fontSize: '0.72rem',
-                                fontWeight: 600,
-                                cursor: 'pointer',
-                                outline: 'none',
-                                appearance: 'none',
-                                WebkitAppearance: 'none',
-                                textAlign: 'center',
-                                minWidth: '75px',
-                              }}
-                            >
-                              <option value="calculé">Calculé</option>
-                              <option value="validé">Validé</option>
-                              {!isManager && <option value="payé">Payé</option>}
-                            </select>
+                            <StatutBadge
+                              statut={m.statut}
+                              onClick={() => requestStatutChange(m.id, getNextStatut(m.statut, isManager), m.chatteur_prenom)}
+                              label={`Statut de ${m.chatteur_prenom}`}
+                              isManager={isManager}
+                              loading={changingStatut.has(m.id)}
+                            />
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <button
                               className="haptic hover-icon"
                               onClick={(e) => { e.stopPropagation(); handleDownloadFacture(m.chatteur_id, m.chatteur_prenom); }}
                               disabled={downloadingId === m.chatteur_id}
+                              aria-label={`Télécharger la facture de ${m.chatteur_prenom}`}
                               title={`Télécharger la facture de ${m.chatteur_prenom}`}
                               style={{
                                 background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.15)',
@@ -687,13 +933,10 @@ export default function Paies() {
                       <th style={{ textAlign: 'right' }}>% du Net HT Équipe</th>
                       <th style={{ textAlign: 'right' }}>Base (Net HT Équipe)</th>
                       <th style={{ textAlign: 'right' }}>TOTAL</th>
-                      {!isManager && <th style={{ textAlign: 'center' }}>Statut</th>}
                     </tr>
                   </thead>
                   <tbody className="stagger-rows">
-                    {directeurs.map(d => {
-                      const statutStyle = STATUT_STYLES[d.statut] || STATUT_STYLES['calculé'];
-                      return (
+                    {directeurs.map(d => (
                         <tr key={d.id} className="hover-gold-row">
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -717,36 +960,8 @@ export default function Paies() {
                           <td style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: '#6366f1' }}>
                             {fmtEur(d.total_chatteur)}
                           </td>
-                          {!isManager && (
-                            <td style={{ textAlign: 'center' }}>
-                              <select
-                                value={d.statut}
-                                onChange={e => handleStatutChange(d.id, e.target.value)}
-                                style={{
-                                  background: statutStyle.bg,
-                                  color: statutStyle.color,
-                                  border: statutStyle.border,
-                                  borderRadius: '20px',
-                                  padding: '0.2rem 0.5rem',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 600,
-                                  cursor: 'pointer',
-                                  outline: 'none',
-                                  appearance: 'none',
-                                  WebkitAppearance: 'none',
-                                  textAlign: 'center',
-                                  minWidth: '75px',
-                                }}
-                              >
-                                <option value="calculé">Calculé</option>
-                                <option value="validé">Validé</option>
-                                <option value="payé">Payé</option>
-                              </select>
-                            </td>
-                          )}
                         </tr>
-                      );
-                    })}
+                    ))}
                   </tbody>
                 </table>
               </div>
@@ -771,16 +986,150 @@ export default function Paies() {
         }}>{error}</div>
       )}
 
+      {/* Confirmation modal for Recalculer */}
+      {showRecalcModal && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            animation: 'fadeIn 0.2s ease',
+          }}
+          onClick={() => setShowRecalcModal(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="recalc-title"
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card, #fff)', borderRadius: '14px',
+              padding: '1.75rem', maxWidth: '380px', width: '90%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
+              animation: 'modalCardIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{
+              width: 48, height: 48, borderRadius: '50%', margin: '0 auto 1rem',
+              background: 'rgba(245,183,49,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <RefreshCw size={22} color="#f5b731" />
+            </div>
+            <h3 id="recalc-title" style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--navy)', margin: '0 0 0.5rem' }}>
+              Recalculer toutes les paies ?
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 1.25rem' }}>
+              Les paies de la période <strong>{period?.label}</strong> seront recalculées à partir des ventes validées.
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+              <button
+                className="btn-ghost"
+                onClick={() => setShowRecalcModal(false)}
+                style={{ padding: '0.5rem 1.25rem', fontSize: '0.82rem' }}
+              >
+                Annuler
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => { setShowRecalcModal(false); handleRecalculate(); }}
+                style={{
+                  padding: '0.5rem 1.25rem', fontSize: '0.82rem',
+                  background: 'linear-gradient(135deg, #f5b731, #e6a817)',
+                  display: 'flex', alignItems: 'center', gap: '0.35rem',
+                }}
+              >
+                <RefreshCw size={14} /> Recalculer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation modal for Payé */}
+      {showPayeConfirm && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 200,
+            background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            animation: 'fadeIn 0.2s ease',
+          }}
+          onClick={() => setShowPayeConfirm(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={e => e.stopPropagation()}
+            style={{
+              background: 'var(--bg-card, #fff)', borderRadius: '14px',
+              padding: '1.75rem', maxWidth: '380px', width: '90%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
+              animation: 'modalCardIn 0.25s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              textAlign: 'center',
+            }}
+          >
+            <div style={{
+              width: 48, height: 48, borderRadius: '50%', margin: '0 auto 1rem',
+              background: 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <CheckCircle size={22} color="#059669" />
+            </div>
+            <h3 style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--navy)', margin: '0 0 0.5rem' }}>
+              Marquer comme payé ?
+            </h3>
+            <p style={{ fontSize: '0.82rem', color: '#64748b', margin: '0 0 1.25rem' }}>
+              Confirmer le passage en <strong style={{ color: '#059669' }}>payé</strong> pour <strong>{showPayeConfirm.label}</strong> ?
+              {showPayeConfirm.ids.length > 1 && (
+                <span style={{ display: 'block', fontSize: '0.75rem', marginTop: '0.3rem', color: '#94a3b8' }}>
+                  ({showPayeConfirm.ids.length} paie{showPayeConfirm.ids.length > 1 ? 's' : ''} concernée{showPayeConfirm.ids.length > 1 ? 's' : ''})
+                </span>
+              )}
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center' }}>
+              <button
+                className="btn-ghost"
+                onClick={() => setShowPayeConfirm(null)}
+                style={{ padding: '0.5rem 1.25rem', fontSize: '0.82rem' }}
+              >
+                Annuler
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => {
+                  const { ids, newStatut } = showPayeConfirm;
+                  setShowPayeConfirm(null);
+                  doStatutChange(ids, newStatut);
+                }}
+                style={{
+                  padding: '0.5rem 1.25rem', fontSize: '0.82rem',
+                  background: 'linear-gradient(135deg, #059669, #047857)',
+                  display: 'flex', alignItems: 'center', gap: '0.35rem',
+                }}
+              >
+                <CheckCircle size={14} /> Confirmer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @media (max-width: 768px) {
+          .hide-mobile {
+            display: none !important;
+          }
+        }
         @media (max-width: 600px) {
           .podium-grid {
             grid-template-columns: 1fr !important;
-          }
-          .hide-mobile {
-            display: none !important;
           }
         }
       `}</style>

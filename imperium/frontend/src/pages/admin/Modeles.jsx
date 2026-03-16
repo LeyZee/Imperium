@@ -135,7 +135,7 @@ export default function Modeles({ embedded = false }) {
     <div className={embedded ? '' : 'page-enter'}>
       {!embedded ? (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
-          <h1 className="text-navy" style={{ fontWeight: 700 }}>Modèles</h1>
+          <h1 className="text-navy" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><User size={22} color="#f5b731" /> Modèles</h1>
           <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
         </div>
       ) : (

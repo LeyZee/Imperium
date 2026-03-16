@@ -11,32 +11,35 @@ import {
   Menu,
   X,
   Activity,
-  MinusCircle,
+  Sparkles,
   Target,
   User,
   Send,
   Settings,
+  Megaphone,
 } from 'lucide-react';
 
 const adminItems = [
   { to: '/admin/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/admin/shifts', icon: Calendar, label: 'Shifts' },
+  { to: '/admin/shifts', icon: Calendar, label: 'Planning' },
   { to: '/admin/ventes', icon: TrendingUp, label: 'Ventes' },
   { to: '/admin/paies', icon: CreditCard, label: 'Paies' },
-  { to: '/admin/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
-  { to: '/admin/malus', icon: MinusCircle, label: 'Malus & Primes' },
+  { to: '/admin/facturation-modeles', icon: FileText, label: 'Facturation' },
+  { to: '/admin/malus', icon: Sparkles, label: 'Primes & Malus' },
   { to: '/admin/objectifs', icon: Target, label: 'Objectifs' },
+  { to: '/admin/annonces', icon: Megaphone, label: 'Annonces' },
   { to: '/admin/parametres', icon: Settings, label: 'Paramètres' },
 ];
 
 const managerItems = [
   { to: '/manager/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/manager/shifts', icon: Calendar, label: 'Shifts' },
+  { to: '/manager/shifts', icon: Calendar, label: 'Planning' },
   { to: '/manager/ventes', icon: TrendingUp, label: 'Ventes' },
   { to: '/manager/paies', icon: CreditCard, label: 'Paies' },
-  { to: '/manager/facturation-modeles', icon: FileText, label: 'Fact. Modèles' },
-  { to: '/manager/malus', icon: MinusCircle, label: 'Malus & Primes' },
+  { to: '/manager/facturation-modeles', icon: FileText, label: 'Facturation' },
+  { to: '/manager/malus', icon: Sparkles, label: 'Primes & Malus' },
   { to: '/manager/objectifs', icon: Target, label: 'Objectifs' },
+  { to: '/manager/annonces', icon: Megaphone, label: 'Annonces' },
   { to: '/manager/parametres', icon: Settings, label: 'Paramètres' },
 ];
 

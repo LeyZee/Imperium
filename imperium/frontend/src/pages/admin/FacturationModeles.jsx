@@ -4,7 +4,7 @@ import StatCard from '../../components/StatCard.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
 import { useToast } from '../../components/Toast.jsx';
 import {
-  Euro, Building2, Users, ChevronDown, User, ChevronRight, Calendar,
+  Euro, Building2, Users, ChevronDown, User, ChevronRight, Calendar, FileText,
 } from 'lucide-react';
 
 /* ─── Period generator (no periods before March 2026 — app launch) ─── */
@@ -111,7 +111,7 @@ export default function FacturationModeles() {
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
-          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Facturation Modèles</h1>
+          <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}><FileText size={22} color="#f5b731" /> Facturation Modèles</h1>
           <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Part agence par modèle sur la période</p>
         </div>
         {/* Period selector */}

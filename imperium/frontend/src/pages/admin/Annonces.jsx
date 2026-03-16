@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Megaphone, Plus, Edit2, EyeOff } from 'lucide-react';
+import { Megaphone, Plus, Edit2, EyeOff, Send, CheckCircle, Info } from 'lucide-react';
 import api from '../../api/index.js';
 import { useToast } from '../../components/Toast.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
@@ -30,10 +30,15 @@ export default function Annonces() {
     try {
       if (form.id) {
         await api.put(`/api/annonces/${form.id}`, form);
-        toast('Annonce mise à jour', 'success');
+        toast('Annonce mise \u00e0 jour', 'success');
       } else {
-        await api.post('/api/annonces', form);
-        toast('Annonce créée', 'success');
+        const { data } = await api.post('/api/annonces', form);
+        if (data.telegramStats) {
+          const s = data.telegramStats;
+          toast(`Annonce cr\u00e9\u00e9e ! Telegram : ${s.sent} envoy\u00e9(s)${s.skipped > 0 ? `, ${s.skipped} non li\u00e9(s)` : ''}`, 'success');
+        } else {
+          toast('Annonce cr\u00e9\u00e9e', 'success');
+        }
       }
       setModal(null);
       fetchAnnonces();
@@ -64,6 +69,21 @@ export default function Annonces() {
         </button>
       </div>
 
+      {/* Guide / description */}
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', gap: '0.6rem',
+        padding: '0.75rem 1rem', marginBottom: '1.25rem',
+        background: 'rgba(99, 102, 241, 0.06)', border: '1px solid rgba(99, 102, 241, 0.15)',
+        borderRadius: '8px', fontSize: '0.82rem', color: '#475569', lineHeight: 1.5,
+      }}>
+        <Info size={16} color="#6366f1" style={{ flexShrink: 0, marginTop: 2 }} />
+        <div>
+          <strong style={{ color: '#1a1f2e' }}>Comment ça marche ?</strong> Créez une annonce pour communiquer avec votre équipe.
+          L'annonce sera visible dans le tableau de bord de chaque chatteur.
+          Vous pouvez aussi l'envoyer directement en <strong>message privé Telegram</strong> à tous les chatteurs liés, ils recevront une notification instantanée sur leur téléphone.
+        </div>
+      </div>
+
       {loading ? (
         <div style={{ textAlign: 'center', padding: '3rem' }}><div className="spinner" /></div>
       ) : annonces.length === 0 ? (
@@ -90,9 +110,9 @@ export default function Annonces() {
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button onClick={() => setModal(a)} className="icon-btn" title="Modifier"><Edit2 size={16} /></button>
+                  <button onClick={() => setModal(a)} className="icon-btn" title="Modifier" aria-label={`Modifier l'annonce ${a.title}`}><Edit2 size={16} /></button>
                   {a.actif && (
-                    <button onClick={() => setDeleteId(a.id)} className="icon-btn" style={{ color: '#ef4444' }} title="Désactiver"><EyeOff size={16} /></button>
+                    <button onClick={() => setDeleteId(a.id)} className="icon-btn" style={{ color: '#ef4444' }} title="Désactiver" aria-label={`Désactiver l'annonce ${a.title}`}><EyeOff size={16} /></button>
                   )}
                 </div>
               </div>
@@ -108,11 +128,28 @@ export default function Annonces() {
 }
 
 function AnnonceModal({ data, onClose, onSave }) {
-  const [form, setForm] = useState({ title: data.title || '', content: data.content || '', ...(data.id ? { id: data.id } : {}) });
+  const isNew = !data.id;
+  const [form, setForm] = useState({
+    title: data.title || '',
+    content: data.content || '',
+    sendTelegram: false,
+    ...(data.id ? { id: data.id } : {}),
+  });
+  const [sending, setSending] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!form.title.trim() || !form.content.trim()) return;
+    setSending(true);
+    try {
+      await onSave(form);
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-card" onClick={e => e.stopPropagation()}>
+      <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '520px' }}>
         <h2 style={{ fontSize: '1.1rem', fontWeight: 700, marginBottom: '1rem' }}>
           {data.id ? 'Modifier' : 'Nouvelle'} annonce
         </h2>
@@ -127,13 +164,57 @@ function AnnonceModal({ data, onClose, onSave }) {
           className="input-field" style={{ minHeight: '120px', resize: 'vertical' }}
           placeholder="Contenu de l'annonce..." />
 
+        {/* Telegram toggle — only for new announcements */}
+        {isNew && (
+          <label style={{
+            display: 'flex', alignItems: 'center', gap: '0.75rem',
+            marginTop: '1rem', padding: '0.75rem 1rem',
+            background: form.sendTelegram ? 'rgba(0, 136, 204, 0.08)' : '#f8fafc',
+            border: `1px solid ${form.sendTelegram ? '#0088cc' : '#e2e8f0'}`,
+            borderRadius: '8px', cursor: 'pointer',
+            transition: 'all 200ms',
+          }}>
+            <div style={{
+              width: 40, height: 22, borderRadius: 11,
+              background: form.sendTelegram ? '#0088cc' : '#cbd5e1',
+              position: 'relative', transition: 'background 200ms', flexShrink: 0,
+            }}>
+              <div style={{
+                width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                position: 'absolute', top: 2,
+                left: form.sendTelegram ? 20 : 2,
+                transition: 'left 200ms',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+              }} />
+              <input type="checkbox" checked={form.sendTelegram}
+                onChange={e => setForm(f => ({ ...f, sendTelegram: e.target.checked }))}
+                style={{ display: 'none' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: form.sendTelegram ? '#0088cc' : '#475569' }}>
+                <Send size={14} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+                Envoyer aussi via Telegram
+              </div>
+              <div style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: 2 }}>
+                Chaque chatteur recevra l'annonce en message privé
+              </div>
+            </div>
+          </label>
+        )}
+
         <div style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} className="btn-secondary">Annuler</button>
-          <button onClick={() => {
-            if (!form.title.trim()) return;
-            if (!form.content.trim()) return;
-            onSave(form);
-          }} className="btn-primary haptic" disabled={!form.title.trim() || !form.content.trim()}>{data.id ? 'Modifier' : 'Publier'}</button>
+          <button onClick={onClose} className="btn-secondary" disabled={sending}>Annuler</button>
+          <button onClick={handleSubmit}
+            className="btn-primary haptic"
+            disabled={!form.title.trim() || !form.content.trim() || sending}
+            style={form.sendTelegram && isNew ? { background: '#0088cc' } : {}}
+          >
+            {sending ? (
+              <><div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Envoi...</>
+            ) : data.id ? 'Modifier' : form.sendTelegram ? (
+              <><Send size={14} /> Publier + Telegram</>
+            ) : 'Publier'}
+          </button>
         </div>
       </div>
     </div>

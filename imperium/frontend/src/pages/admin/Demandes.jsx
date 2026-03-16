@@ -48,7 +48,7 @@ export default function Demandes() {
           {pendingCount > 0 && <span className="badge badge-gold">{pendingCount}</span>}
         </h1>
         <select value={filterStatut} onChange={e => setFilterStatut(e.target.value)}
-          className="input-field" style={{ width: 'auto' }}>
+          className="input-field" style={{ width: 'auto' }} aria-label="Filtrer par statut">
           <option value="">Tous les statuts</option>
           <option value="en_attente">En attente</option>
           <option value="approuve">Approuvé</option>
@@ -123,11 +123,11 @@ export default function Demandes() {
                       {d.statut === 'en_attente' && (
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button onClick={() => handleReview(d.id, 'approuve')}
-                            className="icon-btn" style={{ color: '#16a34a' }} title="Approuver">
+                            className="icon-btn" style={{ color: '#16a34a' }} title="Approuver" aria-label={`Approuver la demande de ${d.chatteur_prenom}`}>
                             <Check size={16} />
                           </button>
                           <button onClick={() => handleReview(d.id, 'refuse')}
-                            className="icon-btn" style={{ color: '#dc2626' }} title="Refuser">
+                            className="icon-btn" style={{ color: '#dc2626' }} title="Refuser" aria-label={`Refuser la demande de ${d.chatteur_prenom}`}>
                             <X size={16} />
                           </button>
                         </div>

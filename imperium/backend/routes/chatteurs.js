@@ -7,6 +7,7 @@ const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
 const { sendEmail, buildInvitationEmail } = require('../utils/email');
+const { getExchangeRate } = require('../utils/rateCache');
 
 const PENDING_HASH = '!PENDING_INVITATION!';
 
@@ -42,7 +43,7 @@ router.get('/classement', authMiddleware, asyncHandler((req, res) => {
   }
 
   // Get ranking from paies (net_ht-based, excludes managers and VAs)
-  const classement = db.prepare(`
+  let classement = db.prepare(`
     SELECT
       c.id, c.prenom, c.couleur, c.role, c.pays,
       COALESCE(SUM(p.net_ht_eur), 0) as total_net_ht,
@@ -66,8 +67,46 @@ router.get('/classement', authMiddleware, asyncHandler((req, res) => {
       AND plateforme_id IS NOT NULL
   `).get(periode_debut, periode_fin);
 
-  const total_net_ht_equipe = totalRow?.total || 0;
-  const prime_rates = [0.005, 0.0025, 0.0012]; // 0.5%, 0.25%, 0.12%
+  let total_net_ht_equipe = totalRow?.total || 0;
+
+  // Fallback: estimate from ventes when no paies exist yet
+  if (classement.length === 0) {
+    const ventesClassement = db.prepare(`
+      SELECT
+        c.id, c.prenom, c.couleur, c.role, c.pays,
+        v.montant_brut, pl.devise, pl.tva_rate, pl.commission_rate
+      FROM ventes v
+      JOIN chatteurs c ON c.id = v.chatteur_id
+      JOIN plateformes pl ON pl.id = v.plateforme_id
+      WHERE v.periode_debut = ? AND v.periode_fin = ?
+        AND v.statut != 'rejetée'
+        AND c.actif = 1 AND c.role NOT IN ('va', 'manager')
+    `).all(periode_debut, periode_fin);
+
+    if (ventesClassement.length > 0) {
+      const byChatteur = {};
+      for (const v of ventesClassement) {
+        if (!byChatteur[v.id]) {
+          byChatteur[v.id] = { id: v.id, prenom: v.prenom, couleur: v.couleur, role: v.role, pays: v.pays, total_net_ht: 0, prime: 0, total_paie: 0 };
+        }
+        const brut = v.montant_brut || 0;
+        const tva = v.tva_rate ?? 0.2;
+        const comm = v.commission_rate ?? 0.2;
+        const brutEur = v.devise === 'USD' ? brut * 0.92 : brut;
+        byChatteur[v.id].total_net_ht += (brutEur / (1 + tva)) * (1 - comm);
+      }
+      classement = Object.values(byChatteur)
+        .map(c => ({ ...c, total_net_ht: Math.round(c.total_net_ht * 100) / 100 }))
+        .filter(c => c.total_net_ht > 0)
+        .sort((a, b) => b.total_net_ht - a.total_net_ht);
+      total_net_ht_equipe = classement.reduce((s, c) => s + c.total_net_ht, 0);
+    }
+  }
+
+  // Fetch individual paliers (global)
+  const paliers_primes = db.prepare(
+    'SELECT * FROM paliers_primes WHERE actif = 1 ORDER BY seuil_net_ht ASC'
+  ).all();
 
   // Total active chatteurs (role=chatteur only, for display "sur X")
   const nbChatteurs = db.prepare("SELECT COUNT(*) as cnt FROM chatteurs WHERE actif = 1 AND role = 'chatteur'").get();
@@ -75,7 +114,7 @@ router.get('/classement', authMiddleware, asyncHandler((req, res) => {
   res.json({
     classement,
     total_net_ht_equipe,
-    prime_rates,
+    paliers_primes,
     nb_chatteurs: nbChatteurs.cnt,
   });
 }));
@@ -250,6 +289,17 @@ router.post('/:id/resend-invite', authMiddleware, adminOrManager, asyncHandler(a
 router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;
 
+  // Directeur protection — cannot change role or deactivate a directeur
+  const targetChatteur = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
+  if (targetChatteur && targetChatteur.role === 'directeur') {
+    if (req.body.role && req.body.role !== 'directeur') {
+      throw new ApiError(403, 'Le rôle du directeur ne peut pas être modifié');
+    }
+    if (req.body.actif === false || req.body.actif === 0) {
+      throw new ApiError(403, 'Le compte directeur ne peut pas être désactivé');
+    }
+  }
+
   // Manager restrictions
   if (req.user.role === 'manager') {
     // Cannot change own commission rates
@@ -304,7 +354,8 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     is_nouveau !== undefined ? (is_nouveau ? 1 : 0) : null,
     effectiveActif,
     role ?? null, taux_net_equipe ?? null, taux_horaire ?? null,
-    couleur ?? null, photo ?? null, telegram_user_id ?? null,
+    couleur ?? null, photo ?? null,
+    telegram_user_id ? String(telegram_user_id) : null,
     id
   );
 
@@ -372,15 +423,20 @@ router.put('/:id/account', authMiddleware, adminOnly, asyncHandler((req, res) =>
 router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;
 
+  // Directeur is protected — nobody can deactivate a directeur
+  const target = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
+  if (target && target.role === 'directeur') {
+    throw new ApiError(403, 'Le compte directeur ne peut pas être désactivé');
+  }
+
   if (req.user.role === 'manager') {
     // Manager cannot deactivate themselves
     if (req.user.chatteur_id === parseInt(id)) {
       throw new ApiError(403, 'Vous ne pouvez pas vous désactiver vous-même');
     }
-    // Manager cannot deactivate other managers or directeurs (admin only)
-    const target = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
-    if (target && (target.role === 'manager' || target.role === 'directeur')) {
-      throw new ApiError(403, 'Seul un admin peut désactiver un manager ou directeur');
+    // Manager cannot deactivate other managers (admin only)
+    if (target && target.role === 'manager') {
+      throw new ApiError(403, 'Seul un admin peut désactiver un manager');
     }
   }
 
@@ -437,9 +493,9 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
   const classement = db.prepare(rangQuery).all(...rangParams);
   const rang = classement.findIndex(r => r.chatteur_id == id) + 1;
 
-  // Malus
+  // Malus (only active ones)
   const malusTotal = db.prepare(`
-    SELECT COALESCE(SUM(montant), 0) as total FROM malus WHERE chatteur_id = ?
+    SELECT COALESCE(SUM(montant), 0) as total FROM malus WHERE chatteur_id = ? AND actif != 0
     ${periode_debut && periode_fin ? 'AND periode >= ? AND periode <= ?' : ''}
   `).get(id, ...(periode_debut && periode_fin ? [periode_debut, periode_fin] : []));
 
@@ -453,6 +509,28 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
     `).get(id, ...(periode_debut && periode_fin ? [periode_debut, periode_fin] : []));
     primesTotal = primesRow?.total || 0;
   } catch { /* table may not exist yet */ }
+
+  // Net HT total + prime totale depuis paies (inclut prime palier + collectif distribué)
+  let netHtTotal = 0;
+  let primeFromPaies = 0;
+  if (periode_debut && periode_fin) {
+    const paieAgg = db.prepare(`
+      SELECT COALESCE(SUM(net_ht_eur), 0) as net_ht, COALESCE(SUM(prime), 0) as prime
+      FROM paies WHERE chatteur_id = ? AND plateforme_id IS NOT NULL
+        AND periode_debut >= ? AND periode_fin <= ?
+    `).get(id, periode_debut, periode_fin);
+    netHtTotal = paieAgg?.net_ht || 0;
+    primeFromPaies = paieAgg?.prime || 0;
+  }
+
+  // Paliers primes pour la période
+  let paliersPrimes = [];
+  let palierAtteint = null;
+  paliersPrimes = db.prepare(
+    'SELECT * FROM paliers_primes WHERE actif = 1 ORDER BY seuil_net_ht ASC'
+  ).all();
+  // Find highest palier reached
+  palierAtteint = [...paliersPrimes].reverse().find(p => netHtTotal >= p.seuil_net_ht) || null;
 
   // Moyenne par période (from paies)
   const moyenneRow = db.prepare(`
@@ -502,6 +580,10 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
     ventes, paies, rang, nb_chatteurs: totalChatteurs.cnt,
     malus_total: malusTotal.total,
     primes_total: primesTotal,
+    prime_from_paies: primeFromPaies,
+    net_ht_total: netHtTotal,
+    paliers_primes: paliersPrimes,
+    palier_atteint: palierAtteint,
     moyenne_par_periode,
     meilleure_periode: bestRow || null,
     nb_shifts: shiftsRow?.nb || 0,
@@ -528,7 +610,8 @@ router.get('/:id/historique', authMiddleware, asyncHandler((req, res) => {
       SUM(p.commission_chatteur) as total_commission,
       SUM(p.total_chatteur) as total_paie,
       SUM(p.malus_total) as total_malus,
-      SUM(p.prime) as total_prime
+      SUM(p.prime) as total_prime,
+      'paie' as source
     FROM paies p
     WHERE p.chatteur_id = ?
     GROUP BY p.periode_debut, p.periode_fin
@@ -536,7 +619,66 @@ router.get('/:id/historique', authMiddleware, asyncHandler((req, res) => {
     LIMIT 12
   `).all(id);
 
-  res.json(historique.reverse()); // chronological order
+  // Fallback: estimate from ventes for periods without paies
+  const existingPeriods = new Set(historique.map(h => `${h.periode_debut}|${h.periode_fin}`));
+  const tauxChange = getExchangeRate();
+  const chatteur = db.prepare('SELECT taux_commission FROM chatteurs WHERE id = ?').get(id);
+  const tauxComm = chatteur?.taux_commission ?? 0.10;
+
+  const ventePeriods = db.prepare(`
+    SELECT
+      v.periode_debut, v.periode_fin,
+      SUM(v.montant_brut) as total_brut,
+      pl.devise, pl.tva_rate, pl.commission_rate
+    FROM ventes v
+    JOIN plateformes pl ON pl.id = v.plateforme_id
+    WHERE v.chatteur_id = ? AND v.statut != 'rejetée'
+    GROUP BY v.periode_debut, v.periode_fin, pl.id
+    ORDER BY v.periode_debut DESC
+  `).all(id);
+
+  // Group by period
+  const periodEstimates = {};
+  for (const vp of ventePeriods) {
+    const key = `${vp.periode_debut}|${vp.periode_fin}`;
+    if (existingPeriods.has(key)) continue;
+    if (!periodEstimates[key]) {
+      periodEstimates[key] = {
+        periode_debut: vp.periode_debut, periode_fin: vp.periode_fin,
+        total_brut: 0, total_ttc_eur: 0, total_net_ht: 0,
+        total_commission: 0, total_paie: 0, total_malus: 0, total_prime: 0,
+        source: 'estimation',
+      };
+    }
+    const pe = periodEstimates[key];
+    const brut = vp.total_brut || 0;
+    const tva = vp.tva_rate ?? 0.2;
+    const comm = vp.commission_rate ?? 0.2;
+    const ttcEur = vp.devise === 'USD' ? brut * tauxChange : brut;
+    const htEur = ttcEur / (1 + tva);
+    const netHT = htEur * (1 - comm);
+    const commission = netHT * tauxComm;
+    pe.total_brut += brut;
+    pe.total_ttc_eur += ttcEur;
+    pe.total_net_ht += netHT;
+    pe.total_commission += commission;
+    pe.total_paie += commission;
+  }
+
+  const result = [...historique, ...Object.values(periodEstimates)]
+    .sort((a, b) => a.periode_debut.localeCompare(b.periode_debut))
+    .slice(-12);
+
+  // Round values
+  for (const r of result) {
+    r.total_brut = Math.round((r.total_brut || 0) * 100) / 100;
+    r.total_ttc_eur = Math.round((r.total_ttc_eur || 0) * 100) / 100;
+    r.total_net_ht = Math.round((r.total_net_ht || 0) * 100) / 100;
+    r.total_commission = Math.round((r.total_commission || 0) * 100) / 100;
+    r.total_paie = Math.round((r.total_paie || 0) * 100) / 100;
+  }
+
+  res.json(result);
 }));
 
 module.exports = router;

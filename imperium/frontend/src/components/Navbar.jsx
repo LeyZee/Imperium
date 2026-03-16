@@ -38,16 +38,17 @@ export default function Navbar({ onMenuClick }) {
       <button
         onClick={onMenuClick}
         aria-label="Ouvrir le menu"
-        className="mobile-menu-btn"
+        className="mobile-menu-btn navbar-icon-btn"
         style={{
           background: 'transparent',
           border: 'none',
           cursor: 'pointer',
           color: '#1b2e4b',
           padding: '0.4rem',
-          borderRadius: '8px',
+          borderRadius: '12px',
           display: 'none',
           alignItems: 'center',
+          transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
         }}
       >
         <Menu size={22} />
@@ -70,9 +71,9 @@ export default function Navbar({ onMenuClick }) {
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              padding: '0.25rem',
+              padding: '0.35rem 0.5rem',
               borderRadius: '24px',
-              transition: 'background 200ms',
+              transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)',
             }}
             className="hover-profile"
           >
@@ -126,10 +127,10 @@ export default function Navbar({ onMenuClick }) {
 
         <button
           onClick={logout}
-          className="btn-ghost"
+          className="btn-ghost navbar-icon-btn"
           title="Se déconnecter"
           aria-label="Se déconnecter"
-          style={{ padding: '0.4rem 0.6rem' }}
+          style={{ padding: '0.4rem 0.6rem', borderRadius: '12px', transition: 'all 200ms cubic-bezier(0.4, 0, 0.2, 1)' }}
         >
           <LogOut size={16} />
           <span className="logout-text" style={{ fontSize: '0.8rem' }}>Déconnexion</span>
@@ -138,6 +139,34 @@ export default function Navbar({ onMenuClick }) {
 
       <style>{`
         .desktop-spacer { display: block; }
+
+        .navbar-icon-btn {
+          position: relative;
+        }
+        .navbar-icon-btn:hover {
+          background: rgba(27, 46, 75, 0.06) !important;
+          transform: scale(1.08);
+        }
+        .navbar-icon-btn:active {
+          transform: scale(0.92);
+          background: rgba(27, 46, 75, 0.1) !important;
+        }
+
+        .hover-profile {
+          position: relative;
+        }
+        .hover-profile:hover {
+          background: rgba(27, 46, 75, 0.04) !important;
+          transform: scale(1.03);
+        }
+        .hover-profile:active {
+          transform: scale(0.96);
+          background: rgba(27, 46, 75, 0.08) !important;
+        }
+        .hover-profile:hover div:first-child {
+          box-shadow: 0 0 0 3px rgba(245, 183, 49, 0.25);
+        }
+
         @media (max-width: 768px) {
           .mobile-menu-btn { display: flex !important; }
           .desktop-spacer { display: none; }

@@ -3,6 +3,10 @@ const { notifyChatteur } = require('../utils/notifier');
 const { notifyAdminsAndManagers } = require('../utils/notifier');
 const { CRENEAUX } = require('../utils/constants');
 const logger = require('../utils/logger');
+const {
+  notifyShiftReminder,
+  notifyMissingReport,
+} = require('../utils/telegramSender');
 
 /**
  * Check for recently completed shifts that have no associated sales.
@@ -108,7 +112,7 @@ function checkPostShiftNotifications() {
       ).get(shift.id);
 
       if (!hasSale && !hasReport) {
-        // Send notification to chatteur
+        // Send notification to chatteur (in-app)
         notifyChatteur(
           shift.chatteur_id,
           'shift',
@@ -116,6 +120,15 @@ function checkPostShiftNotifications() {
           `Ton shift ${shift.modele_pseudo || ''} (${shift.plateforme_nom || ''}) est terminé mais aucune vente n'a été trouvée. Pense à les ajouter !`,
           '/chatteur/mes-ventes'
         );
+        // Also send via Telegram DM
+        const cInfo = CRENEAUX[shift.creneau];
+        notifyMissingReport(
+          shift.chatteur_id,
+          shift.plateforme_nom || 'Plateforme inconnue',
+          shift.date,
+          shift.creneau,
+          cInfo?.label || `Cr\u00e9neau ${shift.creneau}`
+        ).catch(() => {});
         notified++;
       }
 
@@ -186,6 +199,91 @@ function checkPayDayReminder() {
 }
 
 /**
+ * Check for upcoming shifts and send Telegram DM reminders.
+ * Looks for shifts starting in the next 1-2 hours that haven't been reminded yet.
+ *
+ * Uses a separate DB column `reminder_sent` (added via migration if missing).
+ */
+function checkShiftReminders() {
+  try {
+    // reminder_sent column is created via migration in database.js
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const tomorrowDate = new Date(now);
+    tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+    const tomorrowStr = tomorrowDate.toISOString().slice(0, 10);
+
+    // Find shifts from today/tomorrow that haven't been reminded
+    const shifts = db.prepare(`
+      SELECT s.id, s.chatteur_id, s.modele_id, s.plateforme_id, s.date, s.creneau, s.fuseau_horaire,
+        c.prenom as chatteur_prenom, c.telegram_user_id,
+        m.pseudo as modele_pseudo,
+        p.nom as plateforme_nom
+      FROM shifts s
+      JOIN chatteurs c ON c.id = s.chatteur_id AND c.actif = 1
+      LEFT JOIN modeles m ON m.id = s.modele_id
+      LEFT JOIN plateformes p ON p.id = s.plateforme_id
+      WHERE s.date IN (?, ?)
+      AND COALESCE(s.reminder_sent, 0) = 0
+      AND c.telegram_user_id IS NOT NULL
+    `).all(todayStr, tomorrowStr);
+
+    if (shifts.length === 0) return;
+
+    let reminded = 0;
+
+    for (const shift of shifts) {
+      const creneau = CRENEAUX[shift.creneau];
+      if (!creneau) continue;
+
+      const tz = shift.fuseau_horaire || 'Europe/Paris';
+      const startHour = parseInt(creneau.start.split(':')[0]);
+
+      // Build shift start time
+      const shiftDate = new Date(shift.date + 'T00:00:00');
+      let startDate = new Date(shiftDate);
+      startDate.setHours(startHour, 0, 0);
+
+      // Approximate timezone offset
+      const tzOffset = getTimezoneOffset(tz);
+      const localNowMs = now.getTime() + (tzOffset * 60 * 60 * 1000);
+      const startMs = startDate.getTime();
+
+      // Send reminder if shift starts in the next 2 hours (but hasn't started yet)
+      const hoursUntilStart = (startMs - localNowMs) / (60 * 60 * 1000);
+      if (hoursUntilStart > 0 && hoursUntilStart <= 2) {
+        notifyShiftReminder(
+          shift.chatteur_id,
+          shift.plateforme_nom || 'Plateforme',
+          shift.modele_pseudo || null,
+          shift.date,
+          shift.creneau,
+          creneau.label
+        ).catch(() => {});
+
+        // Also send in-app notification
+        notifyChatteur(
+          shift.chatteur_id,
+          'shift_reminder',
+          'Shift bient\u00f4t !',
+          `Ton shift ${shift.plateforme_nom || ''} (${creneau.label}) commence bient\u00f4t.`,
+          '/chatteur/planning'
+        );
+
+        db.prepare('UPDATE shifts SET reminder_sent = 1 WHERE id = ?').run(shift.id);
+        reminded++;
+      }
+    }
+
+    if (reminded > 0) {
+      logger.info(`Shift reminders: ${reminded} rappel(s) envoy\u00e9(s)`);
+    }
+  } catch (err) {
+    logger.error('Shift reminder error', { error: err.message });
+  }
+}
+
+/**
  * Approximate timezone offset in hours from UTC.
  * Good enough for shift end time comparison.
  */
@@ -198,4 +296,4 @@ function getTimezoneOffset(tz) {
   return offsets[tz] || 0;
 }
 
-module.exports = { checkPostShiftNotifications, checkPayDayReminder };
+module.exports = { checkPostShiftNotifications, checkPayDayReminder, checkShiftReminders };

@@ -53,7 +53,7 @@ describe('GET /api/chatteurs/classement', () => {
     db.prepare.mockReturnValue(mockStmt({ all: jest.fn(() => []), get: jest.fn(() => ({ total: 5000 })) }));
     const res = await request(adminApp).get('/api/chatteurs/classement').query({ periode_debut: '2026-03-01', periode_fin: '2026-03-15' });
     expect(res.status).toBe(200);
-    expect(res.body.prime_rates).toEqual([0.005, 0.0025, 0.0012]);
+    expect(Array.isArray(res.body.paliers_primes)).toBe(true);
   });
 });
 

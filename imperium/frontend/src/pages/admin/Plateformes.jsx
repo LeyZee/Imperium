@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/index';
-import { Plus, Edit, Trash2, X } from 'lucide-react';
+import { Plus, Edit, Trash2, X, Globe } from 'lucide-react';
 import { useToast } from '../../components/Toast.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
@@ -68,7 +68,7 @@ export default function Plateformes({ embedded = false }) {
     <div className={embedded ? '' : 'page-enter'}>
       {!embedded ? (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', gap: '0.5rem' }}>
-          <h1 style={{ fontWeight: 700 }}>Plateformes</h1>
+          <h1 style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><Globe size={22} color="#f5b731" /> Plateformes</h1>
           <button onClick={openAdd} className="btn-primary" style={{ whiteSpace: 'nowrap' }}><Plus size={16} /> Ajouter</button>
         </div>
       ) : (
@@ -112,8 +112,8 @@ export default function Plateformes({ embedded = false }) {
                   <td><span className="badge badge-navy">{p.devise} ({DEVISE_SYMBOLS[p.devise] || p.devise})</span></td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
-                      <button onClick={() => openEdit(p)} className="btn-ghost"><Edit size={16} /></button>
-                      <button onClick={() => setConfirmDel({ id: p.id, nom: p.nom })} className="btn-ghost" style={{ color: '#ef4444' }}><Trash2 size={16} /></button>
+                      <button onClick={() => openEdit(p)} className="btn-ghost" aria-label={`Modifier ${p.nom}`}><Edit size={16} /></button>
+                      <button onClick={() => setConfirmDel({ id: p.id, nom: p.nom })} className="btn-ghost" style={{ color: '#ef4444' }} aria-label={`Désactiver ${p.nom}`}><Trash2 size={16} /></button>
                     </div>
                   </td>
                 </tr>
@@ -146,7 +146,7 @@ export default function Plateformes({ embedded = false }) {
               </div>
               <div className="form-group">
                 <label className="label">Devise</label>
-                <select className="input-field" value={form.devise} onChange={e => setForm({...form, devise: e.target.value})}>
+                <select className="input-field" value={form.devise} onChange={e => setForm({...form, devise: e.target.value})} aria-label="Devise de la plateforme">
                   <option value="USD">USD ($)</option>
                   <option value="EUR">EUR (€)</option>
                 </select>

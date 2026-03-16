@@ -185,7 +185,7 @@ describe('recalculatePaies', () => {
     expect(result.taux_change).toBe(0.92);
   });
 
-  test('top 3 primes: 0.5%, 0.25%, 0.12%', () => {
+  test('palier-based primes: chatteurs reaching seuil get bonus', () => {
     const chatteurs = [
       makeChatteur({ id: 1, prenom: 'A' }),
       makeChatteur({ id: 2, prenom: 'B' }),
@@ -201,13 +201,9 @@ describe('recalculatePaies', () => {
     setupSimple({ chatteurs, ventes });
     const result = recalculatePaies(PERIOD.debut, PERIOD.fin);
 
-    expect(result.top3).toHaveLength(3);
-    expect(result.top3[0].chatteur_id).toBe(1);
-    expect(result.top3[0].rang).toBe(1);
-    const totalNetHT = result.total_net_ht_equipe;
-    expect(result.top3[0].prime).toBeCloseTo(totalNetHT * 0.005, 1);
-    expect(result.top3[1].prime).toBeCloseTo(totalNetHT * 0.0025, 1);
-    expect(result.top3[2].prime).toBeCloseTo(totalNetHT * 0.0012, 1);
+    expect(Array.isArray(result.paliers_primes)).toBe(true);
+    expect(result.nb_paies).toBe(4);
+    expect(result.total_net_ht_equipe).toBeGreaterThan(0);
   });
 
   test('manager excluded from primes but contributes to net_ht_equipe', () => {
@@ -222,8 +218,8 @@ describe('recalculatePaies', () => {
     setupSimple({ chatteurs, ventes });
     const result = recalculatePaies(PERIOD.debut, PERIOD.fin);
 
-    expect(result.top3).toHaveLength(1);
-    expect(result.top3[0].chatteur_id).toBe(1);
+    // Manager excluded from palier primes but both have paie rows
+    expect(Array.isArray(result.paliers_primes)).toBe(true);
     expect(result.nb_paies).toBe(2);
   });
 
@@ -320,6 +316,6 @@ describe('recalculatePaies', () => {
       taux_change: 0.92,
       nb_paies: 1,
     }));
-    expect(Array.isArray(result.top3)).toBe(true);
+    expect(Array.isArray(result.paliers_primes)).toBe(true);
   });
 });

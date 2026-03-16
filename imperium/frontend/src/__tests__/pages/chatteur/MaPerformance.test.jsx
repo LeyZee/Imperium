@@ -10,11 +10,16 @@ vi.mock('../../../api/index.js', () => ({
 
 import api from '../../../api/index.js';
 
-function setupMocks({ historique = [], classement = null, cagnotteHist = null } = {}) {
+function setupMocks({ historique = [], classement = null, cagnotteHist = null, paliersIndiv = null } = {}) {
   mockApiGet(api, {
     '/api/chatteurs/1/historique': historique,
     '/api/chatteurs/classement': classement || makeClassement(),
     '/api/chatteurs/classement/historique-cagnotte': cagnotteHist || { moyenne_prime_pool: 10 },
+    '/api/objectifs/paliers-primes': paliersIndiv || [
+      { id: 1, seuil_net_ht: 500, bonus: 15, label: 'Bronze', emoji: '🥉' },
+      { id: 2, seuil_net_ht: 1000, bonus: 30, label: 'Argent', emoji: '🥈' },
+      { id: 3, seuil_net_ht: 1500, bonus: 50, label: 'Or', emoji: '🥇' },
+    ],
   });
 }
 
@@ -45,30 +50,28 @@ describe('MaPerformance', () => {
     });
   });
 
-  test('Thermomètre shows milestones when data available', async () => {
+  test('Thermomètre shows paliers when data available', async () => {
     setupMocks({
       historique: makeHistorique(),
-      cagnotteHist: { moyenne_prime_pool: 10 },
     });
     renderWithProviders(<MaPerformance />);
     await waitFor(() => {
-      expect(screen.getByText('Paliers Cagnotte')).toBeInTheDocument();
+      expect(screen.getByText('Mes Primes Individuelles')).toBeInTheDocument();
     });
-    // Milestones should show celebration messages or milestone markers
+    // Should show palier labels
     await waitFor(() => {
-      expect(screen.getByText(/Chaque vente fait grandir la cagnotte/)).toBeInTheDocument();
+      expect(screen.getAllByText(/Bronze/).length).toBeGreaterThanOrEqual(1);
     });
   });
 
-  test('Thermomètre shows empty state when no milestone data', async () => {
+  test('Thermomètre shows empty state when no paliers configured', async () => {
     setupMocks({
       historique: makeHistorique(),
-      classement: makeClassement({ total_net_ht_equipe: 0 }),
-      cagnotteHist: { moyenne_prime_pool: 0 },
+      paliersIndiv: [],
     });
     renderWithProviders(<MaPerformance />);
     await waitFor(() => {
-      expect(screen.getByText(/Les paliers appara.tront/)).toBeInTheDocument();
+      expect(screen.getByText(/Les paliers seront d.finis/)).toBeInTheDocument();
     });
   });
 
@@ -93,14 +96,14 @@ describe('MaPerformance', () => {
     });
   });
 
-  test('classement shows podium with medals', async () => {
+  test('classement shows ranking list', async () => {
     setupMocks({
       historique: makeHistorique(),
       classement: makeClassement(),
     });
     renderWithProviders(<MaPerformance />);
     await waitFor(() => {
-      expect(screen.getAllByText(/Podium/).length).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText('Classement')).toBeInTheDocument();
     });
     await waitFor(() => {
       expect(screen.getByText('CHARBEL')).toBeInTheDocument();
@@ -126,8 +129,8 @@ describe('MaPerformance', () => {
     });
     renderWithProviders(<MaPerformance />);
     await waitFor(() => {
-      // AXEL is rank 3 in the mock classement → motivation message includes "podium"
-      expect(screen.getAllByText(/podium/i).length).toBeGreaterThanOrEqual(1);
+      // AXEL is rank 3 in the mock classement → motivation message for rank 3
+      expect(screen.getByText(/Troisi.me place/)).toBeInTheDocument();
     });
   });
 

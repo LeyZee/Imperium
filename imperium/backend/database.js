@@ -47,7 +47,7 @@ function initDB() {
       pays TEXT DEFAULT 'France',
       iban TEXT,
       taux_commission REAL NOT NULL DEFAULT 0.15,
-      role TEXT NOT NULL DEFAULT 'chatteur' CHECK(role IN ('chatteur', 'manager', 'va')),
+      role TEXT NOT NULL DEFAULT 'chatteur' CHECK(role IN ('chatteur', 'manager', 'va', 'directeur')),
       taux_net_equipe REAL NOT NULL DEFAULT 0,
       couleur INTEGER NOT NULL DEFAULT 0,
       is_nouveau INTEGER NOT NULL DEFAULT 0,
@@ -420,25 +420,9 @@ runMigration('add_manager_user_role', () => {
 });
 
 runMigration('fix_manager_user_role_check', () => {
-  // Fix: previous migration may have failed partially. Redo the table recreation.
-  db.exec(`DROP TABLE IF EXISTS users_new`);
-  db.exec(`
-    CREATE TABLE users_new (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      role TEXT NOT NULL CHECK(role IN ('admin', 'chatteur', 'manager')),
-      email TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      photo TEXT,
-      prenom TEXT
-    );
-    INSERT INTO users_new (id, username, password_hash, role, email, created_at, photo, prenom)
-      SELECT id, username, password_hash, role, email, created_at, photo, prenom FROM users;
-    DROP TABLE users;
-    ALTER TABLE users_new RENAME TO users;
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email IS NOT NULL;
-  `);
+  // No-op: schema already correct from initial CREATE TABLE.
+  // Original migration did DROP+RECREATE users table which caused "database table is locked"
+  // when prepared statements were open. Safe to skip on fresh DBs.
 });
 
 // --- Phase 0: Activity logs ---
@@ -681,7 +665,20 @@ runMigration('add_sacha_manager', () => {
 });
 
 runMigration('add_directeur_role', () => {
-  // placeholder — actual fix runs before runMigration calls (see above)
+  // Check if CHECK constraint already includes 'directeur'
+  const schemaRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='chatteurs'").get();
+  if (schemaRow && schemaRow.sql && !schemaRow.sql.includes('directeur')) {
+    // Use writable_schema to patch the CHECK constraint in-place
+    db.exec('PRAGMA writable_schema = ON');
+    const newSql = schemaRow.sql.replace(
+      "CHECK(role IN ('chatteur', 'manager', 'va'))",
+      "CHECK(role IN ('chatteur', 'manager', 'va', 'directeur'))"
+    );
+    db.prepare("UPDATE sqlite_master SET sql = ? WHERE type='table' AND name='chatteurs'").run(newSql);
+    db.exec('PRAGMA writable_schema = OFF');
+    db.exec('PRAGMA integrity_check');
+    console.log('  → Added directeur to chatteurs role CHECK constraint');
+  }
 });
 
 // --- Quick win: Additional composite indexes for common queries ---
@@ -835,6 +832,84 @@ runMigration('add_taux_commission_check_trigger', () => {
   `);
 });
 
+runMigration('add_ventes_source', () => {
+  db.exec("ALTER TABLE ventes ADD COLUMN source TEXT NOT NULL DEFAULT 'admin'");
+  // Backfill existing ventes based on notes prefix
+  db.exec("UPDATE ventes SET source = 'telegram' WHERE notes LIKE 'Import Telegram%'");
+  db.exec("UPDATE ventes SET source = 'chatteur' WHERE notes LIKE 'Ajout manuel%'");
+  db.exec("CREATE INDEX idx_ventes_source ON ventes(source)");
+});
+
+// --- Performance indexes for ventes filtering/sorting ---
+runMigration('add_ventes_perf_indexes', () => {
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_periode ON ventes(periode_debut, periode_fin)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_created ON ventes(created_at)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_plateforme ON ventes(plateforme_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_ventes_modele ON ventes(modele_id)");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_shifts_date ON shifts(date)");
+});
+
+runMigration('create_objectifs_collectifs', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS objectifs_collectifs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      montant_cible REAL NOT NULL,
+      periode_debut TEXT NOT NULL,
+      periode_fin TEXT NOT NULL,
+      description TEXT,
+      actif INTEGER DEFAULT 1,
+      created_by INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(periode_debut, periode_fin)
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS paliers_collectifs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      objectif_collectif_id INTEGER NOT NULL REFERENCES objectifs_collectifs(id),
+      seuil_pct INTEGER NOT NULL,
+      bonus_par_chatteur REAL NOT NULL,
+      label TEXT NOT NULL,
+      emoji TEXT,
+      UNIQUE(objectif_collectif_id, seuil_pct)
+    )
+  `);
+});
+
+runMigration('create_paliers_primes', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS paliers_primes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      periode_debut TEXT NOT NULL,
+      periode_fin TEXT NOT NULL,
+      seuil_net_ht REAL NOT NULL,
+      bonus REAL NOT NULL,
+      label TEXT NOT NULL,
+      emoji TEXT,
+      actif INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(periode_debut, periode_fin, seuil_net_ht)
+    )
+  `);
+});
+
+// Migration: make paliers_primes global (not period-specific)
+// Keep the table structure but deduplicate: keep only one row per seuil_net_ht
+runMigration('paliers_primes_global', () => {
+  // Delete duplicate paliers (keep the latest id per seuil_net_ht)
+  db.exec(`
+    DELETE FROM paliers_primes
+    WHERE id NOT IN (
+      SELECT MAX(id) FROM paliers_primes WHERE actif = 1 GROUP BY seuil_net_ht
+    )
+  `);
+});
+
+// Migration: add couleur column to paliers_primes
+runMigration('paliers_primes_couleur', () => {
+  db.exec('ALTER TABLE paliers_primes ADD COLUMN couleur TEXT');
+});
+
 console.log(`DB initialized in ${Date.now() - dbStartTime}ms`);
 
 // Compatibility wrapper: makes node-sqlite3-wasm behave like better-sqlite3
@@ -870,5 +945,35 @@ const compatDb = {
     };
   },
 };
+
+// --- Telegram log table for tracking sent messages ---
+runMigration('create_telegram_log', () => {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS telegram_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      direction TEXT NOT NULL DEFAULT 'out',
+      chat_id TEXT,
+      chatteur_id INTEGER,
+      chatteur_prenom TEXT,
+      message_type TEXT,
+      content TEXT,
+      success INTEGER DEFAULT 1,
+      error_message TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_telegram_log_created ON telegram_log(created_at DESC)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_telegram_log_type ON telegram_log(message_type)');
+});
+
+// --- Shift reminder_sent column ---
+runMigration('add_shifts_reminder_sent', () => {
+  db.exec('ALTER TABLE shifts ADD COLUMN reminder_sent INTEGER DEFAULT 0');
+});
+
+// --- Telegram DM opt-in: only send DMs to chatteurs who did /start ---
+runMigration('add_chatteurs_telegram_dm_ok', () => {
+  db.exec('ALTER TABLE chatteurs ADD COLUMN telegram_dm_ok INTEGER DEFAULT 0');
+});
 
 module.exports = compatDb;

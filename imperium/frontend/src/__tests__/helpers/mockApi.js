@@ -96,7 +96,11 @@ export function makeClassement(overrides = {}) {
     ],
     nb_chatteurs: 10,
     total_net_ht_equipe: 2500,
-    prime_rates: [0.005, 0.0025, 0.0012],
+    paliers_primes: [
+      { id: 1, seuil_net_ht: 500, bonus: 15, label: 'Bronze', emoji: '🥉' },
+      { id: 2, seuil_net_ht: 1000, bonus: 30, label: 'Argent', emoji: '🥈' },
+      { id: 3, seuil_net_ht: 1500, bonus: 50, label: 'Or', emoji: '🥇' },
+    ],
     ...overrides,
   };
 }

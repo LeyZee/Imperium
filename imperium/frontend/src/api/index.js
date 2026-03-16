@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: '',
+  baseURL: import.meta.env.VITE_API_URL || '',
   withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
@@ -9,11 +9,14 @@ const api = axios.create({
   },
 });
 
-// Response interceptor — handle 401
+// Response interceptor — handle 401 (skip /auth/me to avoid redirect loop)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (
+      error.response?.status === 401 &&
+      !error.config?.url?.includes('/api/auth/me')
+    ) {
       sessionStorage.removeItem('user');
       window.location.href = '/login';
     }

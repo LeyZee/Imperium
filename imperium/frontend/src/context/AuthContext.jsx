@@ -7,32 +7,26 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore session on mount — validate JWT via /api/auth/me, then fall back to sessionStorage
+  // Restore session on mount — validate JWT via /api/auth/me
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     async function validateSession() {
       try {
-        const res = await api.get('/api/auth/me');
-        if (!cancelled && res.data?.user) {
+        const res = await api.get('/api/auth/me', { signal: controller.signal });
+        if (!controller.signal.aborted && res.data?.user) {
           setUser(res.data.user);
           sessionStorage.setItem('user', JSON.stringify(res.data.user));
         }
-      } catch {
-        // JWT invalid or expired — try sessionStorage as UI hint only
-        const storedUser = sessionStorage.getItem('user');
-        if (storedUser && !cancelled) {
-          try {
-            setUser(JSON.parse(storedUser));
-          } catch {
-            sessionStorage.removeItem('user');
-          }
-        }
+      } catch (err) {
+        if (err?.name === 'CanceledError' || controller.signal.aborted) return;
+        // JWT invalid — clear stale session data, user stays null (not logged in)
+        sessionStorage.removeItem('user');
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }
     validateSession();
-    return () => { cancelled = true; };
+    return () => controller.abort();
   }, []);
 
   const login = async (email, password) => {

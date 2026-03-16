@@ -235,8 +235,8 @@ export default function MonProfil() {
             />
           </label>
         </div>
-        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1b2e4b', marginBottom: 0 }}>
-          {chatteur?.prenom || 'Mon Profil'}
+        <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1b2e4b', marginBottom: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <User size={22} color="#f5b731" /> {chatteur?.prenom || 'Mon Profil'}
         </h1>
       </div>
 

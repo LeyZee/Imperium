@@ -29,15 +29,19 @@ function authMiddleware(req, res, next) {
   }
 }
 
+function isAdminRole(role) {
+  return role === 'admin'; // users.role — directeur is tracked in chatteurs.role, admin users always have 'admin' in users table
+}
+
 function adminOnly(req, res, next) {
-  if (req.user.role !== 'admin') {
+  if (!isAdminRole(req.user.role)) {
     throw new ApiError(403, 'Accès réservé aux administrateurs');
   }
   next();
 }
 
 function adminOrManager(req, res, next) {
-  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
+  if (!isAdminRole(req.user.role) && req.user.role !== 'manager') {
     throw new ApiError(403, 'Accès réservé aux administrateurs et managers');
   }
   next();

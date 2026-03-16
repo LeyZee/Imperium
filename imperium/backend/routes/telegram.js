@@ -10,6 +10,7 @@ const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
 const { logActivity } = require('../utils/activityLogger');
 const { recalculatePaies } = require('../services/paie-calculator');
+const { broadcastToAll, getLog: getTelegramLog } = require('../utils/telegramSender');
 
 const router = express.Router();
 
@@ -171,6 +172,92 @@ router.delete('/imports', authMiddleware, adminOnly, asyncHandler((req, res) => 
 
   logActivity(req.user.id, 'delete_all_telegram_imports', 'vente', null, `${result.changes} imports supprimés`);
   res.json({ message: `${result.changes} import(s) Telegram supprimé(s)`, count: result.changes });
+}));
+
+/**
+ * POST /api/telegram/broadcast — Send a message to all chatteurs via Telegram DM
+ */
+router.post('/broadcast', authMiddleware, adminOnly, controlLimiter, asyncHandler(async (req, res) => {
+  const { message } = req.body;
+  if (!message?.trim()) throw new ApiError(400, 'Message requis');
+
+  // Limit message length (4096 = Telegram max)
+  if (message.length > 4096) throw new ApiError(400, 'Message trop long (max 4096 caract\u00e8res)');
+
+  const stats = await broadcastToAll(message.trim(), { _type: 'admin_broadcast' });
+  logActivity(req.user.id, 'telegram_broadcast', 'telegram', null, `Envoy\u00e9: ${stats.sent}, \u00c9chou\u00e9: ${stats.failed}, Non li\u00e9s: ${stats.skipped}`);
+
+  res.json({
+    message: 'Broadcast envoy\u00e9',
+    ...stats,
+  });
+}));
+
+/**
+ * GET /api/telegram/log — Journal des messages Telegram envoy\u00e9s
+ */
+router.get('/log', authMiddleware, adminOnly, asyncHandler((req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  const offset = Math.max(parseInt(req.query.offset) || 0, 0);
+  const filters = {};
+
+  if (req.query.type) filters.messageType = req.query.type;
+  if (req.query.chatteur_id) filters.chatteurId = parseInt(req.query.chatteur_id);
+  if (req.query.success !== undefined) filters.success = req.query.success === '1' || req.query.success === 'true';
+  if (req.query.date_from) filters.dateFrom = req.query.date_from;
+  if (req.query.date_to) filters.dateTo = req.query.date_to;
+
+  const result = getTelegramLog(limit, offset, filters);
+  res.json(result);
+}));
+
+/**
+ * POST /api/telegram/announce-start — Send /start instructions to all shift groups
+ */
+router.post('/announce-start', authMiddleware, adminOnly, controlLimiter, asyncHandler(async (req, res) => {
+  const status = telegramPoller.getStatus();
+  if (!status.running) {
+    throw new ApiError(409, 'Le bot doit \u00eatre d\u00e9marr\u00e9 pour envoyer des annonces');
+  }
+
+  // Build list of unregistered chatteurs (have telegram_user_id from group but no /start)
+  const unregistered = db.prepare(
+    "SELECT prenom FROM chatteurs WHERE actif = 1 AND telegram_user_id IS NOT NULL AND (telegram_dm_ok = 0 OR telegram_dm_ok IS NULL)"
+  ).all();
+  const noTelegram = db.prepare(
+    "SELECT prenom FROM chatteurs WHERE actif = 1 AND telegram_user_id IS NULL AND role != 'va'"
+  ).all();
+
+  let mentionList = '';
+  if (unregistered.length > 0) {
+    mentionList += '\n\n\uD83D\uDD34 <b>Auto-link\u00e9s mais pas encore /start :</b>\n' +
+      unregistered.map(c => `\u2022 ${c.prenom}`).join('\n');
+  }
+  if (noTelegram.length > 0) {
+    mentionList += '\n\n\u26AA <b>Pas encore d\u00e9tect\u00e9s :</b>\n' +
+      noTelegram.map(c => `\u2022 ${c.prenom}`).join('\n');
+  }
+
+  const message =
+    `\uD83D\uDCE2 <b>IMPORTANT \u2014 Activez vos notifications Imperium !</b>\n\n` +
+    `Le bot <b>@${status.botUsername}</b> peut maintenant vous envoyer des <b>notifications en DM</b> :\n` +
+    `\u2022 \u2705 Confirmation quand votre rapport de shift est import\u00e9\n` +
+    `\u2022 \uD83D\uDCB0 R\u00e9sum\u00e9 de paie\n` +
+    `\u2022 \u23F0 Rappels de shift\n` +
+    `\u2022 \uD83C\uDFC6 Paliers de primes atteints\n\n` +
+    `\uD83D\uDC49 <b>Pour activer :</b> envoyez <code>/start</code> en message priv\u00e9 \u00e0 @${status.botUsername}\n\n` +
+    `C'est rapide (10 secondes), il suffit de taper votre pr\u00e9nom et c'est fait !` +
+    mentionList;
+
+  const results = await telegramPoller.sendToGroups(message);
+  logActivity(req.user.id, 'telegram_announce_start', 'telegram', null, `Envoy\u00e9 dans ${results.sent} groupe(s)`);
+
+  res.json({
+    message: `Annonce envoy\u00e9e dans ${results.sent} groupe(s)`,
+    ...results,
+    unregisteredCount: unregistered.length,
+    noTelegramCount: noTelegram.length,
+  });
 }));
 
 module.exports = router;

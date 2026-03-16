@@ -72,7 +72,7 @@ function recalculatePaies(periode_debut, periode_fin) {
         COUNT(*) as nb_ventes
       FROM ventes v
       JOIN plateformes p ON p.id = v.plateforme_id
-      WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut = 'validée'
+      WHERE v.periode_debut = ? AND v.periode_fin = ? AND v.statut = 'validée'
       GROUP BY v.chatteur_id, v.plateforme_id
     `).all(periode_debut, periode_fin);
 
@@ -100,7 +100,7 @@ function recalculatePaies(periode_debut, periode_fin) {
     const allPrimesManuelles = db.prepare(`
       SELECT chatteur_id, COALESCE(SUM(montant), 0) as total
       FROM primes_manuelles
-      WHERE actif = 1 AND periode_debut >= ? AND periode_fin <= ?
+      WHERE actif = 1 AND periode_debut = ? AND periode_fin = ?
       GROUP BY chatteur_id
     `).all(periode_debut, periode_fin);
     const primesManuByChatteur = {};
@@ -177,30 +177,62 @@ function recalculatePaies(periode_debut, periode_fin) {
       chatteurNetHT[row.chatteur_id] = (chatteurNetHT[row.chatteur_id] || 0) + row.net_ht_eur;
     }
 
-    // Sort chatteurs by net_ht DESC, take top 3 (exclude managers from primes)
+    // Sort chatteurs by net_ht DESC (for classement display, no longer used for primes)
     const ranked = Object.entries(chatteurNetHT)
       .map(([id, netHT]) => ({ id: parseInt(id), netHT }))
       .filter(r => !managerIds.has(r.id))
       .sort((a, b) => b.netHT - a.netHT);
 
-    const primeRates = [0.005, 0.0025, 0.0012]; // 0.5%, 0.25%, 0.12%
+    // Individual palier-based primes (replaces old top-3 system)
+    const paliersIndiv = db.prepare(
+      'SELECT * FROM paliers_primes WHERE actif = 1 ORDER BY seuil_net_ht DESC'
+    ).all();
+
     const primeById = {};
-    for (let i = 0; i < Math.min(3, ranked.length); i++) {
-      primeById[ranked[i].id] = roundCents(totalNetHTEquipe * primeRates[i]);
+    for (const [idStr, netHT] of Object.entries(chatteurNetHT)) {
+      const id = parseInt(idStr);
+      if (managerIds.has(id)) continue;
+      // Find highest palier reached by this chatteur
+      const palier = paliersIndiv.find(p => netHT >= p.seuil_net_ht);
+      if (palier) {
+        primeById[id] = palier.bonus;
+      }
     }
 
-    // Distribute prime (cagnotte + manuelles) across platforms proportionally
-    for (const row of paieRows) {
-      const chatteurPrimeCagnotte = primeById[row.chatteur_id] || 0;
-      const chatteurPrimeManuelle = primesManuByChatteur[row.chatteur_id] || 0;
-      const chatteurPrimeTotal = chatteurPrimeCagnotte + chatteurPrimeManuelle;
-      if (chatteurPrimeTotal > 0) {
-        const chatteurTotal = chatteurNetHT[row.chatteur_id];
-        if (chatteurTotal > 0) {
-          row.prime = roundCents(chatteurPrimeTotal * (row.net_ht_eur / chatteurTotal));
-        }
-        // If chatteurTotal <= 0, prime stays at 0 (no division by zero)
+    // Collective bonus: check if a collective goal exists for this period
+    let collectifBonus = 0;
+    const objCollectif = db.prepare(
+      'SELECT * FROM objectifs_collectifs WHERE periode_debut = ? AND periode_fin = ? AND actif = 1'
+    ).get(periode_debut, periode_fin);
+
+    if (objCollectif && objCollectif.montant_cible > 0) {
+      const progressPct = (totalNetHTEquipe / objCollectif.montant_cible) * 100;
+      const palierAtteint = db.prepare(
+        'SELECT * FROM paliers_collectifs WHERE objectif_collectif_id = ? AND seuil_pct <= ? ORDER BY seuil_pct DESC LIMIT 1'
+      ).get(objCollectif.id, progressPct);
+      if (palierAtteint) {
+        collectifBonus = palierAtteint.bonus_par_chatteur;
       }
+    }
+
+    // Assign prime (palier individuel + manuelles + collectif) to the main platform row
+    // (the one with the highest net_ht) instead of splitting across platforms
+    const primeAssigned = new Set();
+    // Sort paieRows so the biggest net_ht row per chatteur comes first
+    const sortedForPrime = [...paieRows].sort((a, b) => b.net_ht_eur - a.net_ht_eur);
+    for (const row of sortedForPrime) {
+      if (!primeAssigned.has(row.chatteur_id)) {
+        const chatteurPrimePalier = primeById[row.chatteur_id] || 0;
+        const chatteurPrimeManuelle = primesManuByChatteur[row.chatteur_id] || 0;
+        const chatteurBonusCollectif = (collectifBonus > 0 && !managerIds.has(row.chatteur_id)) ? collectifBonus : 0;
+        const chatteurPrimeTotal = chatteurPrimePalier + chatteurPrimeManuelle + chatteurBonusCollectif;
+        if (chatteurPrimeTotal > 0) {
+          row.prime = roundCents(chatteurPrimeTotal);
+        }
+        primeAssigned.add(row.chatteur_id);
+      }
+    }
+    for (const row of paieRows) {
       row.total_chatteur = roundCents(row.commission_chatteur + row.prime - row.malus_total);
     }
 
@@ -301,12 +333,7 @@ function recalculatePaies(periode_debut, periode_fin) {
       taux_change: tauxChange,
       total_net_ht_equipe: totalNetHTEquipe,
       nb_paies: paieRows.length,
-      top3: ranked.slice(0, 3).map((r, i) => ({
-        chatteur_id: r.id,
-        net_ht: r.netHT,
-        prime: primeById[r.id] || 0,
-        rang: i + 1,
-      })),
+      paliers_primes: paliersIndiv,
     };
   });
 

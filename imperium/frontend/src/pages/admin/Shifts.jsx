@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import api from '../../api/index';
-import { ChevronLeft, ChevronRight, X, Clock, CalendarPlus, Repeat, Download, AlertTriangle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X, Clock, CalendarPlus, Repeat, Download, AlertTriangle, Trash2 } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors';
 import { useToast } from '../../components/Toast.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
@@ -51,6 +51,22 @@ function getCreneauShort(cr, tzOffset) {
   return `${padH(s)}-${padH(e)}`;
 }
 
+/* ─── Responsive hook ─── */
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(`(max-width: ${breakpoint}px)`).matches;
+  });
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    setIsMobile(mql.matches);
+    const handler = (e) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 /* ─── Shared overlay style for modals ─── */
 const overlayStyle = {
   position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
@@ -80,6 +96,10 @@ export default function Shifts() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateMsg, setTemplateMsg] = useState('');
   const [conflits, setConflits] = useState(null);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleteScope, setDeleteScope] = useState('week'); // 'week' | 'all'
+  const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const timerRef = useRef(null);
   const toast = useToast();
 
@@ -147,6 +167,8 @@ export default function Shifts() {
   const filteredModeles = modeles.filter(m => platformModelIds.includes(m.id));
 
   const tzOffset = TIMEZONES.find(t => t.key === selectedTZ)?.offset || 0;
+  const isMobile = useIsMobile(768);
+  const todayISO = useMemo(() => toISO(new Date()), []);
 
   const getChatteurColor = useCallback((id) => {
     const c = chatteurs.find(x => x.id === id);
@@ -207,32 +229,77 @@ export default function Shifts() {
     } finally { setSavingTemplate(false); }
   }
 
+  async function handleBulkDelete() {
+    setDeleting(true);
+    try {
+      const params = deleteScope === 'week'
+        ? `?date_debut=${toISO(weekStart)}&date_fin=${toISO(addDays(weekStart, 6))}`
+        : '';
+      const { data } = await api.delete(`/api/shifts/bulk${params}`);
+      toast.success(`${data.count} shift(s) supprimé(s)`);
+      setDeleteModal(false);
+      setDeleteConfirmText('');
+      fetchShifts();
+    } catch (err) {
+      toast.error('Erreur : ' + (err.response?.data?.error || 'échec'));
+    } finally { setDeleting(false); }
+  }
+
 
   return (
     <div className="page-enter">
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <h1 className="text-navy" style={{ fontWeight: 700 }}>Planning Shifts</h1>
-        <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {templateMsg && (
-            <span style={{ fontSize: '0.7rem', color: templateMsg.startsWith('Erreur') ? '#ef4444' : '#10b981', fontWeight: 500, animation: 'fadeIn 0.3s ease' }}>
-              {templateMsg}
-            </span>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'stretch' : 'center', marginBottom: '0.5rem', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h1 className="text-navy" style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><CalendarPlus size={22} color="#f5b731" /> Planning Shifts</h1>
+          {isMobile && (
+            <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+              <button onClick={saveAsTemplate} disabled={savingTemplate} className="btn-secondary haptic" title={hasTemplates ? 'Mettre à jour récurrence' : 'Définir comme récurrent'} style={{ padding: '0.45rem', lineHeight: 1 }}>
+                <Repeat size={15} />
+              </button>
+              <button className="btn-secondary haptic" title="Exporter CSV" style={{ padding: '0.45rem', lineHeight: 1 }}
+                onClick={() => {
+                  const d = toISO(weekStart);
+                  const f = toISO(addDays(weekStart, 6));
+                  window.open(`/api/shifts/export-csv?date_debut=${d}&date_fin=${f}`, '_blank');
+                }}>
+                <Download size={15} />
+              </button>
+              <button onClick={() => setDeleteModal(true)} className="btn-secondary haptic" title="Supprimer des shifts" style={{ padding: '0.45rem', lineHeight: 1, color: '#ef4444', borderColor: '#fecaca' }}>
+                <Trash2 size={15} />
+              </button>
+            </div>
           )}
-          <button onClick={saveAsTemplate} disabled={savingTemplate} className="btn-secondary" style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', padding: '0.4rem 0.85rem' }}>
-            <Repeat size={14} /> {savingTemplate ? 'Sauvegarde...' : (hasTemplates ? 'Mettre à jour récurrence' : 'Définir comme récurrent')}
-          </button>
-          <button className="btn-secondary" style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', padding: '0.4rem 0.85rem' }}
-            onClick={() => {
-              const d = toISO(weekStart);
-              const f = toISO(addDays(weekStart, 6));
-              window.open(`/api/shifts/export-csv?date_debut=${d}&date_fin=${f}`, '_blank');
-            }}>
-            <Download size={14} /> CSV
-          </button>
-          <button onClick={() => setBulkModal(true)} className="btn-primary" style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
-            <CalendarPlus size={16} /> Planifier
-          </button>
         </div>
+        {templateMsg && (
+          <span style={{ fontSize: '0.7rem', color: templateMsg.startsWith('Erreur') ? '#ef4444' : '#10b981', fontWeight: 500, animation: 'fadeIn 0.3s ease', textAlign: 'center' }}>
+            {templateMsg}
+          </span>
+        )}
+        {isMobile ? (
+          <button onClick={() => setBulkModal(true)} className="btn-primary haptic" style={{ width: '100%', fontSize: '0.85rem', padding: '0.6rem', justifyContent: 'center' }}>
+            <CalendarPlus size={16} /> Planifier des shifts
+          </button>
+        ) : (
+          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+            <button onClick={saveAsTemplate} disabled={savingTemplate} className="btn-secondary haptic" style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', padding: '0.4rem 0.85rem' }}>
+              <Repeat size={14} /> {savingTemplate ? 'Sauvegarde...' : (hasTemplates ? 'Mettre à jour récurrence' : 'Définir comme récurrent')}
+            </button>
+            <button className="btn-secondary haptic" style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', padding: '0.4rem 0.85rem' }}
+              onClick={() => {
+                const d = toISO(weekStart);
+                const f = toISO(addDays(weekStart, 6));
+                window.open(`/api/shifts/export-csv?date_debut=${d}&date_fin=${f}`, '_blank');
+              }}>
+              <Download size={14} /> CSV
+            </button>
+            <button onClick={() => setDeleteModal(true)} className="btn-secondary haptic" style={{ whiteSpace: 'nowrap', fontSize: '0.75rem', padding: '0.4rem 0.85rem', color: '#ef4444', borderColor: '#fecaca' }}>
+              <Trash2 size={14} /> Supprimer tout
+            </button>
+            <button onClick={() => setBulkModal(true)} className="btn-primary haptic" style={{ whiteSpace: 'nowrap', fontSize: '0.8rem' }}>
+              <CalendarPlus size={16} /> Planifier
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Week navigation */}
@@ -371,6 +438,8 @@ export default function Shifts() {
                   getChatteurName={getChatteurName}
                   getChatteurColor={getChatteurColor}
                   onCellClick={(date, creneau) => openModal(date, creneau, model.id)}
+                  isMobile={isMobile}
+                  todayISO={todayISO}
                 />
               );
             })}
@@ -388,7 +457,101 @@ export default function Shifts() {
           modelesPlateformes={modelesPlateformes}
           onClose={() => setBulkModal(false)}
           onCreated={() => { setBulkModal(false); fetchShifts(); }}
+          isMobile={isMobile}
         />
+      )}
+
+      {/* Delete confirmation modal */}
+      {deleteModal && (
+        <div onClick={() => { setDeleteModal(false); setDeleteConfirmText(''); setDeleteScope('week'); }}
+          style={{ ...overlayStyle, alignItems: isMobile ? 'flex-end' : 'center', padding: isMobile ? '0' : '1rem', zIndex: 1000 }}>
+          <div className="card" onClick={e => e.stopPropagation()} style={{
+            maxWidth: isMobile ? '100%' : '420px', width: '100%',
+            animation: isMobile ? 'slideUp 0.3s ease' : 'modalCardIn 0.3s cubic-bezier(.4,0,.2,1)',
+            borderRadius: isMobile ? '16px 16px 0 0' : undefined,
+            padding: isMobile ? '1.25rem 1rem 2rem' : '1.5rem',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 style={{ margin: 0, color: '#1e293b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertTriangle size={20} style={{ color: '#ef4444' }} /> Supprimer des shifts
+              </h3>
+              <button onClick={() => { setDeleteModal(false); setDeleteConfirmText(''); setDeleteScope('week'); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+              {[
+                { key: 'week', label: 'Cette semaine' },
+                { key: 'all', label: 'Tous les shifts' },
+              ].map(opt => (
+                <button key={opt.key} onClick={() => setDeleteScope(opt.key)}
+                  className="haptic"
+                  style={{
+                    flex: 1, padding: '0.5rem', borderRadius: '8px', cursor: 'pointer',
+                    fontWeight: 600, fontSize: '0.8rem', transition: 'all 150ms ease',
+                    background: deleteScope === opt.key ? (opt.key === 'all' ? '#fef2f2' : '#fff7ed') : '#f8fafc',
+                    color: deleteScope === opt.key ? (opt.key === 'all' ? '#dc2626' : '#ea580c') : '#64748b',
+                    border: `1.5px solid ${deleteScope === opt.key ? (opt.key === 'all' ? '#fecaca' : '#fed7aa') : '#e2e8f0'}`,
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <div style={{
+              background: deleteScope === 'all' ? '#fef2f2' : '#fff7ed',
+              border: `1px solid ${deleteScope === 'all' ? '#fecaca' : '#fed7aa'}`,
+              borderRadius: '8px', padding: '0.75rem', marginBottom: '1rem',
+            }}>
+              <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b', lineHeight: 1.5 }}>
+                {deleteScope === 'week' ? (
+                  <>Vous allez supprimer <strong style={{ color: '#ea580c' }}>tous les shifts de la semaine du {weekStart.toLocaleDateString('fr-FR', { day: '2-digit', month: 'long' })}</strong>. Cette action est irréversible.</>
+                ) : (
+                  <>Vous allez supprimer <strong style={{ color: '#dc2626' }}>TOUS les shifts de la base de données</strong>. Cette action est irréversible et ne peut pas être annulée.</>
+                )}
+              </p>
+            </div>
+
+            {deleteScope === 'all' && (
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 600, display: 'block', marginBottom: '0.35rem' }}>
+                  Tapez <strong style={{ color: '#dc2626' }}>SUPPRIMER</strong> pour confirmer
+                </label>
+                <input
+                  type="text" value={deleteConfirmText}
+                  onChange={e => setDeleteConfirmText(e.target.value)}
+                  placeholder="SUPPRIMER"
+                  style={{
+                    width: '100%', padding: '0.5rem 0.75rem', borderRadius: '8px',
+                    border: '1.5px solid #e2e8f0', fontSize: '0.85rem', boxSizing: 'border-box',
+                    outline: 'none', transition: 'border-color 150ms ease',
+                  }}
+                  onFocus={e => e.target.style.borderColor = '#f87171'}
+                  onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                />
+              </div>
+            )}
+
+            <button
+              onClick={handleBulkDelete}
+              disabled={deleting || (deleteScope === 'all' && deleteConfirmText !== 'SUPPRIMER')}
+              className="haptic"
+              style={{
+                width: '100%', padding: '0.65rem', borderRadius: '8px', cursor: 'pointer',
+                fontWeight: 700, fontSize: '0.85rem', border: 'none',
+                background: (deleting || (deleteScope === 'all' && deleteConfirmText !== 'SUPPRIMER')) ? '#e2e8f0' : '#ef4444',
+                color: (deleting || (deleteScope === 'all' && deleteConfirmText !== 'SUPPRIMER')) ? '#94a3b8' : 'white',
+                transition: 'all 150ms ease',
+              }}>
+              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.4rem' }}>
+                <Trash2 size={16} />
+                {deleting ? 'Suppression...' : (deleteScope === 'week' ? 'Supprimer les shifts de la semaine' : 'Supprimer tous les shifts')}
+              </span>
+            </button>
+          </div>
+        </div>
       )}
 
       {/* Assignment modal */}
@@ -409,7 +572,7 @@ export default function Shifts() {
             <div>
               <div style={{ marginBottom: '0.75rem' }}>
                 <label className="label">Chatteur</label>
-                <select className="input-field" value={selChatteur} onChange={e => setSelChatteur(e.target.value)}>
+                <select className="input-field" value={selChatteur} onChange={e => setSelChatteur(e.target.value)} aria-label="Sélectionner le chatteur">
                   <option value="">Choisir...</option>
                   {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
                 </select>
@@ -539,9 +702,19 @@ function CloseButton({ onClick }) {
 
 
 /* ─── Model Card with compact week grid ─── */
-function ModelCard({ model, shifts, days, tzOffset, getChatteurName, getChatteurColor, onCellClick }) {
+function ModelCard({ model, shifts, days, tzOffset, getChatteurName, getChatteurColor, onCellClick, isMobile, todayISO }) {
   const [hovered, setHovered] = useState(false);
   const count = shifts.length;
+
+  // O(1) shift lookup map: "date|creneau" → shift
+  const shiftMap = useMemo(() => {
+    const m = new Map();
+    for (const s of shifts) m.set(`${s.date}|${s.creneau}`, s);
+    return m;
+  }, [shifts]);
+
+  const JOURS_FULL_FR = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+
   return (
     <div
       className="card"
@@ -591,46 +764,136 @@ function ModelCard({ model, shifts, days, tzOffset, getChatteurName, getChatteur
         </span>
       </div>
 
-      {/* Compact week grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '38px repeat(7, 1fr)', gap: '2px' }}>
-        {/* Day headers */}
-        <div />
-        {days.map((d, i) => {
-          const isToday = toISO(d) === toISO(new Date());
-          return (
-            <div key={i} style={{
-              textAlign: 'center', padding: '2px 0', borderRadius: '4px',
-              background: isToday ? 'rgba(245,183,49,0.1)' : 'transparent',
-              transition: 'background 200ms ease',
-            }}>
-              <div style={{ fontSize: '0.5rem', color: '#94a3b8', fontWeight: 500 }}>{JOURS_SHORT[i]}</div>
-              <div style={{ fontSize: '0.65rem', fontWeight: 600, color: isToday ? '#b8860b' : '#1a1f2e' }}>
-                {d.getDate()}
+      {isMobile ? (
+        /* ─── Mobile: vertical day-by-day layout ─── */
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          {days.map((d, di) => {
+            const iso = toISO(d);
+            const isToday = iso === todayISO;
+            return (
+              <div key={di} style={{
+                display: 'flex', alignItems: 'center', gap: '0.4rem',
+                padding: '0.35rem 0.5rem',
+                borderRadius: '8px',
+                background: isToday ? 'rgba(245,183,49,0.06)' : 'transparent',
+                borderLeft: isToday ? '3px solid #f5b731' : '3px solid transparent',
+                transition: 'all 200ms ease',
+              }}>
+                {/* Day label */}
+                <div style={{ minWidth: '42px', flexShrink: 0 }}>
+                  <div style={{ fontSize: '0.65rem', fontWeight: 700, color: isToday ? '#b8860b' : '#1b2e4b' }}>
+                    {JOURS_FULL_FR[di]}
+                  </div>
+                  <div style={{ fontSize: '0.55rem', color: '#94a3b8' }}>
+                    {d.getDate()}/{String(d.getMonth() + 1).padStart(2, '0')}
+                  </div>
+                </div>
+                {/* Creneau pills */}
+                <div style={{ display: 'flex', gap: '3px', flex: 1, flexWrap: 'wrap' }}>
+                  {CRENEAUX.map(cr => {
+                    const shift = shiftMap.get(`${iso}|${cr.id}`);
+                    const color = shift ? getChatteurColor(shift.chatteur_id) : null;
+                    const name = shift ? getChatteurName(shift.chatteur_id) : null;
+                    const isTemplate = shift?.from_template;
+                    return (
+                      <MobileShiftPill
+                        key={cr.id}
+                        shift={shift}
+                        color={color}
+                        name={name}
+                        isTemplate={isTemplate}
+                        creneauShort={getCreneauShort(cr, tzOffset)}
+                        onClick={() => onCellClick(d, cr.id)}
+                      />
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+      ) : (
+        /* ─── Desktop: compact week grid ─── */
+        <div style={{ display: 'grid', gridTemplateColumns: '38px repeat(7, 1fr)', gap: '2px' }}>
+          {/* Day headers */}
+          <div />
+          {days.map((d, i) => {
+            const isToday = toISO(d) === todayISO;
+            return (
+              <div key={i} style={{
+                textAlign: 'center', padding: '2px 0', borderRadius: '4px',
+                background: isToday ? 'rgba(245,183,49,0.12)' : 'transparent',
+                transition: 'background 200ms ease',
+              }}>
+                <div style={{ fontSize: '0.5rem', color: isToday ? '#b8860b' : '#94a3b8', fontWeight: isToday ? 700 : 500 }}>{JOURS_SHORT[i]}</div>
+                <div style={{ fontSize: '0.65rem', fontWeight: 600, color: isToday ? '#b8860b' : '#1a1f2e' }}>
+                  {d.getDate()}
+                </div>
+              </div>
+            );
+          })}
 
-        {/* Creneau rows */}
-        {CRENEAUX.map(cr => (
-          <ShiftRow
-            key={cr.id}
-            creneau={cr}
-            tzOffset={tzOffset}
-            days={days}
-            shifts={shifts}
-            getChatteurName={getChatteurName}
-            getChatteurColor={getChatteurColor}
-            onCellClick={onCellClick}
-          />
-        ))}
-      </div>
+          {/* Creneau rows */}
+          {CRENEAUX.map(cr => (
+            <ShiftRow
+              key={cr.id}
+              creneau={cr}
+              tzOffset={tzOffset}
+              days={days}
+              shiftMap={shiftMap}
+              getChatteurName={getChatteurName}
+              getChatteurColor={getChatteurColor}
+              onCellClick={onCellClick}
+              todayISO={todayISO}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
+/* ─── Mobile shift pill ─── */
+function MobileShiftPill({ shift, color, name, isTemplate, creneauShort, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      title={shift ? `${name} — ${creneauShort}${isTemplate ? ' (récurrent)' : ''}` : `${creneauShort} — Assigner`}
+      style={{
+        flex: '1 1 0',
+        minWidth: '52px',
+        padding: '0.3rem 0.25rem',
+        borderRadius: '8px',
+        border: shift
+          ? (isTemplate
+            ? `1.5px dashed ${hovered ? color.text : color.border}`
+            : `1.5px solid ${hovered ? color.text : color.border}`)
+          : `1.5px dashed ${hovered ? '#f5b731' : '#e2e8f0'}`,
+        background: shift
+          ? (hovered ? color.border + '40' : color.bg)
+          : (hovered ? 'rgba(245,183,49,0.06)' : '#fafafa'),
+        color: shift ? color.text : (hovered ? '#f5b731' : '#cbd5e1'),
+        cursor: 'pointer',
+        fontSize: '0.55rem',
+        fontWeight: 600,
+        opacity: isTemplate ? (hovered ? 1 : 0.85) : 1,
+        transition: 'all 180ms cubic-bezier(0.4, 0, 0.2, 1)',
+        transform: hovered ? 'scale(1.05)' : 'scale(1)',
+        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px',
+        lineHeight: 1.2,
+      }}
+    >
+      <span style={{ fontSize: '0.45rem', opacity: 0.7 }}>{creneauShort}</span>
+      <span>{shift ? name : '+'}</span>
+    </button>
+  );
+}
+
 /* ─── Single creneau row ─── */
-function ShiftRow({ creneau, tzOffset, days, shifts, getChatteurName, getChatteurColor, onCellClick }) {
+function ShiftRow({ creneau, tzOffset, days, shiftMap, getChatteurName, getChatteurColor, onCellClick, todayISO }) {
   return (
     <>
       <div style={{
@@ -640,7 +903,9 @@ function ShiftRow({ creneau, tzOffset, days, shifts, getChatteurName, getChatteu
         {getCreneauShort(creneau, tzOffset)}
       </div>
       {days.map((d, i) => {
-        const shift = shifts.find(s => s.date === toISO(d) && s.creneau === creneau.id);
+        const iso = toISO(d);
+        const shift = shiftMap.get(`${iso}|${creneau.id}`);
+        const isToday = iso === todayISO;
         return (
           <ShiftCell
             key={i}
@@ -648,6 +913,7 @@ function ShiftRow({ creneau, tzOffset, days, shifts, getChatteurName, getChatteu
             getChatteurColor={getChatteurColor}
             getChatteurName={getChatteurName}
             onClick={() => onCellClick(d, creneau.id)}
+            isToday={isToday}
           />
         );
       })}
@@ -656,11 +922,15 @@ function ShiftRow({ creneau, tzOffset, days, shifts, getChatteurName, getChatteu
 }
 
 /* ─── Individual shift cell with hover animation ─── */
-function ShiftCell({ shift, getChatteurColor, getChatteurName, onClick }) {
+function ShiftCell({ shift, getChatteurColor, getChatteurName, onClick, isToday }) {
   const [hovered, setHovered] = useState(false);
   const color = shift ? getChatteurColor(shift.chatteur_id) : null;
   const name = shift ? getChatteurName(shift.chatteur_id) : null;
   const isTemplate = shift?.from_template;
+
+  const emptyBg = isToday
+    ? (hovered ? 'rgba(245,183,49,0.1)' : 'rgba(245,183,49,0.04)')
+    : (hovered ? 'rgba(245,183,49,0.06)' : '#fafafa');
 
   return (
     <button
@@ -675,16 +945,16 @@ function ShiftCell({ shift, getChatteurColor, getChatteurName, onClick }) {
           ? (isTemplate
             ? `1.5px dashed ${hovered ? color.text : color.border}`
             : `1.5px solid ${hovered ? color.text : color.border}`)
-          : `1.5px dashed ${hovered ? '#f5b731' : '#e2e8f0'}`,
+          : `1.5px dashed ${hovered ? '#f5b731' : (isToday ? '#f5b73180' : '#e2e8f0')}`,
         background: shift
           ? (hovered ? color.border + '40' : color.bg)
-          : (hovered ? 'rgba(245,183,49,0.06)' : '#fafafa'),
+          : emptyBg,
         cursor: 'pointer',
         padding: '2px 1px',
         fontSize: '0.55rem',
         fontWeight: 600,
-        color: shift ? color.text : (hovered ? '#f5b731' : '#d1d5db'),
-        opacity: isTemplate ? (hovered ? 0.85 : 0.6) : 1,
+        color: shift ? color.text : (hovered ? '#f5b731' : (isToday ? '#d4a017' : '#d1d5db')),
+        opacity: isTemplate ? (hovered ? 1 : 0.85) : 1,
         transition: 'all 180ms cubic-bezier(0.4, 0, 0.2, 1)',
         textAlign: 'center',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -787,7 +1057,7 @@ function TogglePill({ active, onClick, children, style: extraStyle = {}, round }
   );
 }
 
-function BulkModal({ plateformes, modeles, chatteurs, modelesPlateformes, onClose, onCreated }) {
+function BulkModal({ plateformes, modeles, chatteurs, modelesPlateformes, onClose, onCreated, isMobile }) {
   const [pfId, setPfId] = useState('');
   const [modeleId, setModeleId] = useState('');
   const [chatteurId, setChatteurId] = useState('');
@@ -848,13 +1118,22 @@ function BulkModal({ plateformes, modeles, chatteurs, modelesPlateformes, onClos
   const sectionTitleStyle = { fontSize: '0.7rem', fontWeight: 700, color: '#1b2e4b', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.4rem' };
 
   return (
-    <div onClick={onClose} style={overlayStyle}>
+    <div onClick={onClose} style={{
+      ...overlayStyle,
+      alignItems: isMobile ? 'flex-end' : 'center',
+      padding: isMobile ? '0' : '1rem',
+    }}>
       <div
         className="card"
         onClick={e => e.stopPropagation()}
         style={{
-          width: '100%', maxWidth: '480px', maxHeight: '90vh', overflowY: 'auto',
-          animation: 'modalCardIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          width: '100%',
+          maxWidth: isMobile ? '100%' : '480px',
+          maxHeight: isMobile ? '92vh' : '90vh',
+          overflowY: 'auto',
+          animation: isMobile ? 'slideUp 0.3s ease' : 'modalCardIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)',
+          borderRadius: isMobile ? '16px 16px 0 0' : undefined,
+          padding: isMobile ? '1.25rem 1rem 2rem' : undefined,
         }}
       >
         {/* Header */}
@@ -887,24 +1166,24 @@ function BulkModal({ plateformes, modeles, chatteurs, modelesPlateformes, onClos
             {/* Step 1: Context */}
             <div style={sectionStyle}>
               <div style={sectionTitleStyle}>1. Contexte</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '0.5rem' }}>
                 <div>
                   <label className="label" style={{ fontSize: '0.7rem' }}>Plateforme</label>
-                  <select className="input-field" value={pfId} onChange={e => { setPfId(e.target.value); setModeleId(''); }} style={{ fontSize: '0.8rem' }}>
+                  <select className="input-field" value={pfId} onChange={e => { setPfId(e.target.value); setModeleId(''); }} style={{ fontSize: '0.8rem' }} aria-label="Sélectionner la plateforme">
                     <option value="">...</option>
                     {plateformes.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label" style={{ fontSize: '0.7rem' }}>Modèle</label>
-                  <select className="input-field" value={modeleId} onChange={e => setModeleId(e.target.value)} style={{ fontSize: '0.8rem' }}>
+                  <select className="input-field" value={modeleId} onChange={e => setModeleId(e.target.value)} style={{ fontSize: '0.8rem' }} aria-label="Sélectionner le modèle">
                     <option value="">...</option>
                     {filteredModels.map(m => <option key={m.id} value={m.id}>{m.pseudo}</option>)}
                   </select>
                 </div>
                 <div>
                   <label className="label" style={{ fontSize: '0.7rem' }}>Chatteur</label>
-                  <select className="input-field" value={chatteurId} onChange={e => setChatteurId(e.target.value)} style={{ fontSize: '0.8rem' }}>
+                  <select className="input-field" value={chatteurId} onChange={e => setChatteurId(e.target.value)} style={{ fontSize: '0.8rem' }} aria-label="Sélectionner le chatteur">
                     <option value="">...</option>
                     {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
                   </select>
@@ -952,7 +1231,7 @@ function BulkModal({ plateformes, modeles, chatteurs, modelesPlateformes, onClos
                 </>
               )}
               {schedType === 'interval' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: '0.5rem' }}>
                   <div>
                     <label className="label" style={{ fontSize: '0.65rem' }}>Début</label>
                     <input type="date" className="input-field" value={intervalStart} onChange={e => setIntervalStart(e.target.value)} style={{ fontSize: '0.8rem' }} />

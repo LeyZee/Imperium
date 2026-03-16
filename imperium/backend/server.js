@@ -19,7 +19,37 @@ if (missing.length > 0) {
 
 require('./database'); // init DB on startup
 
+// Auto-backup DB on startup (keep last 3 backups)
+const fs = require('fs');
+try {
+  const dbPath = path.join(__dirname, 'imperium.db');
+  if (fs.existsSync(dbPath)) {
+    const backupDir = path.join(__dirname, 'backups');
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const backupPath = path.join(backupDir, `imperium-${timestamp}.db`);
+    fs.copyFileSync(dbPath, backupPath);
+    logger.info(`DB backup created: ${backupPath}`);
+    // Keep only last 3 backups
+    const backups = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith('imperium-') && f.endsWith('.db'))
+      .sort()
+      .reverse();
+    for (const old of backups.slice(3)) {
+      fs.unlinkSync(path.join(backupDir, old));
+      logger.info(`Old backup removed: ${old}`);
+    }
+  }
+} catch (e) {
+  logger.warn('DB backup failed', { error: e.message });
+}
+
 const app = express();
+
+// Trust proxy (Nginx) for correct IP in rate limiters
+if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 const PORT = process.env.PORT || 3001;
 
 // Security headers with CSP + HSTS
@@ -31,7 +61,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "https://flagcdn.com"],
-      connectSrc: ["'self'"],
+      connectSrc: ["'self'", process.env.CORS_ORIGIN].filter(Boolean),
     }
   },
   hsts: {
@@ -156,6 +186,7 @@ app.use('/api/annonces', require('./routes/annonces'));
 app.use('/api/demandes', require('./routes/demandes'));
 app.use('/api/objectifs', require('./routes/objectifs'));
 app.use('/api/notifications', require('./routes/notifications'));
+app.use('/api/contact', require('./routes/contact'));
 
 // Global error handler (catches errors passed via next(err))
 app.use((err, req, res, next) => {
@@ -197,16 +228,18 @@ const server = app.listen(PORT, () => {
     });
   }, 2000);
 
-  // Post-shift notifications + pay day reminders — check every 30 minutes
-  const { checkPostShiftNotifications, checkPayDayReminder } = require('./services/post-shift-checker');
+  // Post-shift notifications + pay day reminders + shift reminders
+  const { checkPostShiftNotifications, checkPayDayReminder, checkShiftReminders } = require('./services/post-shift-checker');
   setInterval(() => {
     checkPostShiftNotifications();
     checkPayDayReminder();
+    checkShiftReminders();
   }, 30 * 60 * 1000); // 30 min
   // Run once on startup after a short delay
   setTimeout(() => {
     checkPostShiftNotifications();
     checkPayDayReminder();
+    checkShiftReminders();
   }, 10000);
 });
 

@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../api/index';
 import StatCard from '../../components/StatCard.jsx';
 import {
-  Plus, Euro, ShoppingBag, Trophy, BarChart3, X, Pencil, Trash2,
-  ChevronDown, PackageOpen, Calendar, Download, Check, XCircle, Clock
+  Plus, Euro, ShoppingBag, BarChart3, X, Pencil, Trash2,
+  ChevronDown, ChevronUp, PackageOpen, Calendar, Download, Check, XCircle, Clock,
+  Bot, User, Shield, RotateCcw, TrendingUp, TrendingDown, ArrowUpDown
 } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
+import Pagination, { ITEMS_PER_PAGE } from '../../components/Pagination.jsx';
+import { useToast } from '../../components/Toast.jsx';
 
 /* ─── Period auto-calc (mirrors backend utils/period.js) ─── */
 function getPeriode(dateStr) {
@@ -62,15 +65,108 @@ const STATUT_STYLES = {
 
 const CRENEAUX_LABELS = { 1: '08h-14h', 2: '14h-20h', 3: '20h-02h', 4: '02h-08h' };
 
+const SOURCE_CONFIG = {
+  telegram: { label: 'Telegram', icon: Bot, color: '#059669', bg: 'rgba(16,185,129,0.1)' },
+  chatteur: { label: 'Chatteur', icon: User, color: '#1e40af', bg: '#dbeafe' },
+  manager:  { label: 'Manager', icon: Shield, color: '#b45309', bg: '#fef3c7' },
+  admin:    { label: 'Directeur', icon: Shield, color: '#6366f1', bg: '#ede9fe' },
+};
+
+function SourceBadge({ source }) {
+  const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.admin;
+  const Icon = cfg.icon;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+      padding: '0.15rem 0.5rem', borderRadius: 6, fontSize: '0.7rem', fontWeight: 600,
+      background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap',
+    }}>
+      <Icon size={11} /> {cfg.label}
+    </span>
+  );
+}
+
 const EMPTY_FORM = { chatteur_id: '', modele_id: '', plateforme_id: '', montant_brut: '', date: today, notes: '', shift_id: '' };
+
+/* ─── Previous period helper ─── */
+function getPreviousPeriod(period) {
+  if (!period) return null;
+  const d = new Date(period.debut + 'T00:00:00');
+  const day = d.getDate();
+  const year = d.getFullYear();
+  const month = d.getMonth();
+  if (day === 15) {
+    // Current is 15–01: previous is 01–15 of same month
+    return {
+      debut: `${year}-${String(month + 1).padStart(2, '0')}-01`,
+      fin: `${year}-${String(month + 1).padStart(2, '0')}-15`,
+    };
+  }
+  // Current is 01–15: previous is 15–01 of previous month
+  const prevMonth = new Date(year, month - 1, 15);
+  return {
+    debut: `${prevMonth.getFullYear()}-${String(prevMonth.getMonth() + 1).padStart(2, '0')}-15`,
+    fin: `${year}-${String(month + 1).padStart(2, '0')}-01`,
+  };
+}
+
+/* ─── Delta trend badge ─── */
+function DeltaBadge({ current, previous, suffix = '€', invert = false }) {
+  if (previous === null || previous === undefined || previous === 0) return null;
+  const delta = ((current - previous) / previous) * 100;
+  if (!isFinite(delta) || isNaN(delta)) return null;
+  const isUp = delta > 0;
+  const isNeutral = Math.abs(delta) < 0.5;
+  const isGood = invert ? !isUp : isUp;
+  const color = isNeutral ? '#94a3b8' : isGood ? '#10b981' : '#ef4444';
+  const bg = isNeutral ? 'rgba(148,163,184,0.1)' : isGood ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)';
+  const Icon = isUp ? TrendingUp : TrendingDown;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+      padding: '0.1rem 0.45rem', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 600,
+      color, background: bg, whiteSpace: 'nowrap',
+    }}>
+      <Icon size={11} />
+      {isUp ? '+' : ''}{delta.toFixed(0)}%
+    </span>
+  );
+}
+
+/* ─── Sortable table header ─── */
+function SortableHeader({ label, field, sortCol, sortDir, onSort, align }) {
+  const isActive = sortCol === field;
+  return (
+    <th
+      onClick={() => onSort(field)}
+      role="columnheader"
+      aria-sort={isActive ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      style={{
+        cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap',
+        textAlign: align || 'left',
+      }}
+    >
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+        {label}
+        {isActive ? (
+          sortDir === 'asc' ? <ChevronUp size={13} style={{ opacity: 0.7 }} /> : <ChevronDown size={13} style={{ opacity: 0.7 }} />
+        ) : (
+          <ArrowUpDown size={12} style={{ opacity: 0.25 }} />
+        )}
+      </span>
+    </th>
+  );
+}
 
 /* ─────────────────────────────────────────── */
 export default function Ventes() {
-  const [ventes, setVentes] = useState([]);
+  const toast = useToast();
+  const [allVentes, setAllVentes] = useState([]);
   const [chatteurs, setChatteurs] = useState([]);
   const [modeles, setModeles] = useState([]);
   const [plateformes, setPlateformes] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [prevSummary, setPrevSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
@@ -81,6 +177,13 @@ export default function Ventes() {
   const [selectedPeriod, setSelectedPeriod] = useState(null);
   const [periods, setPeriods] = useState([]);
   const [showPeriodDropdown, setShowPeriodDropdown] = useState(false);
+  const [sourceFilter, setSourceFilter] = useState('all');
+  const [statutFilter, setStatutFilter] = useState('all');
+  const [currentPage, setCurrentPage] = useState(1);
+
+  /* Sorting */
+  const [sortCol, setSortCol] = useState(null);   // null | 'periode' | 'chatteur' | 'plateforme' | 'montant' | 'source' | 'statut'
+  const [sortDir, setSortDir] = useState('desc');  // 'asc' | 'desc'
 
   /* Modal */
   const [modal, setModal] = useState(null);       // null | 'add' | { ...vente }
@@ -90,6 +193,8 @@ export default function Ventes() {
 
   /* Shifts for vente */
   const [availableShifts, setAvailableShifts] = useState([]);
+  /* Chatteur-platform associations from shifts (for filter dropdowns) */
+  const [chatteurPlatformMap, setChatteurPlatformMap] = useState({});
 
   /* Delete confirmation */
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -97,31 +202,20 @@ export default function Ventes() {
 
   /* Feedback */
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
   const [fetchError, setFetchError] = useState(null);
 
   /* ─── Data fetching ─── */
-  const fetchVentes = useCallback(async (period, platId, chattId, modId) => {
+  const fetchVentes = useCallback(async (period) => {
     const params = new URLSearchParams();
     const p = period || selectedPeriod;
     if (p) {
       params.append('periode_debut', p.debut);
       params.append('periode_fin', p.fin);
     }
-    if (chattId || filterChatteur) params.append('chatteur_id', chattId || filterChatteur);
     const { data } = await api.get(`/api/ventes?${params}`);
-
-    // Client-side filters (platform + modele)
-    const plat = platId !== undefined ? platId : activePlatform;
-    const mod = modId !== undefined ? modId : filterModele;
-    let filtered = data;
-    if (plat) filtered = filtered.filter(v => v.plateforme_id === plat);
-    if (mod) filtered = filtered.filter(v => String(v.modele_id) === String(mod));
-    setVentes(filtered);
-
-    // Also keep unfiltered for stats if needed
+    setAllVentes(data);
     return data;
-  }, [selectedPeriod, filterChatteur, activePlatform, filterModele]);
+  }, [selectedPeriod]);
 
   const fetchSummary = useCallback(async (period) => {
     const p = period || selectedPeriod;
@@ -130,6 +224,16 @@ export default function Ventes() {
       const { data } = await api.get(`/api/ventes/summary${params}`);
       setSummary(data);
     } catch { /* ignore */ }
+    // Fetch previous period summary for delta badges
+    const prev = getPreviousPeriod(p);
+    if (prev) {
+      try {
+        const { data } = await api.get(`/api/ventes/summary?periode_debut=${prev.debut}&periode_fin=${prev.fin}`);
+        setPrevSummary(data);
+      } catch { setPrevSummary(null); }
+    } else {
+      setPrevSummary(null);
+    }
   }, [selectedPeriod]);
 
   async function initialFetch() {
@@ -137,15 +241,23 @@ export default function Ventes() {
     setFetchError(null);
     try {
       // Load reference data + dashboard period in parallel
-      const [c, m, p, dash] = await Promise.all([
+      const [c, m, p, dash, sh] = await Promise.all([
         api.get('/api/chatteurs'),
         api.get('/api/modeles'),
         api.get('/api/plateformes'),
         api.get('/api/dashboard'),
+        api.get('/api/shifts'),
       ]);
       setChatteurs(c.data);
       setModeles(m.data);
       setPlateformes(p.data);
+      // Build chatteur → Set<plateforme_id> map from shifts
+      const cpMap = {};
+      (sh.data || []).forEach(s => {
+        if (!cpMap[s.chatteur_id]) cpMap[s.chatteur_id] = new Set();
+        cpMap[s.chatteur_id].add(s.plateforme_id);
+      });
+      setChatteurPlatformMap(cpMap);
       const initialPeriod = dash.data.periode || null;
       if (dash.data.periodes) setPeriods(dash.data.periodes);
       if (initialPeriod) setSelectedPeriod(initialPeriod);
@@ -168,8 +280,8 @@ export default function Ventes() {
     return () => window.removeEventListener('vente-status-changed', handler);
   }, [selectedPeriod]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function refresh(period, platId, chattId, modId) {
-    await Promise.all([fetchVentes(period, platId, chattId, modId), fetchSummary(period)]);
+  async function refresh(period) {
+    await Promise.all([fetchVentes(period), fetchSummary(period)]);
   }
 
   /* ─── Period selection ─── */
@@ -179,16 +291,21 @@ export default function Ventes() {
     refresh(p);
   }
 
-  /* ─── Platform tabs ─── */
+  /* ─── Cascading filter changes ─── */
   function selectPlatform(id) {
     setActivePlatform(id);
-    refresh(undefined, id);
+    // Reset dependent filters if their value is no longer valid
+    setFilterModele('');
+    setFilterChatteur('');
   }
 
-  /* ─── Chatteur filter ─── */
+  function changeModele(val) {
+    setFilterModele(val);
+    setFilterChatteur('');
+  }
+
   function changeChatteur(val) {
     setFilterChatteur(val);
-    refresh(undefined, undefined, val);
   }
 
   /* ─── Modal open/close ─── */
@@ -274,14 +391,13 @@ export default function Ventes() {
 
       if (modal === 'add') {
         await api.post('/api/ventes', payload);
-        setSuccess('Vente ajoutée avec succès');
+        toast.success('Vente ajoutée avec succès');
       } else {
         await api.put(`/api/ventes/${modal.id}`, payload);
-        setSuccess('Vente modifiée avec succès');
+        toast.success('Vente modifiée avec succès');
       }
 
       closeModal();
-      setTimeout(() => setSuccess(''), 3000);
       await refresh();
     } catch (err) {
       setError(err.response?.data?.error || 'Erreur');
@@ -298,8 +414,7 @@ export default function Ventes() {
       await api.delete(`/api/ventes/${deleteTarget.id}`);
       setDeleteTarget(null);
       setDeletingId(null);
-      setSuccess('Vente supprimée');
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success('Vente supprimée');
       await refresh();
     }, 300);
   }
@@ -308,12 +423,10 @@ export default function Ventes() {
   async function handleValider(venteId, statut) {
     try {
       await api.put(`/api/ventes/${venteId}/valider`, { statut });
-      setSuccess(statut === 'validée' ? 'Vente validée' : 'Vente rejetée');
-      setTimeout(() => setSuccess(''), 3000);
+      toast.success(statut === 'validée' ? 'Vente validée' : 'Vente rejetée');
       await refresh();
     } catch (err) {
-      setError(err.response?.data?.error || 'Erreur');
-      setTimeout(() => setError(''), 3000);
+      toast.error(err.response?.data?.error || 'Erreur');
     }
   }
 
@@ -335,11 +448,11 @@ export default function Ventes() {
   const periodeCalc = form.date ? getPeriode(form.date) : null;
 
   const totalVentes = summary ? (summary.total_brut_usd || 0) : 0;
-  const nbVentes = ventes.length;
+  const totalNetHT = summary ? (summary.total_net_ht_eur || 0) : 0;
+  const totalPrimes = summary ? (summary.total_primes || 0) : 0;
   const topChatteur = summary?.top_chatteur
     ? summary.top_chatteur.prenom
     : '—';
-  const moyVente = nbVentes > 0 ? (totalVentes / nbVentes) : 0;
 
   /* Colors for initials — use chatteur DB colors via CHATTEUR_COLORS */
   const getChatteurColorFromList = (id) => {
@@ -347,21 +460,131 @@ export default function Ventes() {
     return CHATTEUR_COLORS[c?.couleur]?.bg || '#94a3b8';
   };
 
+  /* ─── Source helper ─── */
+  function getSource(vente) {
+    if (vente.source) return vente.source;
+    if (vente.notes?.startsWith('Import Telegram')) return 'telegram';
+    if (vente.notes?.startsWith('Ajout manuel')) return 'chatteur';
+    return 'admin';
+  }
+
+  /* ─── Cascading filter: filtered ventes ─── */
+  const ventes = useMemo(() => {
+    let filtered = allVentes;
+    if (activePlatform) filtered = filtered.filter(v => v.plateforme_id === activePlatform);
+    if (filterModele) filtered = filtered.filter(v => String(v.modele_id) === String(filterModele));
+    if (filterChatteur) filtered = filtered.filter(v => String(v.chatteur_id) === String(filterChatteur));
+    return filtered;
+  }, [allVentes, activePlatform, filterModele, filterChatteur]);
+
+  /* ─── Cascading filter: dropdown options with counts ─── */
+  const modeleOptionsWithCounts = useMemo(() => {
+    // Filter models by platform association (modeles_plateformes), then count ventes
+    let relevantModeles = modeles;
+    if (activePlatform) {
+      relevantModeles = modeles.filter(m => m.plateformes?.some(p => p.id === activePlatform));
+    }
+    let pool = allVentes;
+    if (activePlatform) pool = pool.filter(v => v.plateforme_id === activePlatform);
+    if (filterChatteur) pool = pool.filter(v => String(v.chatteur_id) === String(filterChatteur));
+    const counts = {};
+    pool.forEach(v => { if (v.modele_id) counts[v.modele_id] = (counts[v.modele_id] || 0) + 1; });
+    return relevantModeles.map(m => ({ ...m, venteCount: counts[m.id] || 0 }));
+  }, [allVentes, activePlatform, filterChatteur, modeles]);
+
+  const chatteurOptionsWithCounts = useMemo(() => {
+    // Filter chatteurs by those who have shifts on the selected platform
+    let pool = allVentes;
+    if (activePlatform) pool = pool.filter(v => v.plateforme_id === activePlatform);
+    if (filterModele) pool = pool.filter(v => String(v.modele_id) === String(filterModele));
+    const counts = {};
+    pool.forEach(v => { counts[v.chatteur_id] = (counts[v.chatteur_id] || 0) + 1; });
+    let relevantChatteurs = chatteurs;
+    if (activePlatform) {
+      relevantChatteurs = chatteurs.filter(c => chatteurPlatformMap[c.id]?.has(activePlatform));
+    }
+    return relevantChatteurs.map(c => ({ ...c, venteCount: counts[c.id] || 0 }));
+  }, [allVentes, activePlatform, filterModele, chatteurs, chatteurPlatformMap]);
+
+  /* ─── Source & statut counts + displayed ventes ─── */
+  const { sourceCounts, statutCounts } = useMemo(() => {
+    const sc = { telegram: 0, chatteur: 0, manager: 0, admin: 0 };
+    const stc = { en_attente: 0, 'validée': 0, 'rejetée': 0 };
+    ventes.forEach(v => { sc[getSource(v)]++; if (v.statut) stc[v.statut]++; });
+    return { sourceCounts: sc, statutCounts: stc };
+  }, [ventes]);
+
+  const displayedVentes = useMemo(() => ventes.filter(v => {
+    if (sourceFilter !== 'all' && getSource(v) !== sourceFilter) return false;
+    if (statutFilter !== 'all' && v.statut !== statutFilter) return false;
+    return true;
+  }), [ventes, sourceFilter, statutFilter]);
+
+  // Reset page when filters change
+  useEffect(() => { setCurrentPage(1); }, [sourceFilter, statutFilter, selectedPeriod, activePlatform, filterChatteur, filterModele]);
+
+  const nbVentes = displayedVentes.length;
+  const moyVente = nbVentes > 0 ? (totalVentes / nbVentes) : 0;
+  const totalPages = Math.ceil(displayedVentes.length / ITEMS_PER_PAGE);
+
+  /* Sort handler */
+  function handleSort(col) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir(col === 'montant' ? 'desc' : 'asc');
+    }
+  }
+
+  const sortedVentes = useMemo(() => [...displayedVentes].sort((a, b) => {
+    // Pending ventes always on top
+    if (a.statut === 'en_attente' && b.statut !== 'en_attente') return -1;
+    if (a.statut !== 'en_attente' && b.statut === 'en_attente') return 1;
+
+    if (!sortCol) return 0;
+
+    let cmp = 0;
+    switch (sortCol) {
+      case 'periode':
+        cmp = (a.periode_debut || '').localeCompare(b.periode_debut || '');
+        break;
+      case 'chatteur': {
+        const nameA = getName(chatteurs, a.chatteur_id);
+        const nameB = getName(chatteurs, b.chatteur_id);
+        cmp = nameA.localeCompare(nameB, 'fr');
+        break;
+      }
+      case 'plateforme':
+        cmp = getPlatName(a.plateforme_id).localeCompare(getPlatName(b.plateforme_id), 'fr');
+        break;
+      case 'montant':
+        cmp = (a.montant_brut || 0) - (b.montant_brut || 0);
+        break;
+      case 'source':
+        cmp = (getSource(a)).localeCompare(getSource(b));
+        break;
+      case 'statut':
+        cmp = (a.statut || '').localeCompare(b.statut || '');
+        break;
+      default:
+        cmp = 0;
+    }
+    return sortDir === 'asc' ? cmp : -cmp;
+  }), [displayedVentes, sortCol, sortDir, chatteurs, plateformes]);
+
+  const paginatedVentes = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return sortedVentes.slice(start, start + ITEMS_PER_PAGE);
+  }, [sortedVentes, currentPage]);
+
   /* ─── Render ─── */
   return (
     <div className="page-enter">
-      {/* ─── Toast ─── */}
-      {success && (
-        <div className="toast-success" style={{
-          position: 'fixed', top: '1rem', right: '1rem', zIndex: 100,
-          animation: 'slideUp 0.3s ease',
-        }}>{success}</div>
-      )}
-
       {/* ─── Header ─── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <h1 style={{ fontWeight: 700, margin: 0 }}>Ventes</h1>
+          <h1 style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><TrendingUp size={22} color="#f5b731" /> Ventes</h1>
           {(() => {
             const pendingCount = ventes.filter(v => v.statut === 'en_attente').length;
             return pendingCount > 0 ? (
@@ -381,6 +604,9 @@ export default function Ventes() {
             <button
               className="btn-secondary"
               onClick={() => setShowPeriodDropdown(!showPeriodDropdown)}
+              aria-expanded={showPeriodDropdown}
+              aria-haspopup="listbox"
+              aria-label="Sélectionner une période"
               style={{ fontSize: '0.8rem', gap: '0.35rem', padding: '0.5rem 1rem' }}
             >
               <Calendar size={14} />
@@ -427,6 +653,7 @@ export default function Ventes() {
 
           {selectedPeriod && (
             <button className="btn-secondary" style={{ fontSize: '0.8rem' }}
+              aria-label="Exporter les ventes en CSV"
               onClick={() => window.open(`/api/ventes/export-csv?periode_debut=${selectedPeriod.debut}&periode_fin=${selectedPeriod.fin}`, '_blank')}>
               <Download size={14} /> CSV
             </button>
@@ -453,73 +680,95 @@ export default function Ventes() {
           value={`${totalVentes.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`}
           icon={Euro}
           color="#f5b731"
+          subtitle={prevSummary ? <DeltaBadge current={totalVentes} previous={prevSummary.total_brut_usd || 0} /> : null}
         />
         <StatCard
           title="Nb ventes"
           value={nbVentes}
           icon={ShoppingBag}
           color="#1b2e4b"
-        />
-        <StatCard
-          title="Top chatteur"
-          value={topChatteur}
-          icon={Trophy}
-          color="#10b981"
+          subtitle={prevSummary ? <DeltaBadge current={nbVentes} previous={prevSummary.nb_ventes || 0} /> : null}
         />
         <StatCard
           title="Moyenne / vente"
           value={`${moyVente.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`}
           icon={BarChart3}
           color="#8b5cf6"
+          subtitle={prevSummary ? <DeltaBadge current={moyVente} previous={prevSummary.nb_ventes > 0 ? (prevSummary.total_brut_usd / prevSummary.nb_ventes) : 0} /> : null}
         />
       </div>
 
-      {/* ─── Filter bar ─── */}
-      <div className="card" style={{ padding: '0.75rem 1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
-        {/* Platform tabs */}
-        <div style={{ display: 'flex', gap: '0.25rem', background: 'rgba(0,0,0,0.04)', borderRadius: '10px', padding: '3px' }}>
-          {[{ id: null, label: 'Toutes' }, ...plateformes.map(p => ({ id: p.id, label: p.nom }))].map(tab => (
-            <button
-              key={tab.id ?? 'all'}
-              onClick={() => selectPlatform(tab.id)}
-              style={{
-                padding: '0.35rem 0.85rem', borderRadius: '8px', border: 'none',
-                fontSize: '0.8rem', fontWeight: activePlatform === tab.id ? 600 : 400,
-                cursor: 'pointer',
-                background: activePlatform === tab.id ? '#fff' : 'transparent',
-                color: activePlatform === tab.id ? '#1b2e4b' : '#64748b',
-                boxShadow: activePlatform === tab.id ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-                transition: 'all 200ms ease',
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Right filters */}
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Modele filter */}
+      {/* ─── Filter Bar ─── */}
+      <div className="card" style={{ padding: '0.6rem 1rem', marginBottom: '1rem' }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+        }}>
+          <select
+            className="input-field"
+            value={activePlatform ?? ''}
+            onChange={e => selectPlatform(e.target.value ? Number(e.target.value) : null)}
+            aria-label="Filtrer par plateforme"
+            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+          >
+            <option value="">Toutes les plateformes</option>
+            {plateformes.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+          </select>
           <select
             className="input-field"
             value={filterModele}
-            onChange={e => { setFilterModele(e.target.value); refresh(undefined, undefined, undefined, e.target.value); }}
-            style={{ width: 'auto', minWidth: '160px', fontSize: '0.8rem' }}
+            onChange={e => changeModele(e.target.value)}
+            aria-label="Filtrer par modèle"
+            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
           >
             <option value="">Tous les modèles</option>
-            {modeles.map(m => <option key={m.id} value={m.id}>{m.pseudo}</option>)}
+            {modeleOptionsWithCounts.map(m => <option key={m.id} value={m.id}>{m.pseudo} ({m.venteCount})</option>)}
           </select>
-
-          {/* Chatteur filter */}
           <select
             className="input-field"
             value={filterChatteur}
             onChange={e => changeChatteur(e.target.value)}
-            style={{ width: 'auto', minWidth: '160px', fontSize: '0.8rem' }}
+            aria-label="Filtrer par chatteur"
+            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
           >
             <option value="">Tous les chatteurs</option>
-            {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
+            {chatteurOptionsWithCounts.map(c => <option key={c.id} value={c.id}>{c.prenom} ({c.venteCount})</option>)}
           </select>
+          <select
+            className="input-field"
+            value={sourceFilter}
+            onChange={e => setSourceFilter(e.target.value)}
+            aria-label="Filtrer par source"
+            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+          >
+            <option value="all">Toutes les sources</option>
+            <option value="telegram">Telegram ({sourceCounts.telegram})</option>
+            <option value="chatteur">Chatteur ({sourceCounts.chatteur})</option>
+            <option value="manager">Manager ({sourceCounts.manager})</option>
+            <option value="admin">Directeur ({sourceCounts.admin})</option>
+          </select>
+          <select
+            className="input-field"
+            value={statutFilter}
+            onChange={e => setStatutFilter(e.target.value)}
+            aria-label="Filtrer par statut"
+            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+          >
+            <option value="all">Tous les statuts</option>
+            <option value="en_attente">En attente ({statutCounts.en_attente})</option>
+            <option value="validée">Validée ({statutCounts['validée']})</option>
+            <option value="rejetée">Rejetée ({statutCounts['rejetée']})</option>
+          </select>
+
+          {/* Reset button when filters are active */}
+          {(sourceFilter !== 'all' || statutFilter !== 'all' || activePlatform !== null || filterModele || filterChatteur) && (
+            <button
+              onClick={() => { setSourceFilter('all'); setStatutFilter('all'); setActivePlatform(null); setFilterModele(''); setFilterChatteur(''); }}
+              className="btn-ghost"
+              style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+            >
+              <RotateCcw size={12} /> Reset
+            </button>
+          )}
         </div>
       </div>
 
@@ -540,7 +789,7 @@ export default function Ventes() {
             </div>
           ))}
         </div>
-      ) : ventes.length === 0 ? (
+      ) : displayedVentes.length === 0 ? (
         /* Empty state */
         <div className="card" style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
           <div style={{
@@ -551,34 +800,32 @@ export default function Ventes() {
           </div>
           <p style={{ fontWeight: 600, color: '#1a1f2e', marginBottom: '0.5rem' }}>Aucune vente</p>
           <p style={{ fontSize: '0.85rem', color: '#94a3b8', marginBottom: '1rem' }}>
-            {activePlatform || filterChatteur ? 'Aucun résultat avec ces filtres.' : 'Commencez par ajouter votre première vente.'}
+            {activePlatform || filterChatteur || sourceFilter !== 'all' || statutFilter !== 'all' ? 'Aucun résultat avec ces filtres.' : 'Commencez par ajouter votre première vente.'}
           </p>
-          {!activePlatform && !filterChatteur && (
+          {!activePlatform && !filterChatteur && sourceFilter === 'all' && statutFilter === 'all' && (
             <button className="btn-primary" onClick={openAddModal}><Plus size={16} /> Ajouter une vente</button>
           )}
         </div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <table>
+          <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+          <table style={{ minWidth: '1050px' }}>
             <thead>
               <tr>
-                <th>Période</th>
-                <th>Chatteur</th>
-                <th>Modèle</th>
-                <th>Plateforme</th>
-                <th>Shift</th>
-                <th style={{ textAlign: 'right' }}>Montant brut</th>
-                <th>Statut</th>
-                <th>Notes</th>
-                <th style={{ width: 180, textAlign: 'center' }}>Actions</th>
+                <SortableHeader label="Période" field="periode" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader label="Chatteur" field="chatteur" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <th style={{ whiteSpace: 'nowrap' }}>Modèle</th>
+                <SortableHeader label="Plateforme" field="plateforme" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <th style={{ whiteSpace: 'nowrap' }}>Shift</th>
+                <SortableHeader label="Montant brut" field="montant" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
+                <SortableHeader label="Source" field="source" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <SortableHeader label="Statut" field="statut" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <th style={{ whiteSpace: 'nowrap' }}>Notes</th>
+                <th style={{ width: 180, textAlign: 'center', whiteSpace: 'nowrap' }}>Actions</th>
               </tr>
             </thead>
             <tbody className="stagger-rows">
-              {[...ventes].sort((a, b) => {
-                if (a.statut === 'en_attente' && b.statut !== 'en_attente') return -1;
-                if (a.statut !== 'en_attente' && b.statut === 'en_attente') return 1;
-                return 0;
-              }).map(v => {
+              {paginatedVentes.map(v => {
                 const devise = getDevise(v.plateforme_id);
                 const isRemoving = deletingId === v.id;
                 const isPending = v.statut === 'en_attente';
@@ -646,6 +893,9 @@ export default function Ventes() {
                       {v.montant_brut.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} {devise === 'USD' ? '$' : '€'}
                     </td>
                     <td>
+                      <SourceBadge source={v.source} />
+                    </td>
+                    <td>
                       {(() => {
                         const st = STATUT_STYLES[v.statut] || STATUT_STYLES['validée'];
                         return (
@@ -709,6 +959,8 @@ export default function Ventes() {
               })}
             </tbody>
           </table>
+          </div>
+          <Pagination page={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
         </div>
       )}
 

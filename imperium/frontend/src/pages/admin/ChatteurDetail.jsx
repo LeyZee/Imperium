@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Euro, Trophy, AlertCircle, Calendar, Minus, Plus, MessageSquare, Trash2, Send } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
+import { ArrowLeft, User, Euro, Trophy, AlertCircle, Calendar, Minus, Plus, MessageSquare, Trash2, Send, TrendingUp, TrendingDown, Bot, Shield } from 'lucide-react';
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 import api from '../../api/index.js';
 import { CHATTEUR_COLORS } from '../../constants/colors';
 import StatCard from '../../components/StatCard.jsx';
@@ -9,8 +9,49 @@ import DonutChart from '../../components/DonutChart.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
 
 const PAYS_ISO = { 'France': 'fr', 'Benin': 'bj', 'Bénin': 'bj', 'Madagascar': 'mg' };
+const SOURCE_CONFIG = {
+  telegram: { label: 'Telegram', icon: Bot, color: '#059669', bg: 'rgba(16,185,129,0.1)' },
+  chatteur: { label: 'Chatteur', icon: User, color: '#1e40af', bg: '#dbeafe' },
+  manager:  { label: 'Manager', icon: Shield, color: '#b45309', bg: '#fef3c7' },
+  admin:    { label: 'Directeur', icon: Shield, color: '#6366f1', bg: '#ede9fe' },
+};
 const DONUT_COLORS = ['#f5b731', '#1b2e4b', '#6366f1', '#10b981', '#ef4444', '#8b5cf6', '#f97316', '#06b6d4'];
 const MOIS_COURTS = ['Jan', 'Fév', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+
+function TrendBadge({ value }) {
+  if (value === 0 || value === undefined || value === null) return null;
+  const isUp = value > 0;
+  const Icon = isUp ? TrendingUp : TrendingDown;
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+      fontSize: '0.7rem', fontWeight: 600,
+      color: isUp ? '#10b981' : '#ef4444',
+      background: isUp ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+      padding: '0.15rem 0.45rem', borderRadius: '20px',
+    }}>
+      <Icon size={12} />
+      {isUp ? '+' : ''}{value}%
+    </span>
+  );
+}
+
+function CustomBarTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div style={{
+      background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
+      borderRadius: '8px', padding: '0.6rem 0.85rem',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.1)', fontSize: '0.8rem',
+    }}>
+      <p style={{ color: '#64748b', fontSize: '0.72rem', marginBottom: '0.2rem', fontWeight: 500 }}>{d.fullLabel}</p>
+      <p style={{ fontWeight: 700, color: '#f5b731', fontSize: '0.95rem' }}>
+        {d.net_ht.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {"\u20ac"}
+      </p>
+    </div>
+  );
+}
 
 export default function ChatteurDetail() {
   const { id } = useParams();
@@ -25,15 +66,27 @@ export default function ChatteurDetail() {
   const [error, setError] = useState('');
   const [ventesRecentes, setVentesRecentes] = useState([]);
   const [plateformes, setPlateformes] = useState([]);
+  const [chartMode, setChartMode] = useState('bar');
 
   useEffect(() => { fetchAll(); }, [id]);
 
   async function fetchAll() {
     setLoading(true);
     try {
+      // Compute current period for palier data
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      let pd, pf;
+      if (now.getDate() < 15) {
+        pd = `${y}-${m}-01`; pf = `${y}-${m}-15`;
+      } else {
+        const next = new Date(y, now.getMonth() + 1, 1);
+        pd = `${y}-${m}-15`; pf = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`;
+      }
       const [cRes, kRes, hRes, mRes, nRes, vRes, pRes] = await Promise.all([
         api.get(`/api/chatteurs/${id}`),
-        api.get(`/api/chatteurs/${id}/kpis`),
+        api.get(`/api/chatteurs/${id}/kpis?periode_debut=${pd}&periode_fin=${pf}`),
         api.get(`/api/chatteurs/${id}/historique`),
         api.get(`/api/ventes/par-modele?chatteur_id=${id}`),
         api.get(`/api/notes?chatteur_id=${id}`).catch(() => ({ data: [] })),
@@ -103,12 +156,17 @@ export default function ChatteurDetail() {
   // Compute total brut EUR from kpis
   const totalBrut = kpis?.ventes?.reduce((s, v) => s + (v.total_brut || 0), 0) || 0;
 
+  const primeTotal = kpis?.prime_from_paies || kpis?.primes_total || 0;
+  const palierAtteint = kpis?.palier_atteint;
+  const paliers = kpis?.paliers_primes || [];
+  const netHtTotal = kpis?.net_ht_total || 0;
+
   const stats = [
     { title: 'Total Ventes', value: `${totalBrut.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Euro, color: '#f5b731' },
     { title: 'Commission', value: `${(kpis?.commission_totale || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Euro, color: '#10b981' },
-    { title: 'Rang', value: kpis?.rang ? `${kpis.rang}/${kpis.nb_chatteurs}` : '—', icon: Trophy, color: '#f59e0b' },
+    { title: 'Net HT', value: `${netHtTotal.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: TrendingUp, color: '#f59e0b' },
     { title: 'Malus', value: `${(kpis?.malus_total || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Minus, color: '#ef4444' },
-    { title: 'Primes', value: `${(kpis?.primes_total || 0).toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Plus, color: '#8b5cf6' },
+    { title: 'Primes', value: `${primeTotal.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} €`, icon: Plus, color: '#8b5cf6', subtitle: palierAtteint ? `${palierAtteint.emoji} ${palierAtteint.label}` : null },
     { title: 'Shifts', value: kpis?.nb_shifts || 0, icon: Calendar, color: '#1b2e4b' },
   ];
 
@@ -116,14 +174,24 @@ export default function ChatteurDetail() {
   const chartData = historique.map(p => {
     const deb = new Date(p.periode_debut + 'T00:00:00');
     const fin = new Date(p.periode_fin + 'T00:00:00');
-    const mois = MOIS_COURTS[deb.getMonth()];
+    const moisDeb = MOIS_COURTS[deb.getMonth()];
+    const moisFin = MOIS_COURTS[fin.getMonth()];
+    const dayDeb = deb.getDate();
+    const dayFin = fin.getDate();
+    const crossMonth = deb.getMonth() !== fin.getMonth();
+    const shortLabel = crossMonth ? `${dayDeb} ${moisDeb}-${dayFin} ${moisFin}` : `${dayDeb}-${dayFin} ${moisDeb}`;
+    const fullLabel = crossMonth ? `${dayDeb} ${moisDeb} - ${dayFin} ${moisFin} ${fin.getFullYear()}` : `${dayDeb} - ${dayFin} ${moisDeb} ${fin.getFullYear()}`;
     return {
-      label: `${deb.getDate()}-${fin.getDate()} ${mois}`,
-      fullLabel: `${deb.getDate()} - ${fin.getDate()} ${mois} ${fin.getFullYear()}`,
+      label: shortLabel,
+      fullLabel,
       net_ht: parseFloat((p.total_net_ht || 0).toFixed(2)),
       commission: parseFloat((p.total_commission || 0).toFixed(2)),
     };
   });
+
+  const lastVal = chartData[chartData.length - 1]?.net_ht || 0;
+  const prevVal = chartData[chartData.length - 2]?.net_ht || 0;
+  const deltaPct = prevVal > 0 ? parseFloat((((lastVal - prevVal) / prevVal) * 100).toFixed(1)) : null;
 
   // Pie data for modeles (now with DB colors)
   const totalModeles = ventesParModele.reduce((s, d) => s + d.total_brut, 0);
@@ -256,33 +324,136 @@ export default function ChatteurDetail() {
         {stats.map(s => <StatCard key={s.title} {...s} />)}
       </div>
 
+      {/* Palier Progress Widget */}
+      {paliers.length > 0 && (
+        <div className="card" style={{ padding: '1.25rem', marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Progression Paliers</h3>
+            <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
+              Net HT : {netHtTotal.toLocaleString('fr-FR', { maximumFractionDigits: 0 })} {'\u20ac'}
+            </span>
+          </div>
+          {/* Progress bar with palier markers */}
+          <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
+            <div style={{ height: '8px', borderRadius: '4px', background: '#f1f5f9', overflow: 'hidden' }}>
+              <div style={{
+                height: '100%', borderRadius: '4px',
+                width: `${Math.min(100, (netHtTotal / (paliers[paliers.length - 1]?.seuil_net_ht || 1)) * 100)}%`,
+                background: palierAtteint
+                  ? ({'Bronze': '#cd7f32', 'Argent': '#a0a0a0', 'Or': '#ffc107', 'Diamant': '#64b5f6'}[palierAtteint.label] || '#3b82f6')
+                  : '#cbd5e1',
+                transition: 'width 0.5s ease',
+              }} />
+            </div>
+            {/* Markers */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem' }}>
+              {paliers.map((p, i) => {
+                const reached = netHtTotal >= p.seuil_net_ht;
+                const pct = (p.seuil_net_ht / (paliers[paliers.length - 1]?.seuil_net_ht || 1)) * 100;
+                const colors = {
+                  'Bronze': { bg: '#fef3e2', border: '#cd7f32', text: '#92540a' },
+                  'Argent': { bg: '#f0f0f0', border: '#a0a0a0', text: '#555' },
+                  'Or': { bg: '#fff8e1', border: '#ffc107', text: '#b8860b' },
+                  'Diamant': { bg: '#e8f4fd', border: '#64b5f6', text: '#1565c0' },
+                }[p.label] || { bg: '#f0f4ff', border: '#3b82f6', text: '#3b82f6' };
+                return (
+                  <div key={i} style={{ textAlign: 'center', flex: 1 }}>
+                    <div style={{
+                      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                      width: '28px', height: '28px', borderRadius: '50%',
+                      border: `2px solid ${reached ? colors.border : '#e2e8f0'}`,
+                      background: reached ? colors.bg : '#fff',
+                      fontSize: '0.75rem', opacity: reached ? 1 : 0.5,
+                    }}>
+                      {p.emoji}
+                    </div>
+                    <div style={{ fontSize: '0.6rem', fontWeight: 600, color: reached ? colors.text : '#94a3b8', marginTop: '0.2rem' }}>
+                      {p.label}
+                    </div>
+                    <div style={{ fontSize: '0.55rem', color: reached ? colors.text : '#cbd5e1' }}>
+                      {p.seuil_net_ht}{'\u20ac'} {'\u2192'} +{p.bonus}{'\u20ac'}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Charts Row */}
       <div className="detail-charts-grid">
         {/* Evolution BarChart */}
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{'Évolution Net HT'}</h3>
-            <p style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{chartData.length} {'dernières périodes'}</p>
+          <div style={{
+            padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          }}>
+            <div>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>{'Évolution Net HT'}</h3>
+              <p style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.15rem' }}>{chartData.length} {'dernières périodes'}</p>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              {deltaPct !== null && <TrendBadge value={deltaPct} />}
+              <div style={{
+                display: 'flex', background: '#f1f5f9', borderRadius: '8px', padding: '2px',
+              }}>
+                {['bar', 'line'].map(mode => (
+                  <button key={mode} onClick={() => setChartMode(mode)} style={{
+                    padding: '0.25rem 0.55rem', border: 'none', borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '0.68rem', fontWeight: 600, transition: 'all 150ms',
+                    background: chartMode === mode ? '#fff' : 'transparent',
+                    color: chartMode === mode ? '#f5b731' : '#94a3b8',
+                    boxShadow: chartMode === mode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
+                  }}>{mode === 'bar' ? 'Barres' : 'Courbe'}</button>
+                ))}
+              </div>
+            </div>
           </div>
           <div style={{ padding: '1rem 0.5rem 0.5rem 0' }}>
             {chartData.length >= 2 ? (
               <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={chartData} barCategoryGap="20%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
-                  <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={45}
-                    tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k` : `${v}`} />
-                  <Tooltip formatter={(v) => `${v.toLocaleString('fr-FR')} €`} labelFormatter={(l) => {
-                    const item = chartData.find(d => d.label === l);
-                    return item?.fullLabel || l;
-                  }} />
-                  <Bar dataKey="net_ht" fill="#f5b731" radius={[4,4,0,0]} maxBarSize={40} name="Net HT" />
-                </BarChart>
+                {chartMode === 'bar' ? (
+                  <BarChart data={chartData} barCategoryGap="20%">
+                    <defs>
+                      <linearGradient id="detailBarGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f5b731" stopOpacity={0.9} />
+                        <stop offset="100%" stopColor="#e6a914" stopOpacity={0.6} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={45}
+                      tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k` : `${v}`} domain={[0, 'auto']} />
+                    <Tooltip content={<CustomBarTooltip />} cursor={{ fill: 'rgba(245,183,49,0.06)' }} />
+                    <Bar dataKey="net_ht" fill="url(#detailBarGradient)" radius={[4,4,0,0]} maxBarSize={40} />
+                  </BarChart>
+                ) : (
+                  <LineChart data={chartData}>
+                    <defs>
+                      <linearGradient id="detailLineGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#f5b731" stopOpacity={0.2} />
+                        <stop offset="100%" stopColor="#f5b731" stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 9, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={45}
+                      tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k` : `${v}`} domain={[0, 'auto']} />
+                    <Tooltip content={<CustomBarTooltip />} cursor={false} />
+                    <Line type="monotone" dataKey="net_ht" stroke="#f5b731" strokeWidth={2.5}
+                      dot={{ r: 4, fill: '#f5b731', stroke: '#fff', strokeWidth: 2 }}
+                      activeDot={{ r: 6, fill: '#f5b731', stroke: '#fff', strokeWidth: 2 }} />
+                  </LineChart>
+                )}
               </ResponsiveContainer>
             ) : (
-              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem', fontSize: '0.82rem' }}>
-                {'Pas assez de données'}
-              </p>
+              <div style={{ textAlign: 'center', padding: '2rem' }}>
+                <TrendingUp size={28} color="#cbd5e1" style={{ margin: '0 auto' }} />
+                <p style={{ color: '#94a3b8', fontSize: '0.82rem', marginTop: '0.75rem' }}>
+                  {'Pas assez de données pour afficher l\'évolution'}
+                </p>
+              </div>
             )}
           </div>
         </div>
@@ -376,6 +547,7 @@ export default function ChatteurDetail() {
                 <th>Date</th>
                 <th>{'Modèle'}</th>
                 <th>Plateforme</th>
+                <th>Source</th>
                 <th style={{ textAlign: 'right' }}>Montant</th>
               </tr>
             </thead>
@@ -397,13 +569,28 @@ export default function ChatteurDetail() {
                       color: platColorMap[v.plateforme_nom]?.text || '#ffffff',
                     }}>{v.plateforme_nom || '—'}</span>
                   </td>
+                  <td>
+                    {(() => {
+                      const cfg = SOURCE_CONFIG[v.source] || SOURCE_CONFIG.admin;
+                      const Icon = cfg.icon;
+                      return (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                          padding: '0.15rem 0.5rem', borderRadius: 6, fontSize: '0.7rem', fontWeight: 600,
+                          background: cfg.bg, color: cfg.color, whiteSpace: 'nowrap',
+                        }}>
+                          <Icon size={11} /> {cfg.label}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731' }}>
                     {v.montant_brut?.toLocaleString('fr-FR')} {v.devise === 'USD' ? '$' : '€'}
                   </td>
                 </tr>
               )) : (
                 <tr>
-                  <td colSpan={4} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
+                  <td colSpan={5} style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>
                     {'Aucune vente récente'}
                   </td>
                 </tr>
