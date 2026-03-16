@@ -232,7 +232,7 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler(async (req, res) =
       prenom, email || null, adresse || null, code_postal || null,
       ville || null, pays || 'France',
       taux_commission ?? 0.15, is_nouveau ? 1 : 0,
-      role || 'chatteur', taux_net_equipe ?? 0, taux_horaire ?? 0, couleur ?? 0, user_id, photo ?? null, telegram_user_id ?? null
+      role || 'chatteur', taux_net_equipe ?? 0, taux_horaire ?? 0, couleur ?? 0, user_id, photo ?? null, telegram_user_id || null
     );
   });
 
