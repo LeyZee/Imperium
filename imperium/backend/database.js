@@ -976,4 +976,15 @@ runMigration('add_chatteurs_telegram_dm_ok', () => {
   db.exec('ALTER TABLE chatteurs ADD COLUMN telegram_dm_ok INTEGER DEFAULT 0');
 });
 
+// --- Allow system actions (Telegram bot) to log without a user_id ---
+// NOTE: activity_logs has NOT NULL + FK on user_id. Cannot ALTER COLUMN in SQLite,
+// and DROP TABLE fails due to prepared statement locks in node-sqlite3-wasm.
+// Solution: logActivity skips insert when userId is null (logs to logger instead).
+// Cleanup leftover _new table from failed migration attempt.
+runMigration('activity_logs_nullable_user_id', () => {});
+runMigration('cleanup_activity_logs_new', () => {
+  try { db.exec('DROP TABLE IF EXISTS activity_logs_new'); } catch {}
+  try { db.exec('DROP TABLE IF EXISTS activity_logs_v3'); } catch {}
+});
+
 module.exports = compatDb;
