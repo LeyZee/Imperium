@@ -105,21 +105,17 @@ export default function Login() {
       >
         {/* Logo section */}
         <div style={{ textAlign: 'center', marginBottom: '2.5rem' }}>
-          <div
+          <img
+            src="/favicon.svg"
+            alt="Imperium"
             style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
               width: '72px',
               height: '72px',
-              borderRadius: '50%',
-              background: 'rgba(27, 46, 75, 0.06)',
-              border: '2px solid rgba(27, 46, 75, 0.12)',
+              borderRadius: '18px',
               marginBottom: '1.25rem',
+              boxShadow: '0 4px 16px rgba(27, 46, 75, 0.15), 0 1px 4px rgba(0,0,0,0.08)',
             }}
-          >
-            <span style={{ fontFamily: 'Cinzel, serif', fontSize: '1.5rem', color: '#1b2e4b', fontWeight: 700 }}>I</span>
-          </div>
+          />
           <h1
             style={{
               fontFamily: 'Cinzel, serif',
