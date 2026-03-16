@@ -1,8 +1,15 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const router = express.Router();
 const db = require('../database');
 const asyncHandler = require('../utils/asyncHandler');
 const logger = require('../utils/logger');
+
+const contactLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,
+  message: { error: 'Trop de soumissions, réessayez dans 15 minutes.' }
+});
 
 // Create contact_submissions table if not exists
 db.exec(`CREATE TABLE IF NOT EXISTS contact_submissions (
@@ -15,7 +22,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS contact_submissions (
 )`);
 
 // POST /api/contact — public endpoint, no auth required
-router.post('/', asyncHandler(async (req, res) => {
+router.post('/', contactLimiter, asyncHandler(async (req, res) => {
   const { instagram, whatsapp, message } = req.body;
 
   if (!instagram || !whatsapp) {

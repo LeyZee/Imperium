@@ -18,7 +18,7 @@ router.get('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   if (entity_type) { where += ' AND a.entity_type = ?'; params.push(entity_type); }
   if (user_id) { where += ' AND a.user_id = ?'; params.push(user_id); }
   if (date_debut) { where += ' AND a.created_at >= ?'; params.push(date_debut); }
-  if (date_fin) { where += ' AND a.created_at <= ? || " 23:59:59"'; params.push(date_fin); }
+  if (date_fin) { where += " AND a.created_at <= ? || ' 23:59:59'"; params.push(date_fin); }
 
   const total = db.prepare(`SELECT COUNT(*) as count FROM activity_logs a WHERE ${where}`).get(...params).count;
 

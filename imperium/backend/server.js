@@ -188,6 +188,11 @@ app.use('/api/objectifs', require('./routes/objectifs'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/contact', require('./routes/contact'));
 
+// 404 handler for unknown API routes (must be AFTER all route registrations)
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'Route introuvable' });
+});
+
 // Global error handler (catches errors passed via next(err))
 app.use((err, req, res, next) => {
   const status = err.statusCode || 500;
@@ -200,10 +205,10 @@ app.use((err, req, res, next) => {
   if (!res.headersSent) res.status(status).json(response);
 });
 
-// Safety net for uncaught sync exceptions in route handlers (node-sqlite3-wasm)
+// Safety net for uncaught exceptions — log and let PM2 restart
 process.on('uncaughtException', (err) => {
-  logger.error('Uncaught exception', { message: err.message });
-  // Don't exit — keep serving. Log for monitoring.
+  logger.error('Uncaught exception — shutting down', { message: err.message, stack: err.stack });
+  process.exit(1);
 });
 
 const server = app.listen(PORT, () => {
