@@ -507,7 +507,7 @@ function PaliersProgressWidget({ paliers, myNetHT, navigate }) {
               { num: '1', text: 'Tes ventes génèrent un montant brut sur la plateforme.' },
               { num: '2', text: 'Après déduction de la TVA et de la commission plateforme (variable selon la plateforme), on obtient ton Net HT.' },
               { num: '3', text: 'Plus ton Net HT est élevé, plus tu débloques de paliers de prime !' },
-              { num: '4', text: 'Chaque palier atteint ajoute un bonus fixe à ta paie de la période.' },
+              { num: '4', text: 'Seul le palier le plus haut atteint compte — le bonus correspondant est ajouté à ta paie.' },
             ].map(step => (
               <div key={step.num} style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-start' }}>
                 <span style={{

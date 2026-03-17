@@ -220,7 +220,7 @@ function CustomBarTooltip({ active, payload }) {
 function SalesEvolutionChart({ historiqueData }) {
   const [chartMode, setChartMode] = useState('bar');
 
-  if (!historiqueData?.periodes || historiqueData.periodes.length < 2) {
+  if (!historiqueData?.periodes || historiqueData.periodes.length < 1) {
     return (
       <div className="card" style={{ textAlign: 'center', padding: '2rem 1.5rem' }}>
         <TrendingUp size={28} color="#cbd5e1" style={{ margin: '0 auto' }} />

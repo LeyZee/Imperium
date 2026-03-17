@@ -411,7 +411,7 @@ export default function ChatteurDetail() {
             </div>
           </div>
           <div style={{ padding: '1rem 0.5rem 0.5rem 0' }}>
-            {chartData.length >= 2 ? (
+            {chartData.length >= 1 ? (
               <ResponsiveContainer width="100%" height={200}>
                 {chartMode === 'bar' ? (
                   <BarChart data={chartData} barCategoryGap="20%">

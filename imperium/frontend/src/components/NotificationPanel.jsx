@@ -141,8 +141,8 @@ export default function NotificationPanel() {
       {/* Dropdown */}
       {open && (
         <div style={{
-          position: 'fixed', top: '64px', right: '0.5rem', left: '0.5rem',
-          maxWidth: '360px', marginLeft: 'auto',
+          position: 'fixed', top: '64px', right: '0.5rem',
+          width: 'min(360px, calc(100vw - 1rem))',
           maxHeight: 'calc(100dvh - 80px)', overflowY: 'auto',
           background: '#fff', borderRadius: '12px',
           border: '1px solid rgba(0,0,0,0.1)',
@@ -206,7 +206,7 @@ export default function NotificationPanel() {
                         fontSize: '0.75rem', color: '#64748b',
                         overflow: 'hidden', textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
-                        maxWidth: 'min(240px, 60vw)',
+                        maxWidth: '100%',
                       }}>
                         {n.message}
                       </p>
