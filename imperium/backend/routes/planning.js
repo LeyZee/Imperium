@@ -157,6 +157,7 @@ router.get('/template', authMiddleware, asyncHandler((req, res) => {
 }));
 
 // POST /api/shifts/template/save — save current week as recurring template
+// Merges real shifts + existing template virtual shifts (same view as displayed)
 router.post('/template/save', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { date } = req.body;
   if (!date) throw new ApiError(400, 'date requise');
@@ -172,28 +173,63 @@ router.post('/template/save', authMiddleware, adminOrManager, asyncHandler((req,
   const dateDebut = `${monday.getFullYear()}-${pad(monday.getMonth()+1)}-${pad(monday.getDate())}`;
   const dateFin = `${sunday.getFullYear()}-${pad(sunday.getMonth()+1)}-${pad(sunday.getDate())}`;
 
-  // Get all shifts for this week
+  // Get real shifts for this week
   const shifts = db.prepare(
     'SELECT * FROM shifts WHERE date >= ? AND date <= ?'
   ).all([dateDebut, dateFin]);
 
+  // Build occupied slots set (same logic as GET /semaine)
+  const occupied = new Set();
+  for (const s of shifts) {
+    occupied.add(`${s.date}|${s.creneau}|${s.modele_id || 0}|${s.plateforme_id || 0}`);
+  }
+
+  // Load existing templates to keep unoccupied slots
+  const existingTemplates = db.prepare('SELECT * FROM shift_templates').all();
+
+  // Map day_of_week to actual dates for this week
+  const dowToDate = {};
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday);
+    d.setDate(d.getDate() + i);
+    dowToDate[i + 1] = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+
+  // Find template entries that fill empty slots (not overridden by real shifts)
+  const templateEntries = [];
+  for (const t of existingTemplates) {
+    const tDate = dowToDate[t.day_of_week];
+    if (!tDate) continue;
+    const key = `${tDate}|${t.creneau}|${t.modele_id || 0}|${t.plateforme_id || 0}`;
+    if (!occupied.has(key)) {
+      templateEntries.push(t);
+    }
+  }
+
   const saveTpl = db.transaction(() => {
-    // Clear existing templates
     db.prepare('DELETE FROM shift_templates').run();
 
-    // Convert each shift to a template (date → day_of_week)
+    // Save real shifts as templates
     for (const s of shifts) {
-      const d = new Date(s.date);
-      let dow = d.getDay(); // 0=Sunday
-      dow = dow === 0 ? 7 : dow; // Convert to 1=Monday..7=Sunday
+      const d = new Date(s.date + 'T12:00:00'); // noon to avoid timezone issues
+      let dow = d.getDay();
+      dow = dow === 0 ? 7 : dow;
       db.prepare(
         'INSERT INTO shift_templates (chatteur_id, modele_id, plateforme_id, day_of_week, creneau, fuseau_horaire) VALUES (?, ?, ?, ?, ?, ?)'
       ).run([s.chatteur_id, s.modele_id, s.plateforme_id, dow, s.creneau, s.fuseau_horaire]);
     }
+
+    // Re-save template entries that weren't overridden by real shifts
+    for (const t of templateEntries) {
+      db.prepare(
+        'INSERT INTO shift_templates (chatteur_id, modele_id, plateforme_id, day_of_week, creneau, fuseau_horaire) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run([t.chatteur_id, t.modele_id, t.plateforme_id, t.day_of_week, t.creneau, t.fuseau_horaire]);
+    }
   });
 
   saveTpl();
-  res.json({ message: 'Planning récurrent sauvegardé', count: shifts.length });
+  const totalCount = shifts.length + templateEntries.length;
+  res.json({ message: 'Planning récurrent sauvegardé', count: totalCount });
 }));
 
 // GET /api/shifts/semaine?date= — get week view (merges templates for empty slots)
