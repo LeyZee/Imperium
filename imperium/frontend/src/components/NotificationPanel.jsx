@@ -141,8 +141,9 @@ export default function NotificationPanel() {
       {/* Dropdown */}
       {open && (
         <div style={{
-          position: 'absolute', right: 0, top: '100%', marginTop: '0.5rem',
-          width: '360px', maxHeight: '480px', overflowY: 'auto',
+          position: 'fixed', top: '64px', right: '0.5rem', left: '0.5rem',
+          maxWidth: '360px', marginLeft: 'auto',
+          maxHeight: 'calc(100dvh - 80px)', overflowY: 'auto',
           background: '#fff', borderRadius: '12px',
           border: '1px solid rgba(0,0,0,0.1)',
           boxShadow: '0 10px 40px rgba(0,0,0,0.12)',
@@ -203,7 +204,9 @@ export default function NotificationPanel() {
                     {n.message && (
                       <p style={{
                         fontSize: '0.75rem', color: '#64748b',
-                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        overflow: 'hidden', textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        maxWidth: 'min(240px, 60vw)',
                       }}>
                         {n.message}
                       </p>

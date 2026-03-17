@@ -158,8 +158,8 @@ export default function MalusPage() {
   const totalMalusFixe = malus.filter(m => m.type_malus !== 'pourcentage').reduce((s, m) => s + m.montant, 0);
   const totalMalusPct = malus.filter(m => m.type_malus === 'pourcentage').reduce((s, m) => s + m.montant, 0);
   const totalPrimesManuelles = primes.reduce((s, p) => s + p.montant, 0);
-  const totalPalierBonus = paliersPrimes.reduce((s, p) => s + (p.bonus || 0), 0);
-  const netBalance = totalPrimesManuelles + totalPalierBonus - totalMalusFixe;
+  const maxPalierBonus = paliersPrimes.length > 0 ? Math.max(...paliersPrimes.map(p => p.bonus || 0)) : 0;
+  const netBalance = totalPrimesManuelles + maxPalierBonus - totalMalusFixe;
 
   return (
     <div className="page-enter">
@@ -224,7 +224,7 @@ export default function MalusPage() {
             {paliersPrimes.length > 0 ? `${paliersPrimes.length} palier(s)` : 'Non configuré'}
           </p>
           <p style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-            {paliersPrimes.length > 0 ? `Jusqu'à +${totalPalierBonus}€ par chatteur` : 'Aucun palier défini'}
+            {paliersPrimes.length > 0 ? `Max +${maxPalierBonus}€ par chatteur` : 'Aucun palier défini'}
           </p>
         </div>
       </div>
@@ -612,7 +612,7 @@ function PaliersPrimesSection({ paliers, onEdit, onDelete }) {
           Primes individuelles par palier
         </p>
         <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '1rem' }}>
-          {`Définissez des paliers de ventes Net HT — chaque chatteur qui atteint un seuil reçoit un bonus fixe.`}
+          {`Définissez des paliers de ventes Net HT — seul le plus haut palier atteint s'applique (les bonus ne s'accumulent pas).`}
         </p>
         <button onClick={onEdit} className="btn-primary haptic">
           <Plus size={14} /> Configurer les paliers
@@ -641,7 +641,7 @@ function PaliersPrimesSection({ paliers, onEdit, onDelete }) {
       </div>
 
       <p style={{ fontSize: '0.78rem', color: '#64748b', marginBottom: '1rem' }}>
-        Chaque chatteur qui atteint un seuil de ventes Net HT individuel gagne le bonus correspondant.
+        Seul le plus haut palier atteint s'applique — les bonus ne s'accumulent pas.
       </p>
 
       {/* Vertical timeline layout */}
