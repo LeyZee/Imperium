@@ -96,6 +96,8 @@ export default function Shifts() {
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [templateMsg, setTemplateMsg] = useState('');
   const [conflits, setConflits] = useState(null);
+  const [hideDoublons, setHideDoublons] = useState(false);
+  const [hideNonCouverts, setHideNonCouverts] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteScope, setDeleteScope] = useState('week'); // 'week' | 'all'
   const [deleting, setDeleting] = useState(false);
@@ -356,16 +358,16 @@ export default function Shifts() {
       {/* Conflict alerts */}
       {conflits && (conflits.doublons?.length > 0 || conflits.non_couverts?.length > 0) && (
         <div style={{ marginBottom: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {conflits.doublons?.length > 0 && (
+          {conflits.doublons?.length > 0 && !hideDoublons && (
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
               padding: '0.75rem 1rem', borderRadius: '10px',
               background: '#fffbeb', border: '1px solid #fde68a',
             }}>
               <AlertTriangle size={16} color="#d97706" style={{ flexShrink: 0, marginTop: '0.1rem' }} />
-              <div>
+              <div style={{ flex: 1 }}>
                 <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#92400e', marginBottom: '0.25rem' }}>
-                  {conflits.doublons.length} doublon{conflits.doublons.length > 1 ? 's' : ''} détecté{conflits.doublons.length > 1 ? 's' : ''}
+                  {conflits.doublons.length} doublon{conflits.doublons.length > 1 ? 's' : ''} d&eacute;tect&eacute;{conflits.doublons.length > 1 ? 's' : ''}
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
                   {conflits.doublons.slice(0, 5).map((d, i) => (
@@ -373,7 +375,7 @@ export default function Shifts() {
                       fontSize: '0.7rem', background: '#fef3c7', color: '#b45309',
                       padding: '0.15rem 0.5rem', borderRadius: '12px',
                     }}>
-                      {d.date} Créneau {d.creneau} — {d.modele} ({d.count}x)
+                      {d.date} Cr&eacute;neau {d.creneau} — {d.modele} ({d.count}x)
                     </span>
                   ))}
                   {conflits.doublons.length > 5 && (
@@ -381,18 +383,22 @@ export default function Shifts() {
                   )}
                 </div>
               </div>
+              <button onClick={() => setHideDoublons(true)} title="Masquer"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#d97706', padding: '0.2rem', flexShrink: 0 }}>
+                <X size={16} />
+              </button>
             </div>
           )}
-          {conflits.non_couverts?.length > 0 && (
+          {conflits.non_couverts?.length > 0 && !hideNonCouverts && (
             <div style={{
               display: 'flex', alignItems: 'flex-start', gap: '0.75rem',
               padding: '0.75rem 1rem', borderRadius: '10px',
               background: '#fef2f2', border: '1px solid #fecaca',
             }}>
               <AlertTriangle size={16} color="#ef4444" style={{ flexShrink: 0, marginTop: '0.1rem' }} />
-              <div>
+              <div style={{ flex: 1 }}>
                 <p style={{ fontSize: '0.8rem', fontWeight: 600, color: '#991b1b', marginBottom: '0.25rem' }}>
-                  {conflits.non_couverts.length} créneau{conflits.non_couverts.length > 1 ? 'x' : ''} non couvert{conflits.non_couverts.length > 1 ? 's' : ''} (2 semaines)
+                  {conflits.non_couverts.length} cr&eacute;neau{conflits.non_couverts.length > 1 ? 'x' : ''} non couvert{conflits.non_couverts.length > 1 ? 's' : ''} (2 semaines)
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem' }}>
                   {conflits.non_couverts.slice(0, 5).map((d, i) => (
@@ -400,7 +406,7 @@ export default function Shifts() {
                       fontSize: '0.7rem', background: '#fee2e2', color: '#991b1b',
                       padding: '0.15rem 0.5rem', borderRadius: '12px',
                     }}>
-                      {d.date} {d.creneau_label || `Créneau ${d.creneau}`}
+                      {d.date} {d.creneau_label || `Cr\u00e9neau ${d.creneau}`}
                     </span>
                   ))}
                   {conflits.non_couverts.length > 5 && (
@@ -408,6 +414,10 @@ export default function Shifts() {
                   )}
                 </div>
               </div>
+              <button onClick={() => setHideNonCouverts(true)} title="Masquer"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.2rem', flexShrink: 0 }}>
+                <X size={16} />
+              </button>
             </div>
           )}
         </div>
