@@ -528,6 +528,11 @@ export default function TelegramBot({ embedded = false }) {
         </div>
       )}
 
+      {/* Chatteur Telegram Status */}
+      {status?.chatteurs && status.chatteurs.length > 0 && (
+        <ChatteurTelegramStatus chatteurs={status.chatteurs} />
+      )}
+
       {/* Recent Imports */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{
@@ -764,6 +769,7 @@ function TelegramJournal() {
       <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <Filter size={15} color="#64748b" />
+
           <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(0); }}
             className="input-field" style={{ width: 'auto', minWidth: 150, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
             <option value="">Tous les types</option>
@@ -897,6 +903,132 @@ function TelegramJournal() {
             </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Chatteur Telegram Status Component ─────────────────────
+
+const PAYS_ISO = { 'France': 'fr', 'B\u00e9nin': 'bj', 'Benin': 'bj', 'Madagascar': 'mg' };
+
+function ChatteurTelegramStatus({ chatteurs }) {
+  const linked = chatteurs.filter(c => c.telegram_user_id && c.telegram_dm_ok);
+  const autoLinked = chatteurs.filter(c => c.telegram_user_id && !c.telegram_dm_ok);
+  const notLinked = chatteurs.filter(c => !c.telegram_user_id);
+
+  return (
+    <div className="card" style={{ marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+        <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+          <User size={15} color="#6366f1" /> Statut Telegram des chatteurs
+        </h3>
+        <div style={{ display: 'flex', gap: '0.5rem', fontSize: '0.75rem' }}>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+            padding: '0.2rem 0.5rem', borderRadius: '6px',
+            background: 'rgba(16,185,129,0.1)', color: '#10b981', fontWeight: 600,
+          }}>
+            <CheckCircle size={12} /> {linked.length}
+          </span>
+          {autoLinked.length > 0 && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+              padding: '0.2rem 0.5rem', borderRadius: '6px',
+              background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontWeight: 600,
+            }}>
+              <AlertTriangle size={12} /> {autoLinked.length}
+            </span>
+          )}
+          {notLinked.length > 0 && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+              padding: '0.2rem 0.5rem', borderRadius: '6px',
+              background: 'rgba(148,163,184,0.15)', color: '#94a3b8', fontWeight: 600,
+            }}>
+              <XCircle size={12} /> {notLinked.length}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+        {chatteurs.map(c => {
+          const isFullyLinked = c.telegram_user_id && c.telegram_dm_ok;
+          const isAutoLinked = c.telegram_user_id && !c.telegram_dm_ok;
+          const bgColor = CHATTEUR_COLORS[c.couleur]?.bg || '#94a3b8';
+          const iso = PAYS_ISO[c.pays];
+
+          let statusIcon, statusColor, statusTitle;
+          if (isFullyLinked) {
+            statusIcon = '\u2705';
+            statusColor = '#10b981';
+            statusTitle = 'Enregistr\u00e9 — re\u00e7oit les DM';
+          } else if (isAutoLinked) {
+            statusIcon = '\u26A0\uFE0F';
+            statusColor = '#f59e0b';
+            statusTitle = 'D\u00e9tect\u00e9 dans les groupes mais n\'a pas fait /start — pas de DM';
+          } else {
+            statusIcon = '\u274C';
+            statusColor = '#cbd5e1';
+            statusTitle = 'Pas encore li\u00e9 \u00e0 Telegram';
+          }
+
+          return (
+            <div key={c.id} title={statusTitle} style={{
+              display: 'flex', alignItems: 'center', gap: '0.4rem',
+              padding: '0.35rem 0.65rem', borderRadius: '8px',
+              background: `${statusColor}10`,
+              border: `1px solid ${statusColor}30`,
+              fontSize: '0.8rem',
+              cursor: 'default',
+              transition: 'transform 100ms',
+            }}>
+              {/* Avatar */}
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%', flexShrink: 0,
+                background: `${bgColor}25`,
+                border: `1.5px solid ${bgColor}60`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: '0.6rem', fontWeight: 700, color: bgColor,
+              }}>
+                {c.prenom?.[0]?.toUpperCase()}
+              </div>
+              {/* Flag */}
+              {iso && (
+                <img src={`https://flagcdn.com/w20/${iso}.png`} alt={c.pays}
+                  style={{ width: 14, height: 10, borderRadius: '1px', objectFit: 'cover' }} />
+              )}
+              {/* Name */}
+              <span style={{ fontWeight: 500, color: '#1a1f2e' }}>{c.prenom}</span>
+              {/* Role badge */}
+              {c.role !== 'chatteur' && (
+                <span style={{
+                  fontSize: '0.6rem', fontWeight: 700, textTransform: 'uppercase',
+                  padding: '0.05rem 0.3rem', borderRadius: '3px',
+                  background: c.role === 'manager' ? 'rgba(99,102,241,0.12)' : 'rgba(245,158,11,0.12)',
+                  color: c.role === 'manager' ? '#6366f1' : '#f59e0b',
+                }}>
+                  {c.role}
+                </span>
+              )}
+              {/* Status */}
+              <span style={{ fontSize: '0.85rem', lineHeight: 1 }}>{statusIcon}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Legend */}
+      <div style={{
+        marginTop: '0.75rem', paddingTop: '0.6rem',
+        borderTop: '1px solid rgba(0,0,0,0.06)',
+        display: 'flex', gap: '1.25rem', flexWrap: 'wrap',
+        fontSize: '0.7rem', color: '#94a3b8',
+      }}>
+        <span>\u2705 Enregistr\u00e9 (DM actifs)</span>
+        <span>\u26A0\uFE0F D\u00e9tect\u00e9 (pas de /start)</span>
+        <span>\u274C Non li\u00e9</span>
       </div>
     </div>
   );

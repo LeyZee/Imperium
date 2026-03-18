@@ -133,12 +133,22 @@ router.get('/status', authMiddleware, adminOnly, asyncHandler((req, res) => {
     AND (modele_id IS NULL OR shift_id IS NULL)
   `).get();
 
+  // Chatteur Telegram registration status
+  const chatteurs = db.prepare(`
+    SELECT c.id, c.prenom, c.couleur, c.role, c.telegram_user_id, c.telegram_dm_ok,
+      c.pays
+    FROM chatteurs c
+    WHERE c.actif = 1 AND c.role != 'va'
+    ORDER BY c.prenom
+  `).all();
+
   res.json({
     ...status,
     recentImports,
     todayImports: todayCount?.count || 0,
     todayComplete: todayComplete?.count || 0,
     todayWarnings: todayWarnings?.count || 0,
+    chatteurs,
   });
 }));
 
