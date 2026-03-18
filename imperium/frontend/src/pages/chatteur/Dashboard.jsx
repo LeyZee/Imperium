@@ -838,7 +838,7 @@ export default function ChatteurDashboard() {
   const rang = kpis?.rang || 0;
   const nbChatteurs = kpis?.nb_chatteurs || 0;
   const totalBrut = (kpis?.ventes || []).reduce((s, v) => s + (v.total_brut || 0), 0);
-  const devise = kpis?.ventes?.[0]?.devise || 'USD';
+  const devise = kpis?.ventes?.[0]?.devise || 'EUR';
 
   const prevCurrentPaies = (prevKpis?.paies || []).filter(p => p.periode_debut === prevPeriode.debut);
   const prevPaie = prevCurrentPaies.reduce((s, p) => s + (p.total_chatteur || 0), 0);
