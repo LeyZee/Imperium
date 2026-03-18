@@ -626,17 +626,8 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
   let where = ['s.chatteur_id = ?'];
   const params = [chatteur_id];
 
-  // Simple date filter: show shifts from -maxDays to +7 days from today
-  // No ref_date complexity — just a wide enough window
-  where.push(`s.date BETWEEN date('now', '-${maxDays} days') AND date('now', '+7 days')`);
-
   if (modele_id) { where.push('s.modele_id = ?'); params.push(modele_id); }
   if (plateforme_id) { where.push('s.plateforme_id = ?'); params.push(plateforme_id); }
-
-  const orderBy = ref_date
-    ? `ABS(julianday(s.date) - julianday(?))`
-    : 's.date DESC';
-  const orderParams = ref_date ? [ref_date] : [];
 
   const shifts = db.prepare(`
     SELECT s.id, s.date, s.creneau, s.modele_id,
@@ -645,9 +636,9 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
     LEFT JOIN modeles m ON m.id = s.modele_id
     LEFT JOIN plateformes p ON p.id = s.plateforme_id
     WHERE ${where.join(' AND ')}
-    ORDER BY ${orderBy}, s.creneau ASC
+    ORDER BY s.date DESC, s.creneau DESC
     LIMIT 40
-  `).all(...params, ...orderParams);
+  `).all(...params);
 
   res.json(shifts);
 }));
