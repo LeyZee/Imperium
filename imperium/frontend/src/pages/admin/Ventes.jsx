@@ -1143,7 +1143,7 @@ export default function Ventes() {
                           : '';
                         return (
                           <option key={s.id} value={s.id}>
-                            {prefix}{dateLabel} \u2014 {CRENEAUX_LABELS[s.creneau] || '?'}{nightLabel}
+                            {prefix}{dateLabel} — {CRENEAUX_LABELS[s.creneau] || '?'}{nightLabel}
                           </option>
                         );
                       })}
