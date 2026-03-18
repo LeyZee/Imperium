@@ -613,10 +613,9 @@ router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res
 }));
 
 // GET /api/shifts/for-vente — shifts matching criteria for vente association
-// Supports optional `ref_date` to center the search window around a specific date
 router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
   let { chatteur_id, modele_id, plateforme_id, days, ref_date } = req.query;
-  const maxDays = Math.min(parseInt(days) || 14, 60);
+  const maxDays = Math.min(parseInt(days) || 30, 90);
 
   // Chatteur can only see their own shifts
   if (req.user.role === 'chatteur') {
@@ -624,24 +623,20 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
   }
   if (!chatteur_id) throw new ApiError(400, 'chatteur_id requis');
 
-  // Center the search window around ref_date (or today if not provided)
-  const center = ref_date || "date('now')";
-  const isRefDate = !!ref_date;
-
   let where = ['s.chatteur_id = ?'];
   const params = [chatteur_id];
 
-  if (isRefDate) {
-    // Search ±maxDays around the reference date
-    where.push(`s.date BETWEEN date(?, '-${maxDays} days') AND date(?, '+${maxDays} days')`);
-    params.push(ref_date, ref_date);
-  } else {
-    // Default: past maxDays + 7 days in the future
-    where.push(`s.date BETWEEN date('now', '-${maxDays} days') AND date('now', '+7 days')`);
-  }
+  // Simple date filter: show shifts from -maxDays to +7 days from today
+  // No ref_date complexity — just a wide enough window
+  where.push(`s.date BETWEEN date('now', '-${maxDays} days') AND date('now', '+7 days')`);
 
   if (modele_id) { where.push('s.modele_id = ?'); params.push(modele_id); }
   if (plateforme_id) { where.push('s.plateforme_id = ?'); params.push(plateforme_id); }
+
+  const orderBy = ref_date
+    ? `ABS(julianday(s.date) - julianday(?))`
+    : 's.date DESC';
+  const orderParams = ref_date ? [ref_date] : [];
 
   const shifts = db.prepare(`
     SELECT s.id, s.date, s.creneau, s.modele_id,
@@ -650,9 +645,9 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
     LEFT JOIN modeles m ON m.id = s.modele_id
     LEFT JOIN plateformes p ON p.id = s.plateforme_id
     WHERE ${where.join(' AND ')}
-    ORDER BY ${isRefDate ? `ABS(julianday(s.date) - julianday(?))` : 's.date DESC'}, s.creneau ASC
-    LIMIT 30
-  `).all(...params, ...(isRefDate ? [ref_date] : []));
+    ORDER BY ${orderBy}, s.creneau ASC
+    LIMIT 40
+  `).all(...params, ...orderParams);
 
   res.json(shifts);
 }));
