@@ -246,6 +246,15 @@ router.get('/log', authMiddleware, adminOnly, asyncHandler((req, res) => {
 }));
 
 /**
+ * DELETE /api/telegram/log — Clear all telegram log entries
+ */
+router.delete('/log', authMiddleware, adminOnly, asyncHandler((req, res) => {
+  const result = db.prepare('DELETE FROM telegram_log').run();
+  logActivity(req.user.id, 'clear_telegram_log', 'telegram', null, `${result.changes} entrées supprimées`);
+  res.json({ message: `${result.changes} entrée(s) supprimée(s)`, count: result.changes });
+}));
+
+/**
  * POST /api/telegram/announce-start — Send /start instructions to all shift groups
  */
 router.post('/announce-start', authMiddleware, adminOnly, controlLimiter, asyncHandler(async (req, res) => {

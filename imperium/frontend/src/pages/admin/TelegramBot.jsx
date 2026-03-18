@@ -763,6 +763,7 @@ function TelegramJournal() {
   const [dirFilter, setDirFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [clearLogConfirm, setClearLogConfirm] = useState(false);
   const PAGE_SIZE = 30;
 
   const fetchLogs = useCallback(async () => {
@@ -836,12 +837,17 @@ function TelegramJournal() {
             </button>
           )}
 
-          <div style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#64748b' }}>
-            {total} entr&eacute;e{total > 1 ? 's' : ''}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ fontSize: '0.8rem', color: '#64748b' }}>
+              {total} entr&eacute;e{total > 1 ? 's' : ''}
+            </span>
+            <button onClick={fetchLogs} className="btn-ghost" title="Rafra&icirc;chir" style={{ padding: '0.3rem', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}>
+              <RefreshCw size={14} />
+            </button>
+            <button onClick={() => setClearLogConfirm(true)} className="btn-ghost" title="Vider le journal" style={{ padding: '0.3rem', border: 'none', background: 'transparent', cursor: 'pointer', color: '#ef4444' }}>
+              <Trash2 size={14} />
+            </button>
           </div>
-          <button onClick={fetchLogs} className="btn-ghost" style={{ padding: '0.3rem', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}>
-            <RefreshCw size={14} />
-          </button>
         </div>
       </div>
 
@@ -951,6 +957,36 @@ function TelegramJournal() {
           </div>
         )}
       </div>
+
+      {/* Clear log confirmation modal */}
+      {clearLogConfirm && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          animation: 'fadeIn 0.2s ease',
+        }} onClick={() => setClearLogConfirm(false)}>
+          <div style={{
+            background: '#fff', borderRadius: '0.75rem', padding: '1.5rem', width: '100%', maxWidth: 400,
+            boxShadow: '0 20px 60px rgba(0,0,0,0.2)',
+          }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 0.75rem', fontSize: '1rem', color: '#ef4444' }}>Vider le journal ?</h3>
+            <p style={{ color: '#64748b', fontSize: '0.85rem', margin: '0 0 1.25rem' }}>
+              Toutes les entr&eacute;es du journal Telegram seront supprim&eacute;es. Cette action est irr&eacute;versible.
+            </p>
+            <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setClearLogConfirm(false)}>Annuler</button>
+              <button className="btn btn-danger" onClick={async () => {
+                try {
+                  await api.delete('/api/telegram/log');
+                  setClearLogConfirm(false);
+                  setPage(0);
+                  fetchLogs();
+                } catch { /* silent */ }
+              }}>Vider le journal</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
