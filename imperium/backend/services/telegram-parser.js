@@ -96,14 +96,15 @@ function findModele(topicName) {
 }
 
 /**
- * Find shift with modele constraint (more precise when modele is known from topic)
+ * Find shift with modele constraint (more precise when modele is known from topic).
+ * Searches ±3 days to handle late feedback posting.
  */
 function findShiftForVenteWithModele(chatteur_id, plateforme_id, modele_id, dateStr) {
-  // Match with modele_id for precision
+  // Match with modele_id for precision (±3 days window)
   const shift = db.prepare(`
     SELECT id, modele_id FROM shifts
     WHERE chatteur_id = ? AND plateforme_id = ? AND modele_id = ?
-      AND date BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+      AND date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
     ORDER BY ABS(julianday(date) - julianday(?)) ASC
     LIMIT 1
   `).get(chatteur_id, plateforme_id, modele_id, dateStr, dateStr, dateStr);
@@ -112,6 +113,23 @@ function findShiftForVenteWithModele(chatteur_id, plateforme_id, modele_id, date
 
   // Fallback: match without modele_id
   return findShiftForVente(chatteur_id, plateforme_id, dateStr);
+}
+
+/**
+ * Find ALL candidate shifts for a vente (for disambiguation when multiple exist).
+ * Returns array of shifts with details, sorted by date proximity.
+ */
+function findShiftCandidates(chatteur_id, plateforme_id, dateStr) {
+  return db.prepare(`
+    SELECT s.id, s.modele_id, s.date, s.creneau,
+      m.pseudo AS modele_pseudo
+    FROM shifts s
+    LEFT JOIN modeles m ON m.id = s.modele_id
+    WHERE s.chatteur_id = ? AND s.plateforme_id = ?
+      AND s.date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
+    ORDER BY ABS(julianday(s.date) - julianday(?)) ASC
+    LIMIT 5
+  `).all(chatteur_id, plateforme_id, dateStr, dateStr, dateStr);
 }
 
 /**
@@ -202,14 +220,14 @@ function isDuplicate(chatteur_id, plateforme_id, montant_brut, periode_debut, pe
 }
 
 /**
- * Find the most likely shift for a vente (same chatteur, plateforme, recent date)
+ * Find the most likely shift for a vente (same chatteur, plateforme, recent date).
+ * Searches ±3 days to handle late feedback posting.
  */
 function findShiftForVente(chatteur_id, plateforme_id, dateStr) {
-  // Look for a shift on the same date or within 1 day for this chatteur+plateforme
   const shift = db.prepare(`
     SELECT id, modele_id FROM shifts
     WHERE chatteur_id = ? AND plateforme_id = ?
-      AND date BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+      AND date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
     ORDER BY ABS(julianday(date) - julianday(?)) ASC
     LIMIT 1
   `).get(chatteur_id, plateforme_id, dateStr, dateStr, dateStr);
@@ -355,6 +373,7 @@ module.exports = {
   isDuplicate,
   findShiftForVente,
   findShiftForVenteWithModele,
+  findShiftCandidates,
   insertVente,
   processMessage,
 };

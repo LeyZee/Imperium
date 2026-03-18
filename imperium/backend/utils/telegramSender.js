@@ -276,6 +276,51 @@ async function notifyImportIncomplete(chatteurId, montant, plateforme, date, mis
 }
 
 /**
+ * Ask chatteur to identify which shift a vente belongs to.
+ * Shows inline keyboard with candidate shifts as buttons.
+ * @param {number} chatteurId
+ * @param {number} venteId - vente to update when chatteur picks a shift
+ * @param {number} montant
+ * @param {string} plateforme
+ * @param {string} date
+ * @param {Array} candidates - [{id, date, creneau, modele_pseudo}]
+ */
+async function askChatteurShift(chatteurId, venteId, montant, plateforme, date, candidates) {
+  const CRENEAU_LABELS = { 1: '08h-14h', 2: '14h-20h', 3: '20h-02h', 4: '02h-08h' };
+  const formatDate = (d) => d.split('-').reverse().join('/');
+
+  let text = `\uD83D\uDD0D <b>De quel shift s'agit-il ?</b>\n\n` +
+    `Ta vente de <b>${escapeHTML(montant)}\u20AC</b> sur ${escapeHTML(plateforme)} (${formatDate(date)}) ` +
+    `a \u00e9t\u00e9 import\u00e9e, mais j'ai trouv\u00e9 <b>plusieurs shifts possibles</b>.\n\n` +
+    `\uD83D\uDC47 <b>Clique sur le bon shift :</b>`;
+
+  const rows = candidates.map(c => {
+    const label = `${formatDate(c.date)} ${CRENEAU_LABELS[c.creneau] || ''} ${c.modele_pseudo || ''}`.trim();
+    return [{ text: label, callback_data: `shift_${venteId}_${c.id}` }];
+  });
+  // Add "none of these" option
+  rows.push([{ text: '\u274C Aucun de ces shifts', callback_data: `shift_${venteId}_none` }]);
+
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'vente_detected' }, rows));
+}
+
+/**
+ * Ask chatteur to confirm model when no shift found at all.
+ */
+async function askChatteurNoShift(chatteurId, venteId, montant, plateforme, date) {
+  const formatDate = (d) => d.split('-').reverse().join('/');
+
+  const text = `\u2753 <b>Aucun shift trouv\u00e9</b>\n\n` +
+    `Ta vente de <b>${escapeHTML(montant)}\u20AC</b> sur ${escapeHTML(plateforme)} (${formatDate(date)}) ` +
+    `a \u00e9t\u00e9 import\u00e9e, mais <b>aucun shift correspondant</b> n'a \u00e9t\u00e9 trouv\u00e9 dans le planning.\n\n` +
+    `Un admin v\u00e9rifiera. Si le shift n'\u00e9tait pas dans le planning, c'est normal !`;
+
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'vente_detected' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
+}
+
+/**
  * Notify chatteur that they reached a new palier.
  */
 async function notifyPalierReached(chatteurId, palierLabel, palierEmoji, bonus) {
@@ -414,6 +459,8 @@ module.exports = {
   // Notification templates
   notifyVenteDetected,
   notifyImportIncomplete,
+  askChatteurShift,
+  askChatteurNoShift,
   notifyPalierReached,
   notifyPaieSummary,
   notifyShiftReminder,

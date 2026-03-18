@@ -1,10 +1,10 @@
 const fetch = require('node-fetch');
 const db = require('../database');
-const { GROUP_PLATFORM, processMessage, findChatteur } = require('./telegram-parser');
+const { GROUP_PLATFORM, processMessage, findChatteur, findShiftCandidates } = require('./telegram-parser');
 const { notifyChatteur, notifyAdminsAndManagers } = require('../utils/notifier');
 const { logActivity } = require('../utils/activityLogger');
 const logger = require('../utils/logger');
-const { notifyVenteDetected, notifyImportIncomplete, logTelegramIncoming } = require('../utils/telegramSender');
+const { notifyVenteDetected, notifyImportIncomplete, askChatteurShift, askChatteurNoShift, logTelegramIncoming } = require('../utils/telegramSender');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -271,6 +271,62 @@ async function handleCallbackQuery(callbackQuery) {
     from: callbackQuery.from,
     text: '',
   };
+
+  // Handle shift selection buttons (shift_VENTEID_SHIFTID)
+  if (data.startsWith('shift_')) {
+    const parts = data.split('_');
+    const venteId = parseInt(parts[1], 10);
+    const shiftIdOrNone = parts[2];
+
+    if (!venteId || isNaN(venteId)) return;
+
+    try {
+      if (shiftIdOrNone === 'none') {
+        // Chatteur says none of the shifts match
+        await sendMessage(chatId,
+          `\u2705 Merci pour ta r\u00e9ponse ! Un admin v\u00e9rifiera manuellement.`, {
+          reply_markup: { inline_keyboard: [[{ text: '\uD83D\uDCCA Mes ventes', callback_data: 'cmd_mesventes' }]] },
+        });
+        logTelegramIncoming(chatId, null, null, 'shift_selection', `Vente #${venteId}: aucun shift sélectionné par le chatteur`);
+      } else {
+        const shiftId = parseInt(shiftIdOrNone, 10);
+        if (!shiftId || isNaN(shiftId)) return;
+
+        // Update the vente with the selected shift (and its modele_id)
+        const shift = db.prepare('SELECT id, modele_id FROM shifts WHERE id = ?').get(shiftId);
+        if (shift) {
+          db.prepare('UPDATE ventes SET shift_id = ?, modele_id = COALESCE(?, modele_id) WHERE id = ?')
+            .run(shift.id, shift.modele_id ?? null, venteId);
+
+          // Recalculate paies for the affected period
+          const vente = db.prepare('SELECT periode_debut, periode_fin FROM ventes WHERE id = ?').get(venteId);
+          if (vente) {
+            try {
+              const { recalculatePaies } = require('./paie-calculator');
+              recalculatePaies(vente.periode_debut, vente.periode_fin);
+            } catch {}
+          }
+
+          const modele = shift.modele_id ? db.prepare('SELECT pseudo FROM modeles WHERE id = ?').get(shift.modele_id) : null;
+          await sendMessage(chatId,
+            `\u2705 <b>Vente mise \u00e0 jour !</b>\n\n` +
+            `Shift li\u00e9 avec succ\u00e8s.${modele ? ` Mod\u00e8le : <b>${modele.pseudo}</b>` : ''}\n` +
+            `Merci pour ta confirmation ! \uD83D\uDE4F`, {
+            reply_markup: { inline_keyboard: [[{ text: '\uD83D\uDCCA Mes ventes', callback_data: 'cmd_mesventes' }, { text: '\uD83D\uDC49 Menu', callback_data: 'cmd_aide' }]] },
+          });
+
+          logger.info('Chatteur shift selection', { venteId, shiftId, modele: modele?.pseudo });
+          logTelegramIncoming(chatId, null, null, 'shift_selection', `Vente #${venteId}: shift #${shiftId} sélectionné${modele ? ` (${modele.pseudo})` : ''}`);
+        }
+      }
+    } catch (err) {
+      logger.error('Error handling shift selection', { error: err.message, venteId });
+      await sendMessage(chatId, `\u274C Erreur lors de la mise \u00e0 jour. Un admin v\u00e9rifiera.`, {
+        reply_markup: { inline_keyboard: [[{ text: '\uD83D\uDC49 Menu', callback_data: 'cmd_aide' }]] },
+      });
+    }
+    return;
+  }
 
   // Handle registration name buttons (reg_PRENOM)
   if (data.startsWith('reg_')) {
@@ -737,12 +793,27 @@ function handleUpdate(update) {
       notifyAdminsAndManagers('warning', '⚠️ Import Telegram incomplet', warningMsg, '/admin/telegram');
       logger.warn('Telegram import incomplet', { chatteur: result.chatteur, missingFields, vente_id: result.vente_id });
 
-      // Alert chatteur via DM about the incomplete import
-      if (result.chatteur_id) {
-        const dmMissing = [];
-        if (!result.modele_id) dmMissing.push('modele');
-        if (!result.shift_id) dmMissing.push('shift');
-        notifyImportIncomplete(result.chatteur_id, result.montant_brut, platName, result.date_rapport, dmMissing).catch(() => {});
+      // Smart DM: ask the chatteur to pick the right shift if candidates exist
+      if (result.chatteur_id && !result.shift_id) {
+        try {
+          const candidates = findShiftCandidates(result.chatteur_id, result.plateforme_id, result.date_rapport);
+          if (candidates.length > 1) {
+            // Multiple possible shifts → ask chatteur to pick
+            askChatteurShift(result.chatteur_id, result.vente_id, result.montant_brut, platName, result.date_rapport, candidates).catch(() => {});
+          } else if (candidates.length === 0) {
+            // No shift at all → inform chatteur
+            askChatteurNoShift(result.chatteur_id, result.vente_id, result.montant_brut, platName, result.date_rapport).catch(() => {});
+          } else {
+            // Single candidate but wasn't auto-linked (shouldn't happen often)
+            notifyImportIncomplete(result.chatteur_id, result.montant_brut, platName, result.date_rapport, ['shift']).catch(() => {});
+          }
+        } catch (err) {
+          logger.warn('Error finding shift candidates for DM', { error: err.message });
+          notifyImportIncomplete(result.chatteur_id, result.montant_brut, platName, result.date_rapport, missingFields.includes('modele') ? ['modele', 'shift'] : ['shift']).catch(() => {});
+        }
+      } else if (result.chatteur_id && !result.modele_id) {
+        // Only modele missing (shift found) → simple alert
+        notifyImportIncomplete(result.chatteur_id, result.montant_brut, platName, result.date_rapport, ['modele']).catch(() => {});
       }
     }
   } else if (result.error) {

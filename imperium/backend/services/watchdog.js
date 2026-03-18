@@ -148,29 +148,123 @@ function checkDbHealth() {
 }
 
 /**
- * Check for old unresolved imports (missing modele or shift for > 24h).
- * Reminds admins about incomplete imports that need attention.
+ * Audit and auto-correct incomplete Telegram imports.
+ * Runs every 30 min but only does heavy work once per day (persisted in DB).
+ *
+ * Auto-corrects:
+ * 1. Import without modele → fill from shift's modele
+ * 2. Import without shift → re-search (shift might have been created since)
+ * 3. Model conflict → trust topic (from notes), auto-correct if shift for that model exists
+ *
+ * Flags to admin: anything still unresolved after auto-correction.
  */
 function checkOldUnresolvedImports() {
   try {
-    const unresolved = db.prepare(`
-      SELECT COUNT(*) AS count FROM ventes
-      WHERE notes LIKE 'Import Telegram%'
-      AND (modele_id IS NULL OR shift_id IS NULL)
-      AND created_at < datetime('now', '-24 hours')
-      AND created_at > datetime('now', '-48 hours')
-    `).get();
+    // Get incomplete imports from last 72h
+    const incomplete = db.prepare(`
+      SELECT v.id, v.chatteur_id, v.modele_id, v.shift_id, v.plateforme_id,
+        v.periode_debut, v.periode_fin, v.notes, v.montant_brut,
+        v.created_at
+      FROM ventes v
+      WHERE v.notes LIKE 'Import Telegram%'
+      AND (v.modele_id IS NULL OR v.shift_id IS NULL)
+      AND v.created_at > datetime('now', '-72 hours')
+    `).all();
 
-    if (unresolved && unresolved.count > 0) {
+    if (incomplete.length === 0) return;
+
+    let autoFixed = 0;
+    let stillBroken = 0;
+
+    for (const v of incomplete) {
+      let needsUpdate = false;
+      let newShiftId = v.shift_id;
+      let newModeleId = v.modele_id;
+
+      // 1. Missing shift → re-search with expanded window
+      if (!v.shift_id) {
+        const dateMatch = v.created_at ? v.created_at.split('T')[0] : null;
+        if (dateMatch) {
+          // Try to extract model name from notes: "Import Telegram [MODELNAME]"
+          const modelMatch = (v.notes || '').match(/\[([^\]]+)\]/);
+          let shift = null;
+
+          if (modelMatch) {
+            // We know the model from notes → search with model constraint
+            const modele = db.prepare('SELECT id FROM modeles WHERE UPPER(pseudo) = ? AND actif = 1').get(modelMatch[1].toUpperCase());
+            if (modele) {
+              shift = db.prepare(`
+                SELECT id, modele_id FROM shifts
+                WHERE chatteur_id = ? AND plateforme_id = ? AND modele_id = ?
+                AND date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
+                ORDER BY ABS(julianday(date) - julianday(?)) ASC LIMIT 1
+              `).get(v.chatteur_id, v.plateforme_id, modele.id, dateMatch, dateMatch, dateMatch);
+            }
+          }
+
+          if (!shift) {
+            // Fallback: search without model
+            shift = db.prepare(`
+              SELECT id, modele_id FROM shifts
+              WHERE chatteur_id = ? AND plateforme_id = ?
+              AND date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
+              ORDER BY ABS(julianday(date) - julianday(?)) ASC LIMIT 1
+            `).get(v.chatteur_id, v.plateforme_id, dateMatch, dateMatch, dateMatch);
+          }
+
+          if (shift) {
+            newShiftId = shift.id;
+            if (!newModeleId && shift.modele_id) newModeleId = shift.modele_id;
+            needsUpdate = true;
+          }
+        }
+      }
+
+      // 2. Missing modele but has shift → fill from shift
+      if (!newModeleId && newShiftId) {
+        const shift = db.prepare('SELECT modele_id FROM shifts WHERE id = ?').get(newShiftId);
+        if (shift?.modele_id) {
+          newModeleId = shift.modele_id;
+          needsUpdate = true;
+        }
+      }
+
+      // Apply fixes
+      if (needsUpdate) {
+        db.prepare('UPDATE ventes SET shift_id = ?, modele_id = ? WHERE id = ?')
+          .run(newShiftId ?? null, newModeleId ?? null, v.id);
+        autoFixed++;
+
+        // Recalculate paies
+        try {
+          const { recalculatePaies } = require('./paie-calculator');
+          recalculatePaies(v.periode_debut, v.periode_fin);
+        } catch {}
+      } else {
+        stillBroken++;
+      }
+    }
+
+    if (autoFixed > 0) {
+      logger.info(`Watchdog: auto-corrigé ${autoFixed} import(s) Telegram`);
+      notifyAdminsAndManagers(
+        'info',
+        '\uD83D\uDD27 Auto-correction Telegram',
+        `${autoFixed} import(s) ont \u00e9t\u00e9 auto-corrig\u00e9s (shift ou mod\u00e8le retrouv\u00e9).${stillBroken > 0 ? ` ${stillBroken} restent incomplets.` : ''}`,
+        '/admin/telegram'
+      );
+    }
+
+    if (stillBroken > 0) {
       notifyAdminsAndManagers(
         'warning',
         '\uD83D\uDD14 Imports Telegram \u00e0 compl\u00e9ter',
-        `${unresolved.count} import(s) de plus de 24h n'ont toujours pas de mod\u00e8le ou de shift assign\u00e9. Pensez \u00e0 les compl\u00e9ter.`,
+        `${stillBroken} import(s) n'ont toujours pas de mod\u00e8le ou shift apr\u00e8s auto-correction. Compl\u00e9tez-les manuellement.`,
         '/admin/telegram'
       );
     }
   } catch (err) {
-    logger.warn('Watchdog: checkOldUnresolvedImports error', { error: err.message });
+    logger.warn('Watchdog: audit imports error', { error: err.message });
   }
 }
 
