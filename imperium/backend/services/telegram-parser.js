@@ -197,8 +197,12 @@ function parseReport(message) {
   }
 
   const montant_brut = parseFloat(montantMatch[1].replace(',', '.'));
-  if (isNaN(montant_brut) || montant_brut <= 0 || montant_brut > 100000) {
-    return { error: 'Montant invalide: ' + montantMatch[1] + ' (doit être entre 0.01 et 100 000)' };
+  if (isNaN(montant_brut) || montant_brut < 0 || montant_brut > 100000) {
+    return { error: 'Montant invalide: ' + montantMatch[1] + ' (doit être entre 0 et 100 000)' };
+  }
+  // 0€ = shift sans vente, c'est normal — on skip silencieusement
+  if (montant_brut === 0) {
+    return { zero: true };
   }
 
   const dateMatch = message.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4}|\d{2})/);
@@ -329,6 +333,9 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id,
   const parsed = parseReport(message);
   if (parsed.error) {
     return { error: parsed.error };
+  }
+  if (parsed.zero) {
+    return { skipped: true, reason: 'zero_amount' };
   }
 
   // Period

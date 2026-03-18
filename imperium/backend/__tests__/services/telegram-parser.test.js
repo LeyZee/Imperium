@@ -127,9 +127,10 @@ describe('parseReport', () => {
     expect(result.error).toContain('parser');
   });
 
-  test('returns error for zero montant', () => {
+  test('returns zero flag for zero montant (not an error)', () => {
     const result = parseReport('Montant brut: 0');
-    expect(result.error).toBeDefined();
+    expect(result.zero).toBe(true);
+    expect(result.error).toBeUndefined();
   });
 
   test('returns error for negative montant', () => {
