@@ -20,5 +20,14 @@ module.exports = {
     error_file: './logs/pm2-error.log',
     out_file: './logs/pm2-out.log',
     merge_logs: true,
+    // Log rotation: 50MB max par fichier, 10 fichiers max, compression
+    max_size: '50M',
+    retain: 10,
+    compress: true,
+    // Restart automatique si pas de réponse après 8s
+    listen_timeout: 8000,
+    kill_timeout: 5000,
+    // Exponential backoff sur restart
+    exp_backoff_restart_delay: 1000,
   }]
 };

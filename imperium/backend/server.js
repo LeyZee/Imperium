@@ -134,7 +134,7 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-// Health check with exchange rate and DB status
+// Health check with exchange rate, DB status, and Telegram bot status
 app.get('/health', (req, res) => {
   const warnings = [];
   try {
@@ -145,20 +145,52 @@ app.get('/health', (req, res) => {
     const { getExchangeRate } = require('./utils/rateCache');
     const rate = getExchangeRate();
     if (!rate || rate <= 0 || rate === 0.92) {
-      warnings.push(`Exchange rate fallback active (${rate}) — vérifier frankfurter.app`);
+      warnings.push(`Exchange rate fallback active (${rate})`);
     }
 
     // Check for negative paies
     const negPaies = db.prepare("SELECT COUNT(*) as c FROM paies WHERE total_chatteur < 0").get();
     if (negPaies?.c > 0) {
-      warnings.push(`${negPaies.c} paie(s) avec total négatif détectée(s)`);
+      warnings.push(`${negPaies.c} paie(s) avec total n\u00e9gatif`);
     }
 
+    // Check Telegram bot status
+    let telegramStatus = 'unknown';
+    try {
+      const telegramPoller = require('./services/telegram-poller');
+      const botStatus = telegramPoller.getStatus();
+      if (botStatus.running && !botStatus.heartbeatStale) {
+        telegramStatus = 'running';
+      } else if (botStatus.running && botStatus.heartbeatStale) {
+        telegramStatus = 'stale';
+        warnings.push('Bot Telegram: heartbeat absent');
+      } else if (!botStatus.hasBotToken) {
+        telegramStatus = 'no_token';
+      } else {
+        telegramStatus = 'stopped';
+        warnings.push('Bot Telegram arr\u00eat\u00e9');
+      }
+    } catch { telegramStatus = 'error'; }
+
+    // Check DB integrity (lightweight — quick_check only)
+    let dbIntegrity = 'ok';
+    try {
+      const check = db.prepare('PRAGMA quick_check(1)').get();
+      if (check && Object.values(check)[0] !== 'ok') {
+        dbIntegrity = 'degraded';
+        warnings.push('DB integrity check failed');
+      }
+    } catch { dbIntegrity = 'error'; }
+
+    const status = warnings.length > 0 ? 'degraded' : 'ok';
     res.json({
-      status: warnings.length > 0 ? 'degraded' : 'ok',
+      status,
       uptime: process.uptime(),
       timestamp: new Date().toISOString(),
       exchange_rate: rate,
+      telegram: telegramStatus,
+      db_integrity: dbIntegrity,
+      memory_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
       warnings,
     });
   } catch (err) {
@@ -225,6 +257,25 @@ const server = app.listen(PORT, () => {
     });
   }, 6 * 60 * 60 * 1000); // 6 hours
 
+  // ─── Self-test at startup ──────────────────────────────────
+  logger.info('=== SELF-TEST DÉMARRAGE ===');
+  try {
+    const db = require('./database');
+    db.prepare('SELECT 1').get();
+    logger.info('[OK] Base de données SQLite');
+    const tables = db.prepare("SELECT COUNT(*) as c FROM sqlite_master WHERE type='table'").get();
+    logger.info(`[OK] ${tables.c} tables dans la DB`);
+    const check = db.prepare('PRAGMA quick_check(1)').get();
+    logger.info(`[OK] Intégrité DB: ${Object.values(check)[0]}`);
+  } catch (err) {
+    logger.error('[FAIL] Base de données', { error: err.message });
+  }
+  try {
+    const hasBotToken = !!process.env.TELEGRAM_BOT_TOKEN;
+    logger.info(`[${hasBotToken ? 'OK' : 'WARN'}] TELEGRAM_BOT_TOKEN: ${hasBotToken ? 'configuré' : 'MANQUANT — bot désactivé'}`);
+  } catch {}
+  logger.info('=== FIN SELF-TEST ===');
+
   // Start Telegram polling bot after a short delay (let HTTP server be ready first)
   setTimeout(() => {
     const telegramPoller = require('./services/telegram-poller');
@@ -233,18 +284,26 @@ const server = app.listen(PORT, () => {
     });
   }, 2000);
 
-  // Post-shift notifications + pay day reminders + shift reminders
-  const { checkPostShiftNotifications, checkPayDayReminder, checkShiftReminders } = require('./services/post-shift-checker');
+  // Post-shift notifications + pay day reminders + shift reminders + daily summaries
+  const { checkPostShiftNotifications, checkPayDayReminder, checkShiftReminders, checkDailyChatteurSummary, checkDailyAdminSummary } = require('./services/post-shift-checker');
+  const { runWatchdog, runDbMaintenance } = require('./services/watchdog');
   setInterval(() => {
     checkPostShiftNotifications();
     checkPayDayReminder();
     checkShiftReminders();
+    checkDailyChatteurSummary();
+    checkDailyAdminSummary();
+    runWatchdog();
+    runDbMaintenance();
   }, 30 * 60 * 1000); // 30 min
   // Run once on startup after a short delay
   setTimeout(() => {
     checkPostShiftNotifications();
     checkPayDayReminder();
     checkShiftReminders();
+    checkDailyChatteurSummary();
+    checkDailyAdminSummary();
+    runWatchdog();
   }, 10000);
 });
 

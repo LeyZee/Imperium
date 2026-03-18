@@ -125,12 +125,21 @@ async function sendTelegramMessage(chatId, text, options = {}) {
 
   try {
     const fetch = require('node-fetch');
-    const params = new URLSearchParams({
+    const body = {
       chat_id: String(chatId),
       text: finalText,
       parse_mode: options.parseMode || 'HTML',
+    };
+    // Support inline keyboard buttons (reply_markup)
+    if (options.reply_markup) {
+      body.reply_markup = options.reply_markup;
+    }
+    const res = await fetch(`${API_BASE}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      timeout: 10000,
     });
-    const res = await fetch(`${API_BASE}/sendMessage?${params}`, { timeout: 10000 });
     const data = await res.json();
     if (!data.ok) {
       // Downgrade "can't initiate conversation" to debug (expected when user hasn't /start the bot)
@@ -210,18 +219,60 @@ async function broadcastToAll(text, options = {}) {
   return stats;
 }
 
+// ─── Common button layouts ───────────────────────────────
+
+const BTN = {
+  mesVentes: { text: '\uD83D\uDCCA Mes ventes', callback_data: 'cmd_mesventes' },
+  menu: { text: '\uD83D\uDC49 Menu', callback_data: 'cmd_aide' },
+  start: { text: '\uD83D\uDC4B S\'enregistrer', callback_data: 'cmd_start' },
+};
+
+function withButtons(options, rows) {
+  return { ...options, reply_markup: { inline_keyboard: rows } };
+}
+
 // ─── Notification Templates ───────────────────────────────
 
 /**
  * Notify chatteur that their vente was detected from Telegram.
  */
-async function notifyVenteDetected(chatteurId, montant, plateforme, date) {
-  const text = `\u2705 <b>Vente d\u00e9tect\u00e9e !</b>\n\n` +
+async function notifyVenteDetected(chatteurId, montant, plateforme, date, options = {}) {
+  const { modele, shiftLinked } = options;
+  let text = `\u2705 <b>Vente d\u00e9tect\u00e9e !</b>\n\n` +
     `Montant : <b>${escapeHTML(montant)}\u20AC</b>\n` +
     `Plateforme : ${escapeHTML(plateforme)}\n` +
-    `Date : ${escapeHTML(date)}\n\n` +
-    `Ta vente a bien \u00e9t\u00e9 import\u00e9e automatiquement.`;
-  return sendToChatteur(chatteurId, text, { _type: 'vente_detected' });
+    `Date : ${escapeHTML(date)}\n`;
+
+  if (modele) {
+    text += `Mod\u00e8le : <b>${escapeHTML(modele)}</b>\n`;
+  }
+
+  text += `Shift : ${shiftLinked ? '\u2705 li\u00e9' : '\u26A0\uFE0F non trouv\u00e9'}\n\n`;
+  text += `Ta vente a bien \u00e9t\u00e9 import\u00e9e automatiquement.`;
+
+  if (!modele || !shiftLinked) {
+    text += `\n\n\u26A0\uFE0F <i>Certaines infos sont manquantes. Un admin v\u00e9rifiera.</i>`;
+  }
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'vente_detected' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
+}
+
+/**
+ * Notify chatteur that an import is incomplete and needs their input.
+ */
+async function notifyImportIncomplete(chatteurId, montant, plateforme, date, missingFields) {
+  const issues = [];
+  if (missingFields.includes('modele')) issues.push('\u2022 Le <b>mod\u00e8le</b> n\'a pas \u00e9t\u00e9 identifi\u00e9');
+  if (missingFields.includes('shift')) issues.push('\u2022 Le <b>shift</b> correspondant n\'a pas \u00e9t\u00e9 trouv\u00e9');
+
+  const text = `\u26A0\uFE0F <b>Import partiel \u2014 v\u00e9rification requise</b>\n\n` +
+    `Ta vente de <b>${escapeHTML(montant)}\u20AC</b> sur ${escapeHTML(plateforme)} (${escapeHTML(date)}) ` +
+    `a \u00e9t\u00e9 import\u00e9e, mais :\n\n${issues.join('\n')}\n\n` +
+    `Un admin compl\u00e8tera les infos manquantes. Si tu vois une erreur, contacte ton manager.`;
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'vente_detected' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
 }
 
 /**
@@ -232,7 +283,9 @@ async function notifyPalierReached(chatteurId, palierLabel, palierEmoji, bonus) 
     `${escapeHTML(palierEmoji)} Tu as atteint le palier <b>${escapeHTML(palierLabel)}</b> !\n` +
     `Bonus : +${escapeHTML(bonus)}\u20AC\n\n` +
     `Continue comme \u00E7a ! \uD83D\uDCAA`;
-  return sendToChatteur(chatteurId, text, { _type: 'palier_reached' });
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'palier_reached' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
 }
 
 /**
@@ -247,7 +300,9 @@ async function notifyPaieSummary(chatteurId, periodeDebut, periodeFin, commissio
     (malus > 0 ? `Malus : -${escapeHTML(malus)}\u20AC\n` : '') +
     `\n<b>Total : ${escapeHTML(total)}\u20AC</b>\n` +
     `Statut : ${escapeHTML(statut)}`;
-  return sendToChatteur(chatteurId, text, { _type: 'paie_summary' });
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'paie_summary' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
 }
 
 /**
@@ -260,8 +315,10 @@ async function notifyShiftReminder(chatteurId, plateforme, modele, date, creneau
     (modele ? `Mod\u00e8le : ${escapeHTML(modele)}\n` : '') +
     `Date : ${formatDate(date)}\n` +
     `Cr\u00e9neau : ${escapeHTML(heures)}\n\n` +
-    `N'oublie pas de poster ton rapport dans le groupe \u00e0 la fin !`;
-  return sendToChatteur(chatteurId, text, { _type: 'shift_reminder' });
+    `N'oublie pas de poster ton rapport dans le groupe \u00e0 la fin ! \uD83D\uDCAA`;
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'shift_reminder' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
 }
 
 /**
@@ -271,8 +328,10 @@ async function notifyMissingReport(chatteurId, plateforme, date, creneau, heures
   const formatDate = (d) => d.split('-').reverse().join('/');
   const text = `\u26A0\uFE0F <b>Rapport manquant</b>\n\n` +
     `Tu avais un shift <b>${escapeHTML(plateforme)}</b> le ${formatDate(date)} (${escapeHTML(heures)}).\n\n` +
-    `Je n'ai pas re\u00E7u de rapport. N'oublie pas de poster ton montant dans le groupe !`;
-  return sendToChatteur(chatteurId, text, { _type: 'missing_report' });
+    `Je n'ai pas re\u00E7u de rapport. Poste ton montant dans le groupe pour que je puisse l'importer !`;
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'missing_report' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
 }
 
 /**
@@ -283,7 +342,9 @@ async function broadcastAnnouncement(title, content, authorName) {
   const text = `\uD83D\uDCE2 <b>Annonce${authorName ? ` de ${escapeHTML(authorName)}` : ''}</b>\n\n` +
     `<b>${escapeHTML(title)}</b>\n\n` +
     escapeHTML(content);
-  return broadcastToAll(text, { _type: 'announcement' });
+  return broadcastToAll(text, withButtons({ _type: 'announcement' }, [
+    [BTN.menu],
+  ]));
 }
 
 /**
@@ -294,7 +355,9 @@ async function notifyCollectiveGoal(progressPct, remaining, bonusPerChatteur) {
     `L'\u00e9quipe a atteint <b>${progressPct.toFixed(0)}%</b> de l'objectif !\n` +
     (remaining > 0 ? `Plus que <b>${remaining.toFixed(0)}\u20AC HT</b> pour d\u00e9bloquer le bonus.\n` : '') +
     (bonusPerChatteur > 0 ? `\nBonus actuel : <b>+${bonusPerChatteur}\u20AC</b> par chatteur` : '');
-  return broadcastToAll(text, { _type: 'collective_goal' });
+  return broadcastToAll(text, withButtons({ _type: 'collective_goal' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
 }
 
 /**
@@ -350,6 +413,7 @@ module.exports = {
   logTelegramIncoming,
   // Notification templates
   notifyVenteDetected,
+  notifyImportIncomplete,
   notifyPalierReached,
   notifyPaieSummary,
   notifyShiftReminder,

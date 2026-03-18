@@ -210,7 +210,7 @@ describe('findChatteur', () => {
       return { get: jest.fn(() => null), all: jest.fn(() => []), run: jest.fn() };
     });
     findChatteur('Pierre', 55555);
-    expect(runMock).toHaveBeenCalledWith(55555, 5);
+    expect(runMock).toHaveBeenCalledWith('55555', 5);
   });
 });
 

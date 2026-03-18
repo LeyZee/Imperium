@@ -100,12 +100,14 @@ router.get('/status', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const status = telegramPoller.getStatus();
 
   const recentImports = db.prepare(`
-    SELECT v.id, v.montant_brut, v.notes, v.created_at,
+    SELECT v.id, v.montant_brut, v.modele_id, v.shift_id, v.notes, v.created_at,
       c.prenom AS chatteur_prenom, c.couleur AS chatteur_couleur,
-      p.nom AS plateforme_nom, p.devise, p.couleur_fond, p.couleur_texte
+      p.nom AS plateforme_nom, p.devise, p.couleur_fond, p.couleur_texte,
+      m.pseudo AS modele_pseudo
     FROM ventes v
     JOIN chatteurs c ON c.id = v.chatteur_id
     JOIN plateformes p ON p.id = v.plateforme_id
+    LEFT JOIN modeles m ON m.id = v.modele_id
     WHERE v.notes LIKE 'Import Telegram%'
     ORDER BY v.created_at DESC
     LIMIT 20
@@ -117,10 +119,26 @@ router.get('/status', authMiddleware, adminOnly, asyncHandler((req, res) => {
     AND date(created_at) = date('now')
   `).get();
 
+  const todayComplete = db.prepare(`
+    SELECT COUNT(*) AS count FROM ventes
+    WHERE notes LIKE 'Import Telegram%'
+    AND date(created_at) = date('now')
+    AND modele_id IS NOT NULL AND shift_id IS NOT NULL
+  `).get();
+
+  const todayWarnings = db.prepare(`
+    SELECT COUNT(*) AS count FROM ventes
+    WHERE notes LIKE 'Import Telegram%'
+    AND date(created_at) = date('now')
+    AND (modele_id IS NULL OR shift_id IS NULL)
+  `).get();
+
   res.json({
     ...status,
     recentImports,
     todayImports: todayCount?.count || 0,
+    todayComplete: todayComplete?.count || 0,
+    todayWarnings: todayWarnings?.count || 0,
   });
 }));
 
@@ -128,15 +146,15 @@ router.get('/status', authMiddleware, adminOnly, asyncHandler((req, res) => {
  * POST /api/telegram/start — Start the bot
  */
 router.post('/start', authMiddleware, adminOnly, controlLimiter, asyncHandler(async (req, res) => {
-  const status = telegramPoller.getStatus();
-  if (status.running) {
-    throw new ApiError(409, "Le bot est déjà en cours d'exécution");
-  }
-  if (!status.hasBotToken) {
+  const statusBefore = telegramPoller.getStatus();
+  if (!statusBefore.hasBotToken) {
     throw new ApiError(400, 'TELEGRAM_BOT_TOKEN non configuré');
   }
+  const wasRunning = statusBefore.running;
+  // start() handles graceful restart if already running (stop + wait + start)
   await telegramPoller.start();
-  res.json({ message: 'Bot Telegram démarré', status: telegramPoller.getStatus() });
+  const msg = wasRunning ? 'Bot Telegram redémarré' : 'Bot Telegram démarré';
+  res.json({ message: msg, status: telegramPoller.getStatus() });
 }));
 
 /**

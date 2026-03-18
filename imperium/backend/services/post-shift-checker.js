@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const {
   notifyShiftReminder,
   notifyMissingReport,
+  sendToChatteur,
 } = require('../utils/telegramSender');
 
 /**
@@ -296,4 +297,169 @@ function getTimezoneOffset(tz) {
   return offsets[tz] || 0;
 }
 
-module.exports = { checkPostShiftNotifications, checkPayDayReminder, checkShiftReminders };
+// ─── Daily Summaries ────────────────────────────────────────
+
+/**
+ * Check if a daily task has already run today (persisted in DB).
+ * Prevents duplicates across server restarts.
+ */
+function hasDailyTaskRun(taskKey) {
+  try {
+    const row = db.prepare("SELECT value FROM telegram_state WHERE key = ?").get(taskKey);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    return row?.value === todayKey;
+  } catch { return false; }
+}
+
+function markDailyTaskRun(taskKey) {
+  try {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    db.prepare("INSERT OR REPLACE INTO telegram_state (key, value) VALUES (?, ?)").run(taskKey, todayKey);
+  } catch (e) { logger.warn('Failed to mark daily task', { taskKey, error: e.message }); }
+}
+
+/**
+ * Send evening recap to each chatteur via Telegram DM.
+ * Shows today's ventes count, total, and any issues.
+ * Should be called around 22h (checked via the 30min interval from server.js).
+ */
+function checkDailyChatteurSummary() {
+  try {
+    const now = new Date();
+    const hour = now.getHours();
+
+    // Only send between 21h-22h, once per day (persisted in DB)
+    if (hour < 21 || hour >= 22 || hasDailyTaskRun('daily_chatteur_summary')) return;
+    markDailyTaskRun('daily_chatteur_summary');
+
+    const chatteurs = db.prepare(`
+      SELECT c.id, c.prenom, c.telegram_user_id, c.telegram_dm_ok
+      FROM chatteurs c
+      WHERE c.actif = 1 AND c.telegram_dm_ok = 1 AND c.telegram_user_id IS NOT NULL
+    `).all();
+
+    if (chatteurs.length === 0) return;
+
+    let sent = 0;
+    for (const c of chatteurs) {
+      const ventes = db.prepare(`
+        SELECT v.montant_brut, p.devise, p.nom AS plateforme, m.pseudo AS modele,
+          v.modele_id, v.shift_id
+        FROM ventes v
+        JOIN plateformes p ON p.id = v.plateforme_id
+        LEFT JOIN modeles m ON m.id = v.modele_id
+        WHERE v.chatteur_id = ? AND date(v.created_at) = ? AND v.statut = 'validée'
+      `).all(c.id, todayKey);
+
+      // Check if chatteur had shifts today
+      const shifts = db.prepare(`
+        SELECT s.id, p.nom AS plateforme, m.pseudo AS modele
+        FROM shifts s
+        LEFT JOIN plateformes p ON p.id = s.plateforme_id
+        LEFT JOIN modeles m ON m.id = s.modele_id
+        WHERE s.chatteur_id = ? AND s.date = ?
+      `).all(c.id, todayKey);
+
+      // Skip if no shifts and no ventes today
+      if (shifts.length === 0 && ventes.length === 0) continue;
+
+      const totalEUR = ventes.filter(v => v.devise === 'EUR').reduce((s, v) => s + v.montant_brut, 0);
+      const totalUSD = ventes.filter(v => v.devise === 'USD').reduce((s, v) => s + v.montant_brut, 0);
+      const warnings = ventes.filter(v => !v.modele_id || !v.shift_id).length;
+
+      let msg = `\uD83D\uDCCA <b>R\u00e9cap de ta journ\u00e9e</b>\n\n`;
+      msg += `\uD83D\uDCC5 Shifts : <b>${shifts.length}</b>\n`;
+      msg += `\uD83D\uDCB0 Ventes : <b>${ventes.length}</b>\n`;
+      if (totalEUR > 0) msg += `\u2022 ${totalEUR.toFixed(2)}\u20AC\n`;
+      if (totalUSD > 0) msg += `\u2022 $${totalUSD.toFixed(2)}\n`;
+
+      if (ventes.length === 0 && shifts.length > 0) {
+        msg += `\n\u26A0\uFE0F <b>Aucune vente d\u00e9tect\u00e9e</b> pour ${shifts.length} shift${shifts.length > 1 ? 's' : ''} aujourd'hui. Pense \u00e0 poster ton feedback dans le groupe !`;
+      } else if (warnings > 0) {
+        msg += `\n\u26A0\uFE0F ${warnings} vente${warnings > 1 ? 's' : ''} avec infos manquantes (mod\u00e8le ou shift)`;
+      } else if (ventes.length > 0) {
+        msg += `\n\u2705 Tout est bon !`;
+      }
+
+      sendToChatteur(c.id, msg, {
+        _type: 'daily_summary',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '\uD83D\uDCCA D\u00e9tail ventes', callback_data: 'cmd_mesventes' },
+              { text: '\uD83D\uDC49 Menu', callback_data: 'cmd_aide' },
+            ],
+          ],
+        },
+      }).catch(() => {});
+      sent++;
+    }
+
+    if (sent > 0) {
+      logger.info(`Daily chatteur summary: ${sent} recap(s) envoyé(s)`);
+    }
+  } catch (err) {
+    logger.error('Daily chatteur summary error', { error: err.message });
+  }
+}
+
+/**
+ * Send morning admin summary notification (in-app).
+ * Shows yesterday's import stats: total, complete, warnings, errors.
+ * Should be called around 8h-9h.
+ */
+function checkDailyAdminSummary() {
+  try {
+    const now = new Date();
+    const hour = now.getHours();
+
+    // Only send between 8h-9h, once per day (persisted in DB)
+    if (hour < 8 || hour >= 9 || hasDailyTaskRun('daily_admin_summary')) return;
+    markDailyTaskRun('daily_admin_summary');
+
+    // Yesterday's date
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayStr = yesterday.toISOString().slice(0, 10);
+
+    const stats = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN modele_id IS NOT NULL AND shift_id IS NOT NULL THEN 1 ELSE 0 END) AS complete,
+        SUM(CASE WHEN modele_id IS NULL OR shift_id IS NULL THEN 1 ELSE 0 END) AS warnings,
+        COALESCE(SUM(montant_brut), 0) AS total_montant
+      FROM ventes
+      WHERE notes LIKE 'Import Telegram%' AND date(created_at) = ?
+    `).get(yesterdayStr);
+
+    const errors = db.prepare(`
+      SELECT COUNT(*) AS count FROM telegram_log
+      WHERE direction = 'in' AND success = 0
+      AND date(created_at) = ?
+    `).get(yesterdayStr);
+
+    if (!stats || stats.total === 0) return;
+
+    const msg = `Hier : ${stats.total} import(s) Telegram — ` +
+      `${stats.complete} complet(s), ${stats.warnings} warning(s), ` +
+      `${errors?.count || 0} erreur(s). ` +
+      `Total : ${stats.total_montant.toFixed(2)}\u20AC`;
+
+    const title = stats.warnings > 0 || (errors?.count || 0) > 0
+      ? '\u26A0\uFE0F R\u00e9cap Telegram hier'
+      : '\u2705 R\u00e9cap Telegram hier';
+
+    notifyAdminsAndManagers('telegram', title, msg, '/admin/telegram');
+    logger.info(`Daily admin summary sent: ${stats.total} imports yesterday`);
+  } catch (err) {
+    logger.error('Daily admin summary error', { error: err.message });
+  }
+}
+
+module.exports = {
+  checkPostShiftNotifications,
+  checkPayDayReminder,
+  checkShiftReminders,
+  checkDailyChatteurSummary,
+  checkDailyAdminSummary,
+};

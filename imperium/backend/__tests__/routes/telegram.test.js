@@ -82,10 +82,13 @@ describe('POST /api/telegram/start', () => {
     expect(telegramPoller.start).toHaveBeenCalled();
   });
 
-  test('409 if already running', async () => {
+  test('restarts gracefully if already running', async () => {
     telegramPoller.getStatus.mockReturnValue({ running: true, hasBotToken: true });
+    telegramPoller.start.mockResolvedValue();
     const res = await request(adminApp).post('/api/telegram/start');
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
+    expect(res.body.message).toMatch(/redémarré/);
+    expect(telegramPoller.start).toHaveBeenCalled();
   });
 
   test('400 if no bot token', async () => {

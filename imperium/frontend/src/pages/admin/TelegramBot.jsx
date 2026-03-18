@@ -5,7 +5,7 @@ import {
   MessageSquare, Clock, TrendingUp, Play, Square,
   AlertTriangle, CheckCircle, RefreshCw, Wifi, WifiOff,
   Trash2, ExternalLink, ScrollText, Send, Filter, ChevronLeft, ChevronRight,
-  XCircle,
+  XCircle, Edit3, Link, LinkBreak, User, Check, X,
 } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
@@ -47,6 +47,7 @@ const TYPE_META = {
   vente_import: { label: 'Import vente', color: '#10b981', icon: '\uD83D\uDCB5', dir: 'in' },
   vente_duplicate: { label: 'Doublon ignoré', color: '#94a3b8', icon: '\uD83D\uDD04', dir: 'in' },
   vente_error: { label: 'Erreur import', color: '#ef4444', icon: '\u26A0\uFE0F', dir: 'in' },
+  daily_summary: { label: 'Récap quotidien', color: '#6366f1', icon: '\uD83D\uDCCA', dir: 'out' },
 };
 
 export default function TelegramBot({ embedded = false }) {
@@ -61,6 +62,8 @@ export default function TelegramBot({ embedded = false }) {
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [broadcastSending, setBroadcastSending] = useState(false);
   const [broadcastResult, setBroadcastResult] = useState(null);
+  const [announceLoading, setAnnounceLoading] = useState(false);
+  const [announceResult, setAnnounceResult] = useState(null);
   const intervalRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -107,6 +110,22 @@ export default function TelegramBot({ embedded = false }) {
       setError(err.response?.data?.error || 'Erreur à l\'arrêt du bot');
     } finally {
       setActionLoading(false);
+    }
+  }
+
+  async function handleAnnounceStart() {
+    setAnnounceLoading(true);
+    setAnnounceResult(null);
+    try {
+      const { data } = await api.post('/api/telegram/announce-start');
+      setAnnounceResult(data);
+      setSuccess(`Annonce envoyée dans ${data.sent} groupe(s)`);
+      timerRef.current = setTimeout(() => setSuccess(''), 4000);
+      setTimeout(() => setAnnounceResult(null), 10000);
+    } catch (err) {
+      setError(err.response?.data?.error || "Erreur lors de l'envoi de l'annonce");
+    } finally {
+      setAnnounceLoading(false);
     }
   }
 
@@ -244,9 +263,22 @@ export default function TelegramBot({ embedded = false }) {
           />
           <StatCard
             title="Imports aujourd'hui"
-            value={status.todayImports}
+            value={
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                {status.todayImports}
+                {status.todayWarnings > 0 && (
+                  <span title={`${status.todayWarnings} import(s) incomplet(s)`} style={{
+                    fontSize: '0.65rem', fontWeight: 600, color: '#f59e0b',
+                    background: 'rgba(245,158,11,0.12)', padding: '0.1rem 0.35rem',
+                    borderRadius: '4px', lineHeight: 1.4,
+                  }}>
+                    {status.todayWarnings} ⚠️
+                  </span>
+                )}
+              </span>
+            }
             icon={TrendingUp}
-            color="#10b981"
+            color={status.todayWarnings > 0 ? '#f59e0b' : '#10b981'}
           />
         </div>
       ) : null}
@@ -285,18 +317,34 @@ export default function TelegramBot({ embedded = false }) {
               </button>
 
               {isRunning ? (
-                <button
-                  className="btn-danger haptic"
-                  onClick={handleStop}
-                  disabled={actionLoading}
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
-                >
-                  {actionLoading ? (
-                    <span className="spinner" style={{ width: 16, height: 16 }} />
-                  ) : (
-                    <><Square size={14} /> Arrêter le bot</>
+                <>
+                  {status.heartbeatStale && (
+                    <button
+                      className="btn-primary haptic"
+                      onClick={handleStart}
+                      disabled={actionLoading}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#f59e0b' }}
+                    >
+                      {actionLoading ? (
+                        <span className="spinner" style={{ width: 16, height: 16 }} />
+                      ) : (
+                        <><RefreshCw size={14} /> Redémarrer</>
+                      )}
+                    </button>
                   )}
-                </button>
+                  <button
+                    className="btn-danger haptic"
+                    onClick={handleStop}
+                    disabled={actionLoading}
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                  >
+                    {actionLoading ? (
+                      <span className="spinner" style={{ width: 16, height: 16 }} />
+                    ) : (
+                      <><Square size={14} /> Arrêter le bot</>
+                    )}
+                  </button>
+                </>
               ) : (
                 <button
                   className="btn-primary haptic"
@@ -321,14 +369,32 @@ export default function TelegramBot({ embedded = false }) {
             display: 'flex', gap: '1.5rem', flexWrap: 'wrap',
             fontSize: '0.8rem', color: '#64748b',
           }}>
+            {status.startedAt && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <CheckCircle size={13} color="#10b981" />
+                <span>En ligne depuis : {formatDateTime(status.startedAt)}</span>
+              </div>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
               <Clock size={13} />
               <span>Dernier import : {formatDateTime(status.lastMessageAt)}</span>
             </div>
+            {status.topicsCached > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#6366f1' }}>
+                <MessageSquare size={13} />
+                <span>{status.topicsCached} topic{status.topicsCached > 1 ? 's' : ''} en cache</span>
+              </div>
+            )}
             {status.errorsCount > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#f59e0b' }}>
                 <AlertTriangle size={13} />
                 <span>{status.errorsCount} erreur{status.errorsCount > 1 ? 's' : ''} depuis le démarrage</span>
+              </div>
+            )}
+            {status.heartbeatStale && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: '#ef4444', fontWeight: 600 }}>
+                <AlertTriangle size={13} />
+                <span>Bot potentiellement bloqué — heartbeat absent depuis 2+ min</span>
               </div>
             )}
           </div>
@@ -347,6 +413,60 @@ export default function TelegramBot({ embedded = false }) {
               <p style={{ color: '#94a3b8', margin: '0.15rem 0 0', fontSize: '0.7rem' }}>
                 {formatDateTime(status.lastError.at)}
               </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Announce /start — Invite chatteurs to register */}
+      {status && isRunning && (
+        <div className="card" style={{ marginBottom: '1rem' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 250 }}>
+              <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)', marginBottom: '0.4rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <MessageSquare size={15} color="#8b5cf6" /> Inviter les chatteurs à s'enregistrer
+              </h3>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '0 0 0.5rem', lineHeight: 1.5 }}>
+                Envoie un message dans <b>tous les groupes Telegram</b> pour demander aux chatteurs d'envoyer <code>/start</code> au bot en DM.
+                Cela leur permet de recevoir des <b>confirmations de ventes</b>, des <b>rappels de shift</b> et des <b>notifications de paie</b> directement sur Telegram.
+              </p>
+              <p style={{ fontSize: '0.75rem', color: '#94a3b8', margin: 0 }}>
+                Le message listera automatiquement les chatteurs pas encore enregistr&eacute;s pour les identifier facilement.
+              </p>
+            </div>
+            <button
+              className="btn-secondary haptic"
+              onClick={handleAnnounceStart}
+              disabled={announceLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', whiteSpace: 'nowrap', flexShrink: 0, alignSelf: 'center' }}
+            >
+              {announceLoading ? (
+                <><span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> Envoi...</>
+              ) : (
+                <><Send size={14} /> Envoyer l'annonce</>
+              )}
+            </button>
+          </div>
+          {announceResult && (
+            <div style={{
+              marginTop: '0.75rem', padding: '0.5rem 0.75rem', borderRadius: '8px',
+              background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.15)',
+              fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap',
+            }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                <CheckCircle size={14} color="#8b5cf6" />
+                <span style={{ color: '#8b5cf6', fontWeight: 600 }}>Envoy&eacute; dans {announceResult.sent} groupe(s)</span>
+              </span>
+              {announceResult.unregisteredCount > 0 && (
+                <span style={{ color: '#f59e0b', fontSize: '0.75rem' }}>
+                  {announceResult.unregisteredCount} auto-link&eacute;(s) mais pas /start
+                </span>
+              )}
+              {announceResult.noTelegramCount > 0 && (
+                <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
+                  {announceResult.noTelegramCount} pas encore d&eacute;tect&eacute;(s)
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -446,14 +566,19 @@ export default function TelegramBot({ embedded = false }) {
                 <th>Date / heure</th>
                 <th>Chatteur</th>
                 <th>Plateforme</th>
+                <th>Mod&egrave;le</th>
+                <th style={{ textAlign: 'center', width: 60 }}>Shift</th>
                 <th style={{ textAlign: 'right' }}>Montant</th>
-                <th>Source</th>
-                <th style={{ width: 40 }}></th>
+                <th style={{ width: 70 }}></th>
               </tr>
             </thead>
             <tbody className="stagger-rows">
-              {(status?.recentImports || []).map(imp => (
-                <tr key={imp.id}>
+              {(status?.recentImports || []).map(imp => {
+                const hasModel = !!imp.modele_pseudo;
+                const hasShift = !!imp.shift_id;
+                const isComplete = hasModel && hasShift;
+                return (
+                <tr key={imp.id} style={!isComplete ? { background: 'rgba(245,158,11,0.04)' } : undefined}>
                   <td style={{ fontSize: '0.8rem', color: '#64748b', whiteSpace: 'nowrap' }}>
                     {formatDateTime(imp.created_at?.endsWith('Z') ? imp.created_at : (imp.created_at + 'Z'))}
                   </td>
@@ -480,26 +605,52 @@ export default function TelegramBot({ embedded = false }) {
                       {imp.plateforme_nom}
                     </span>
                   </td>
+                  <td>
+                    {hasModel ? (
+                      <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{imp.modele_pseudo}</span>
+                    ) : (
+                      <span style={{
+                        display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                        fontSize: '0.75rem', color: '#f59e0b', fontWeight: 500,
+                      }}>
+                        <AlertTriangle size={12} /> Inconnu
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ textAlign: 'center' }}>
+                    {hasShift ? (
+                      <span title="Shift li&eacute;" style={{ color: '#10b981' }}><CheckCircle size={16} /></span>
+                    ) : (
+                      <span title="Shift non trouv&eacute;" style={{ color: '#f59e0b' }}><AlertTriangle size={16} /></span>
+                    )}
+                  </td>
                   <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731' }}>
                     {imp.montant_brut?.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} {imp.devise === 'USD' ? '$' : '€'}
                   </td>
-                  <td style={{ fontSize: '0.75rem', color: '#94a3b8', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {imp.notes?.replace('Import Telegram — ', '') || '—'}
-                  </td>
                   <td>
-                    <button onClick={() => setDeleteConfirm({ type: 'single', id: imp.id })}
-                      title="Supprimer cet import" aria-label="Supprimer cet import"
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.25rem', borderRadius: '0.25rem', opacity: 0.6 }}
-                      onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                      onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}>
-                      <Trash2 size={14} />
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.15rem', justifyContent: 'flex-end' }}>
+                      {!isComplete && (
+                        <a href={`/admin/ventes?highlight=${imp.id}`}
+                          title="Corriger cet import" aria-label="Corriger cet import"
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b', padding: '0.25rem', borderRadius: '0.25rem', display: 'flex', alignItems: 'center' }}>
+                          <Edit3 size={14} />
+                        </a>
+                      )}
+                      <button onClick={() => setDeleteConfirm({ type: 'single', id: imp.id })}
+                        title="Supprimer cet import" aria-label="Supprimer cet import"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.25rem', borderRadius: '0.25rem', opacity: 0.6 }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}>
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {(!status?.recentImports || status.recentImports.length === 0) && (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
+                  <td colSpan={7} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
                     <div style={{
                       width: 48, height: 48, borderRadius: '50%', margin: '0 auto 0.75rem',
                       background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -507,7 +658,7 @@ export default function TelegramBot({ embedded = false }) {
                       <MessageSquare size={22} color="#6366f1" strokeWidth={1.5} />
                     </div>
                     <p style={{ fontWeight: 500, color: '#64748b' }}>Aucun import Telegram</p>
-                    <p style={{ fontSize: '0.8rem' }}>Les ventes importées via le bot apparaîtront ici.</p>
+                    <p style={{ fontSize: '0.8rem' }}>Les ventes import&eacute;es via le bot appara&icirc;tront ici.</p>
                   </td>
                 </tr>
               )}

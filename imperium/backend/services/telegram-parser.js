@@ -66,6 +66,55 @@ function findChatteur(name, telegramUserId) {
 }
 
 /**
+ * Find modele by topic name (e.g., "Feedback Shift MESSALINA" → modele with pseudo "MESSALINA")
+ * Returns { id, pseudo } or null
+ */
+function findModele(topicName) {
+  if (!topicName || typeof topicName !== 'string') return null;
+  const trimmed = topicName.trim();
+  if (!trimmed) return null;
+
+  // Extract candidate: last word(s) of the topic name
+  const parts = trimmed.split(/\s+/);
+  const candidate = parts[parts.length - 1];
+  if (!candidate) return null;
+
+  // 1. Try exact match on pseudo (case-insensitive)
+  const exact = db.prepare('SELECT id, pseudo FROM modeles WHERE UPPER(pseudo) = ? AND actif = 1').get(candidate.toUpperCase());
+  if (exact) return exact;
+
+  // 2. Fuzzy: check if any modele pseudo is contained in the topic name
+  const all = db.prepare('SELECT id, pseudo FROM modeles WHERE actif = 1').all([]);
+  const topicUpper = topicName.toUpperCase();
+  for (const m of all) {
+    if (topicUpper.includes(m.pseudo.toUpperCase())) {
+      return m;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Find shift with modele constraint (more precise when modele is known from topic)
+ */
+function findShiftForVenteWithModele(chatteur_id, plateforme_id, modele_id, dateStr) {
+  // Match with modele_id for precision
+  const shift = db.prepare(`
+    SELECT id, modele_id FROM shifts
+    WHERE chatteur_id = ? AND plateforme_id = ? AND modele_id = ?
+      AND date BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+    ORDER BY ABS(julianday(date) - julianday(?)) ASC
+    LIMIT 1
+  `).get(chatteur_id, plateforme_id, modele_id, dateStr, dateStr, dateStr);
+
+  if (shift) return shift;
+
+  // Fallback: match without modele_id
+  return findShiftForVente(chatteur_id, plateforme_id, dateStr);
+}
+
+/**
  * Patterns to extract monetary amounts from shift reports.
  * Ordered by specificity — first match wins.
  */
@@ -118,8 +167,20 @@ function parseReport(message) {
   let reportDate;
   if (dateMatch) {
     const [, d, m, y] = dateMatch;
+    const day = parseInt(d, 10);
+    const month = parseInt(m, 10);
     const year = y.length === 2 ? '20' + y : y;
-    reportDate = `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+    // Validate day/month ranges
+    if (month < 1 || month > 12 || day < 1 || day > 31) {
+      reportDate = new Date().toISOString().split('T')[0]; // Fallback to today
+    } else {
+      reportDate = `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+      // Final check: verify the constructed date is valid
+      const testDate = new Date(reportDate);
+      if (isNaN(testDate.getTime())) {
+        reportDate = new Date().toISOString().split('T')[0];
+      }
+    }
   } else {
     reportDate = new Date().toISOString().split('T')[0];
   }
@@ -189,7 +250,7 @@ function _cleanupProcessed() {
  * Process a single Telegram message and create a vente if valid
  * Returns { success, vente_id, ... } or { error, ... }
  */
-function processMessage({ group_id, sender_name, sender_id, message, message_id }) {
+function processMessage({ group_id, sender_name, sender_id, message, message_id, topic_name }) {
   // Idempotence: skip already-processed messages
   if (message_id) {
     _cleanupProcessed();
@@ -230,12 +291,21 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id 
     return { error: 'Doublon détecté', existing_id: dup.id };
   }
 
-  // Try to find matching shift
-  const shift = findShiftForVente(chatteur.id, plateforme_id, parsed.date);
+  // Find modele from topic name (if available)
+  const topicModele = findModele(topic_name);
+
+  // Try to find matching shift (more precise if modele is known)
+  const shift = topicModele
+    ? findShiftForVenteWithModele(chatteur.id, plateforme_id, topicModele.id, parsed.date)
+    : findShiftForVente(chatteur.id, plateforme_id, parsed.date);
+
+  // Determine final modele_id: topic > shift
+  const modele_id = topicModele?.id ?? shift?.modele_id ?? null;
 
   // Insert + recalculate paies atomically
-  const notes = `Import Telegram — ${message.substring(0, 100)}`;
-  const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes, shift?.id, shift?.modele_id);
+  const modeleName = topicModele?.pseudo || (shift?.modele_id ? '' : '');
+  const notes = `Import Telegram${modeleName ? ` [${modeleName}]` : ''} — ${message.substring(0, 100)}`;
+  const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes, shift?.id, modele_id);
 
   // Mark as processed for idempotence
   if (message_id) _processedMessages.add(message_id);
@@ -252,16 +322,20 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id 
     periode: `${periode_debut} → ${periode_fin}`,
     date_rapport: parsed.date,
     shift_id: shift?.id || null,
+    modele_id: modele_id || null,
+    modele: topicModele?.pseudo || null,
   };
 }
 
 module.exports = {
   GROUP_PLATFORM,
   findChatteur,
+  findModele,
   parseReport,
   isShiftReport,
   isDuplicate,
   findShiftForVente,
+  findShiftForVenteWithModele,
   insertVente,
   processMessage,
 };
