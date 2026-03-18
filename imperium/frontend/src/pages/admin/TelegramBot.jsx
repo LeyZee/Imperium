@@ -817,12 +817,16 @@ function TelegramJournal() {
             <option value="1">{'✅'} R&eacute;ussi</option>
             <option value="0">{'❌'} &Eacute;chou&eacute;</option>
           </select>
-          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
-            className="input-field" title="Date d&eacute;but"
-            style={{ width: 'auto', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }} />
-          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
-            className="input-field" title="Date fin"
-            style={{ width: 'auto', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+            <span style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>Du</span>
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
+              className="input-field"
+              style={{ width: 'auto', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }} />
+            <span style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>au</span>
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
+              className="input-field"
+              style={{ width: 'auto', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }} />
+          </div>
 
           {hasFilters && (
             <button onClick={clearFilters} title="R&eacute;initialiser les filtres"
