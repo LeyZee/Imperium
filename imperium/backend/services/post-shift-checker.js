@@ -62,37 +62,29 @@ function checkPostShiftNotifications() {
       periodeFin = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`;
     }
 
-    let notified = 0;
+    // Group missing reports by chatteur to avoid spam
+    const missingByChatteur = {}; // { chatteur_id: { prenom, shifts: [...] } }
 
     for (const shift of shifts) {
-      // Check if the shift's créneau has ended (with 30min buffer)
       const creneau = CRENEAUX[shift.creneau];
       if (!creneau) continue;
 
       const tz = shift.fuseau_horaire || 'Europe/Paris';
       const endHour = parseInt(creneau.end.split(':')[0]);
 
-      // Build the shift end time in the shift's timezone
       const shiftDate = new Date(shift.date + 'T00:00:00');
       let endDate = new Date(shiftDate);
-      endDate.setHours(endHour, 30, 0); // 30 min buffer after shift end
+      endDate.setHours(endHour, 30, 0);
 
-      // For overnight shifts (créneau 3: 20h-02h, créneau 4: 02h-08h)
       if (shift.creneau === 3) {
-        // Ends at 02h next day
         endDate.setDate(endDate.getDate() + 1);
         endDate.setHours(2, 30, 0);
       }
 
-      // Approximate timezone offset correction
       const tzOffset = getTimezoneOffset(tz);
       const localNowMs = now.getTime() + (tzOffset * 60 * 60 * 1000);
-      const endMs = endDate.getTime();
+      if (localNowMs < endDate.getTime()) continue;
 
-      // Has the shift ended? (compare in local time approximation)
-      if (localNowMs < endMs) continue;
-
-      // Check if there's already a sale for this chatteur + modele + plateforme in the current period
       const hasSale = db.prepare(`
         SELECT 1 FROM ventes
         WHERE chatteur_id = ?
@@ -107,38 +99,67 @@ function checkPostShiftNotifications() {
         periodeDebut, periodeFin
       );
 
-      // Check if chatteur already declared 0 sales for this shift
       const hasReport = db.prepare(
         'SELECT 1 FROM shift_reports WHERE shift_id = ? LIMIT 1'
       ).get(shift.id);
 
       if (!hasSale && !hasReport) {
-        // Send notification to chatteur (in-app)
-        notifyChatteur(
-          shift.chatteur_id,
-          'shift',
-          'Aucune vente détectée',
-          `Ton shift ${shift.modele_pseudo || ''} (${shift.plateforme_nom || ''}) est terminé mais aucune vente n'a été trouvée. Pense à les ajouter !`,
-          '/chatteur/mes-ventes'
-        );
-        // Also send via Telegram DM
-        const cInfo = CRENEAUX[shift.creneau];
-        notifyMissingReport(
-          shift.chatteur_id,
-          shift.plateforme_nom || 'Plateforme inconnue',
-          shift.date,
-          shift.creneau,
-          cInfo?.label || `Cr\u00e9neau ${shift.creneau}`
-        ).catch(() => {});
-        notified++;
+        if (!missingByChatteur[shift.chatteur_id]) {
+          missingByChatteur[shift.chatteur_id] = { prenom: shift.chatteur_prenom, shifts: [] };
+        }
+        missingByChatteur[shift.chatteur_id].shifts.push({
+          plateforme: shift.plateforme_nom || '?',
+          modele: shift.modele_pseudo || '',
+          date: shift.date,
+          creneau: creneau.label || `Cr\u00e9neau ${shift.creneau}`,
+        });
       }
 
-      // Mark as notified regardless (don't re-check completed shifts)
+      // Mark as notified regardless
       db.prepare('UPDATE shifts SET notification_sent = 1 WHERE id = ?').run(shift.id);
     }
 
+    // Send ONE grouped notification per chatteur
+    let notified = 0;
+    for (const [chatteurId, data] of Object.entries(missingByChatteur)) {
+      const count = data.shifts.length;
+      const summary = data.shifts
+        .slice(0, 3) // Max 3 shifts in the message
+        .map(s => `${s.plateforme} ${s.modele ? `(${s.modele})` : ''} le ${s.date.split('-').reverse().join('/')} (${s.creneau})`)
+        .join(', ');
+      const extra = count > 3 ? ` et ${count - 3} autre(s)` : '';
+
+      // One in-app notification
+      notifyChatteur(
+        parseInt(chatteurId),
+        'shift',
+        `${count} rapport${count > 1 ? 's' : ''} manquant${count > 1 ? 's' : ''}`,
+        `${summary}${extra}. Pense \u00e0 poster tes feedbacks !`,
+        '/chatteur/mes-ventes'
+      );
+
+      // One Telegram DM
+      const formatDate = (d) => d.split('-').reverse().join('/');
+      let dmText = `\u26A0\uFE0F <b>${count} rapport${count > 1 ? 's' : ''} manquant${count > 1 ? 's' : ''}</b>\n\n`;
+      for (const s of data.shifts.slice(0, 5)) {
+        dmText += `\u2022 ${s.plateforme}${s.modele ? ` (${s.modele})` : ''} \u2014 ${formatDate(s.date)} (${s.creneau})\n`;
+      }
+      if (count > 5) dmText += `\u2022 ... et ${count - 5} autre(s)\n`;
+      dmText += `\nPoste tes montants dans le groupe pour que je puisse les importer !`;
+
+      sendToChatteur(parseInt(chatteurId), dmText, {
+        _type: 'missing_report',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '\uD83D\uDCCA Mes ventes', callback_data: 'cmd_mesventes' }, { text: '\uD83D\uDC49 Menu', callback_data: 'cmd_aide' }],
+          ],
+        },
+      }).catch(() => {});
+      notified++;
+    }
+
     if (notified > 0) {
-      logger.info(`Post-shift checker: ${notified} notification(s) envoyée(s)`);
+      logger.info(`Post-shift checker: ${notified} chatteur(s) notifié(s) (rapports manquants groupés)`);
     }
   } catch (err) {
     logger.error('Post-shift checker error', { error: err.message });
