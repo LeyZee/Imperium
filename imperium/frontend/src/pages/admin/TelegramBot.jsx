@@ -817,15 +817,16 @@ function TelegramJournal() {
             <option value="1">{'✅'} R&eacute;ussi</option>
             <option value="0">{'❌'} &Eacute;chou&eacute;</option>
           </select>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-            <span style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>Du</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.5rem', background: 'rgba(0,0,0,0.02)', borderRadius: '6px' }}>
+            <Clock size={12} color="#94a3b8" />
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>Activit&eacute; du</span>
             <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
               className="input-field"
-              style={{ width: 'auto', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }} />
-            <span style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>au</span>
+              style={{ width: 'auto', padding: '0.3rem 0.4rem', fontSize: '0.75rem' }} />
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>au</span>
             <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
               className="input-field"
-              style={{ width: 'auto', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }} />
+              style={{ width: 'auto', padding: '0.3rem 0.4rem', fontSize: '0.75rem' }} />
           </div>
 
           {hasFilters && (
