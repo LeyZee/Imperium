@@ -761,6 +761,8 @@ function TelegramJournal() {
   const [typeFilter, setTypeFilter] = useState('');
   const [successFilter, setSuccessFilter] = useState('');
   const [dirFilter, setDirFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const PAGE_SIZE = 30;
 
   const fetchLogs = useCallback(async () => {
@@ -770,45 +772,67 @@ function TelegramJournal() {
       if (typeFilter) params.set('type', typeFilter);
       if (successFilter !== '') params.set('success', successFilter);
       if (dirFilter) params.set('direction', dirFilter);
+      if (dateFrom) params.set('date_from', dateFrom);
+      if (dateTo) params.set('date_to', dateTo);
       const { data } = await api.get(`/api/telegram/log?${params}`);
       setLogs(data.rows || []);
       setTotal(data.total || 0);
     } catch { /* empty */ }
     setLoading(false);
-  }, [page, typeFilter, successFilter, dirFilter]);
+  }, [page, typeFilter, successFilter, dirFilter, dateFrom, dateTo]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
+  function clearFilters() {
+    setTypeFilter(''); setSuccessFilter(''); setDirFilter('');
+    setDateFrom(''); setDateTo(''); setPage(0);
+  }
+
+  const hasFilters = typeFilter || successFilter || dirFilter || dateFrom || dateTo;
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
   return (
     <div>
       {/* Filters */}
       <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <Filter size={15} color="#64748b" />
 
           <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(0); }}
-            className="input-field" style={{ width: 'auto', minWidth: 150, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
+            className="input-field" style={{ width: 'auto', minWidth: 140, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
             <option value="">Tous les types</option>
             {Object.entries(TYPE_META).map(([key, meta]) => (
               <option key={key} value={key}>{meta.icon} {meta.label}</option>
             ))}
           </select>
           <select value={dirFilter} onChange={e => { setDirFilter(e.target.value); setPage(0); }}
-            className="input-field" style={{ width: 'auto', minWidth: 130, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
-            <option value="">📥📤 Tous</option>
-            <option value="out">📤 Envoyés</option>
-            <option value="in">📥 Reçus</option>
+            className="input-field" style={{ width: 'auto', minWidth: 110, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
+            <option value="">Tous</option>
+            <option value="out">{'📤'} Envoy&eacute;s</option>
+            <option value="in">{'📥'} Re&ccedil;us</option>
           </select>
           <select value={successFilter} onChange={e => { setSuccessFilter(e.target.value); setPage(0); }}
-            className="input-field" style={{ width: 'auto', minWidth: 130, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
-            <option value="">Tous les statuts</option>
-            <option value="1">{'✅'} Réussi</option>
-            <option value="0">{'❌'} Échoué</option>
+            className="input-field" style={{ width: 'auto', minWidth: 110, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
+            <option value="">Statuts</option>
+            <option value="1">{'✅'} R&eacute;ussi</option>
+            <option value="0">{'❌'} &Eacute;chou&eacute;</option>
           </select>
+          <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
+            className="input-field" title="Date d&eacute;but"
+            style={{ width: 'auto', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }} />
+          <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
+            className="input-field" title="Date fin"
+            style={{ width: 'auto', padding: '0.35rem 0.5rem', fontSize: '0.78rem' }} />
+
+          {hasFilters && (
+            <button onClick={clearFilters} title="R&eacute;initialiser les filtres"
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.3rem', fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+              <XCircle size={14} /> Reset
+            </button>
+          )}
+
           <div style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#64748b' }}>
-            {total} entrée{total > 1 ? 's' : ''}
+            {total} entr&eacute;e{total > 1 ? 's' : ''}
           </div>
           <button onClick={fetchLogs} className="btn-ghost" style={{ padding: '0.3rem', border: 'none', background: 'transparent', cursor: 'pointer', color: '#64748b' }}>
             <RefreshCw size={14} />

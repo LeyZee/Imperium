@@ -252,7 +252,8 @@ function checkShiftReminders() {
 
     if (shifts.length === 0) return;
 
-    let reminded = 0;
+    // Group upcoming shifts by chatteur to avoid spam
+    const remindersByChatteur = {};
 
     for (const shift of shifts) {
       const creneau = CRENEAUX[shift.creneau];
@@ -260,45 +261,68 @@ function checkShiftReminders() {
 
       const tz = shift.fuseau_horaire || 'Europe/Paris';
       const startHour = parseInt(creneau.start.split(':')[0]);
-
-      // Build shift start time
       const shiftDate = new Date(shift.date + 'T00:00:00');
       let startDate = new Date(shiftDate);
       startDate.setHours(startHour, 0, 0);
 
-      // Approximate timezone offset
       const tzOffset = getTimezoneOffset(tz);
       const localNowMs = now.getTime() + (tzOffset * 60 * 60 * 1000);
       const startMs = startDate.getTime();
-
-      // Send reminder if shift starts in the next 2 hours (but hasn't started yet)
       const hoursUntilStart = (startMs - localNowMs) / (60 * 60 * 1000);
+
       if (hoursUntilStart > 0 && hoursUntilStart <= 2) {
-        notifyShiftReminder(
-          shift.chatteur_id,
-          shift.plateforme_nom || 'Plateforme',
-          shift.modele_pseudo || null,
-          shift.date,
-          shift.creneau,
-          creneau.label
-        ).catch(() => {});
-
-        // Also send in-app notification
-        notifyChatteur(
-          shift.chatteur_id,
-          'shift_reminder',
-          'Shift bient\u00f4t !',
-          `Ton shift ${shift.plateforme_nom || ''} (${creneau.label}) commence bient\u00f4t.`,
-          '/chatteur/planning'
-        );
-
+        if (!remindersByChatteur[shift.chatteur_id]) {
+          remindersByChatteur[shift.chatteur_id] = [];
+        }
+        remindersByChatteur[shift.chatteur_id].push({
+          id: shift.id,
+          plateforme: shift.plateforme_nom || 'Plateforme',
+          modele: shift.modele_pseudo || null,
+          date: shift.date,
+          creneau: shift.creneau,
+          label: creneau.label,
+        });
         db.prepare('UPDATE shifts SET reminder_sent = 1 WHERE id = ?').run(shift.id);
-        reminded++;
       }
     }
 
+    // Send ONE grouped reminder per chatteur
+    let reminded = 0;
+    for (const [chatteurId, shiftList] of Object.entries(remindersByChatteur)) {
+      const count = shiftList.length;
+      const formatDate = (d) => d.split('-').reverse().join('/');
+
+      // One Telegram DM
+      let dmText = `\u23F0 <b>Shift${count > 1 ? 's' : ''} bient\u00f4t !</b>\n\n`;
+      for (const s of shiftList.slice(0, 5)) {
+        dmText += `\u2022 ${s.plateforme}${s.modele ? ` (${s.modele})` : ''} \u2014 ${formatDate(s.date)} (${s.label})\n`;
+      }
+      if (count > 5) dmText += `\u2022 ... et ${count - 5} autre(s)\n`;
+      dmText += `\nN'oublie pas de poster ton feedback apr\u00e8s ! \uD83D\uDCAA`;
+
+      sendToChatteur(parseInt(chatteurId), dmText, {
+        _type: 'shift_reminder',
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '\uD83D\uDCCA Mes ventes', callback_data: 'cmd_mesventes' }, { text: '\uD83D\uDC49 Menu', callback_data: 'cmd_aide' }],
+          ],
+        },
+      }).catch(() => {});
+
+      // One in-app notification
+      const summary = shiftList.slice(0, 3).map(s => `${s.plateforme}${s.modele ? ` (${s.modele})` : ''}`).join(', ');
+      notifyChatteur(
+        parseInt(chatteurId),
+        'shift_reminder',
+        `${count} shift${count > 1 ? 's' : ''} bient\u00f4t !`,
+        `${summary}${count > 3 ? ` et ${count - 3} autre(s)` : ''} \u2014 commence bient\u00f4t.`,
+        '/chatteur/planning'
+      );
+      reminded++;
+    }
+
     if (reminded > 0) {
-      logger.info(`Shift reminders: ${reminded} rappel(s) envoy\u00e9(s)`);
+      logger.info(`Shift reminders: ${reminded} chatteur(s) notifi\u00e9(s) (regroup\u00e9s)`);
     }
   } catch (err) {
     logger.error('Shift reminder error', { error: err.message });
