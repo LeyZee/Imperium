@@ -287,6 +287,22 @@ const server = app.listen(PORT, () => {
   // Post-shift notifications + pay day reminders + shift reminders + daily summaries
   const { checkPostShiftNotifications, checkPayDayReminder, checkShiftReminders, checkDailyChatteurSummary, checkDailyAdminSummary } = require('./services/post-shift-checker');
   const { runWatchdog, runDbMaintenance } = require('./services/watchdog');
+  const { materializeTemplateShifts } = require('./routes/planning');
+
+  // Materialize template shifts for the next 14 days on startup + every 30 min
+  function materializeShifts() {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const future = new Date();
+      future.setDate(future.getDate() + 14);
+      const futureStr = future.toISOString().split('T')[0];
+      const created = materializeTemplateShifts(today, futureStr);
+      if (created > 0) logger.info(`Materialized ${created} shifts from templates`);
+    } catch (err) {
+      logger.warn('Materialize shifts failed', { error: err.message });
+    }
+  }
+
   setInterval(() => {
     checkPostShiftNotifications();
     checkPayDayReminder();
@@ -295,6 +311,7 @@ const server = app.listen(PORT, () => {
     checkDailyAdminSummary();
     runWatchdog();
     runDbMaintenance();
+    materializeShifts();
   }, 30 * 60 * 1000); // 30 min
   // Run once on startup after a short delay
   setTimeout(() => {
@@ -304,6 +321,7 @@ const server = app.listen(PORT, () => {
     checkDailyChatteurSummary();
     checkDailyAdminSummary();
     runWatchdog();
+    materializeShifts();
   }, 10000);
 });
 

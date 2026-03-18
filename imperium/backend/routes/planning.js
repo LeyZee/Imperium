@@ -612,6 +612,54 @@ router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res
   ]);
 }));
 
+/**
+ * Materialize shift templates into real shifts for a date range.
+ * Creates real shift rows for templates that don't have a corresponding real shift yet.
+ * This ensures template-based shifts are available for vente association.
+ */
+function materializeTemplateShifts(startDate, endDate) {
+  const templates = db.prepare('SELECT * FROM shift_templates').all();
+  if (templates.length === 0) return 0;
+
+  const existing = new Set();
+  const realShifts = db.prepare(
+    'SELECT chatteur_id, modele_id, plateforme_id, date, creneau FROM shifts WHERE date BETWEEN ? AND ?'
+  ).all(startDate, endDate);
+  for (const s of realShifts) {
+    existing.add(`${s.chatteur_id}|${s.date}|${s.creneau}|${s.modele_id || 0}|${s.plateforme_id || 0}`);
+  }
+
+  const pad = n => String(n).padStart(2, '0');
+  const insert = db.prepare(
+    'INSERT INTO shifts (chatteur_id, modele_id, plateforme_id, date, creneau, fuseau_horaire) VALUES (?, ?, ?, ?, ?, ?)'
+  );
+
+  let created = 0;
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+
+  for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+    const dateStr = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    let dow = d.getDay();
+    dow = dow === 0 ? 7 : dow; // 1=Monday..7=Sunday
+
+    for (const t of templates) {
+      if (t.day_of_week !== dow) continue;
+      const key = `${t.chatteur_id}|${dateStr}|${t.creneau}|${t.modele_id || 0}|${t.plateforme_id || 0}`;
+      if (existing.has(key)) continue;
+
+      try {
+        insert.run(t.chatteur_id, t.modele_id ?? null, t.plateforme_id ?? null, dateStr, t.creneau, t.fuseau_horaire ?? null);
+        existing.add(key);
+        created++;
+      } catch (e) {
+        // Silently skip duplicates
+      }
+    }
+  }
+  return created;
+}
+
 // GET /api/shifts/for-vente — shifts matching criteria for vente association
 router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
   let { chatteur_id, modele_id, plateforme_id, days, ref_date } = req.query;
@@ -622,6 +670,15 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
     chatteur_id = req.user.chatteur_id;
   }
   if (!chatteur_id) throw new ApiError(400, 'chatteur_id requis');
+
+  // Materialize template shifts for the next 7 days so they appear in the dropdown
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const future = new Date();
+    future.setDate(future.getDate() + 7);
+    const futureStr = future.toISOString().split('T')[0];
+    materializeTemplateShifts(today, futureStr);
+  } catch (e) { /* silent */ }
 
   let where = ['s.chatteur_id = ?'];
   const params = [chatteur_id];
@@ -644,3 +701,4 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
 }));
 
 module.exports = router;
+module.exports.materializeTemplateShifts = materializeTemplateShifts;
