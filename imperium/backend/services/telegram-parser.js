@@ -327,7 +327,9 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id,
     const shiftModele = db.prepare('SELECT pseudo FROM modeles WHERE id = ?').get(shift.modele_id);
     modeleConflict = {
       topic: topicModele.pseudo,
+      topicId: topicModele.id,
       shift: shiftModele?.pseudo || `#${shift.modele_id}`,
+      shiftId: shift.modele_id,
     };
     logger.warn('Telegram: conflit modèle topic/shift', {
       chatteur: chatteur.prenom,

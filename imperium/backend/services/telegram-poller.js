@@ -4,7 +4,7 @@ const { GROUP_PLATFORM, processMessage, findChatteur, findShiftCandidates } = re
 const { notifyChatteur, notifyAdminsAndManagers } = require('../utils/notifier');
 const { logActivity } = require('../utils/activityLogger');
 const logger = require('../utils/logger');
-const { notifyVenteDetected, notifyImportIncomplete, askChatteurShift, askChatteurNoShift, logTelegramIncoming } = require('../utils/telegramSender');
+const { notifyVenteDetected, notifyImportIncomplete, askChatteurShift, askChatteurNoShift, askChatteurModele, logTelegramIncoming } = require('../utils/telegramSender');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -271,6 +271,43 @@ async function handleCallbackQuery(callbackQuery) {
     from: callbackQuery.from,
     text: '',
   };
+
+  // Handle model selection buttons (modele_VENTEID_MODELEID)
+  if (data.startsWith('modele_')) {
+    const parts = data.split('_');
+    const venteId = parseInt(parts[1], 10);
+    const modeleId = parseInt(parts[2], 10);
+
+    if (!venteId || isNaN(venteId) || !modeleId || isNaN(modeleId)) return;
+
+    try {
+      const modele = db.prepare('SELECT pseudo FROM modeles WHERE id = ?').get(modeleId);
+      db.prepare('UPDATE ventes SET modele_id = ? WHERE id = ?').run(modeleId, venteId);
+
+      // Recalculate paies
+      const vente = db.prepare('SELECT periode_debut, periode_fin FROM ventes WHERE id = ?').get(venteId);
+      if (vente) {
+        try {
+          const { recalculatePaies } = require('./paie-calculator');
+          recalculatePaies(vente.periode_debut, vente.periode_fin);
+        } catch {}
+      }
+
+      await sendMessage(chatId,
+        `\u2705 <b>Mod\u00e8le confirm\u00e9 !</b>\n\n` +
+        `La vente a \u00e9t\u00e9 mise \u00e0 jour avec le mod\u00e8le <b>${modele?.pseudo || '?'}</b>.\nMerci ! \uD83D\uDE4F`, {
+        reply_markup: { inline_keyboard: [[{ text: '\uD83D\uDCCA Mes ventes', callback_data: 'cmd_mesventes' }, { text: '\uD83D\uDC49 Menu', callback_data: 'cmd_aide' }]] },
+      });
+      logger.info('Chatteur model selection', { venteId, modeleId, modele: modele?.pseudo });
+      logTelegramIncoming(chatId, null, null, 'modele_selection', `Vente #${venteId}: modèle ${modele?.pseudo} confirmé par le chatteur`);
+    } catch (err) {
+      logger.error('Error handling model selection', { error: err.message, venteId });
+      await sendMessage(chatId, `\u274C Erreur lors de la mise \u00e0 jour. Un admin v\u00e9rifiera.`, {
+        reply_markup: { inline_keyboard: [[{ text: '\uD83D\uDC49 Menu', callback_data: 'cmd_aide' }]] },
+      });
+    }
+    return;
+  }
 
   // Handle shift selection buttons (shift_VENTEID_SHIFTID)
   if (data.startsWith('shift_')) {
@@ -776,12 +813,18 @@ function handleUpdate(update) {
       }).catch(() => {});
     }
 
-    // ⚠️ Handle model conflict (topic says X but shift says Y)
-    if (result.modeleConflict) {
+    // ⚠️ Handle model conflict (topic says X but shift says Y) → ask chatteur
+    if (result.modeleConflict && result.chatteur_id) {
       const conflictMsg = `⚠️ Conflit modèle pour ${result.chatteur} — ${result.montant_brut}€ ${platName} [${result.date_rapport}] : ` +
         `le topic dit "${result.modeleConflict.topic}" mais le shift planifié est "${result.modeleConflict.shift}". ` +
-        `Vérifiez si le chatteur a posté dans le bon topic ou si le planning est à jour.`;
+        `Le chatteur a été sollicité pour confirmer.`;
       notifyAdminsAndManagers('warning', '⚠️ Conflit modèle détecté', conflictMsg, '/admin/telegram');
+      // Ask the chatteur to pick the correct model
+      askChatteurModele(
+        result.chatteur_id, result.vente_id, result.montant_brut, platName, result.date_rapport,
+        result.modeleConflict.topic, result.modeleConflict.shift,
+        result.modeleConflict.topicId, result.modeleConflict.shiftId
+      ).catch(() => {});
     }
 
     // ⚠️ Handle incomplete imports (missing modele or shift)

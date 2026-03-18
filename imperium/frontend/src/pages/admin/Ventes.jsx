@@ -317,12 +317,14 @@ export default function Ventes() {
     } catch { setChatteurModeles(null); }
   }
 
-  async function fetchShiftsForVente(chatteurId, modeleId, plateformeId) {
+  async function fetchShiftsForVente(chatteurId, modeleId, plateformeId, refDate) {
     if (!chatteurId) { setAvailableShifts([]); return; }
     try {
       const params = new URLSearchParams({ chatteur_id: chatteurId, days: 14 });
       if (modeleId) params.append('modele_id', modeleId);
       if (plateformeId) params.append('plateforme_id', plateformeId);
+      // Use report date as center for shift search window
+      if (refDate) params.append('ref_date', refDate);
       const { data } = await api.get(`/api/shifts/for-vente?${params}`);
       setAvailableShifts(data);
     } catch { setAvailableShifts([]); }
@@ -348,7 +350,7 @@ export default function Ventes() {
     });
     setError('');
     fetchChatteurModeles(vente.chatteur_id);
-    fetchShiftsForVente(vente.chatteur_id, vente.modele_id, vente.plateforme_id);
+    fetchShiftsForVente(vente.chatteur_id, vente.modele_id, vente.plateforme_id, vente.periode_debut);
     setModal(vente);
   }
 
@@ -998,7 +1000,7 @@ export default function Ventes() {
                     const val = e.target.value;
                     setForm({ ...form, chatteur_id: val, modele_id: '', plateforme_id: '', shift_id: '' });
                     fetchChatteurModeles(val);
-                    fetchShiftsForVente(val, '', '');
+                    fetchShiftsForVente(val, '', '', form.date);
                   }} required>
                     <option value="">Sélectionner...</option>
                     {chatteurs.map(c => <option key={c.id} value={c.id}>{c.prenom}</option>)}
@@ -1023,7 +1025,7 @@ export default function Ventes() {
                         newPfId = '';
                       }
                       setForm({ ...form, modele_id: newModeleId, plateforme_id: newPfId, shift_id: '' });
-                      fetchShiftsForVente(form.chatteur_id, newModeleId, newPfId);
+                      fetchShiftsForVente(form.chatteur_id, newModeleId, newPfId, form.date);
                     }}
                     required
                   >
@@ -1065,7 +1067,7 @@ export default function Ventes() {
                     return (
                       <select className="input-field" value={form.plateforme_id} onChange={e => {
                         setForm({ ...form, plateforme_id: e.target.value, shift_id: '' });
-                        fetchShiftsForVente(form.chatteur_id, form.modele_id, e.target.value);
+                        fetchShiftsForVente(form.chatteur_id, form.modele_id, e.target.value, form.date);
                       }} required>
                         <option value="">Sélectionner...</option>
                         {availablePfs.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
@@ -1095,7 +1097,10 @@ export default function Ventes() {
                       className="input-field"
                       type="date"
                       value={form.date}
-                      onChange={e => setForm({ ...form, date: e.target.value })}
+                      onChange={e => {
+                        setForm({ ...form, date: e.target.value, shift_id: '' });
+                        if (form.chatteur_id) fetchShiftsForVente(form.chatteur_id, form.modele_id, form.plateforme_id, e.target.value);
+                      }}
                       required
                     />
                   </div>
@@ -1118,17 +1123,29 @@ export default function Ventes() {
                   <div>
                     <label className="label">Shift *</label>
                     <select className="input-field" value={form.shift_id} onChange={e => setForm({ ...form, shift_id: e.target.value })} required>
-                      <option value="">Sélectionner le shift...</option>
-                      {availableShifts.map(s => (
-                        <option key={s.id} value={s.id}>
-                          {new Date(s.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} — {CRENEAUX_LABELS[s.creneau] || '?'}
-                          {s.modele_pseudo ? ` (${s.modele_pseudo})` : ''}
-                        </option>
-                      ))}
+                      <option value="">S&eacute;lectionner le shift...</option>
+                      {availableShifts.map(s => {
+                        const shiftDate = new Date(s.date + 'T00:00:00');
+                        const refDate = form.date ? new Date(form.date + 'T00:00:00') : new Date();
+                        const diffDays = Math.round((shiftDate - refDate) / (1000 * 60 * 60 * 24));
+                        const proximity = diffDays === 0 ? '\u2B50' : Math.abs(diffDays) <= 1 ? '\u2705' : '';
+                        return (
+                          <option key={s.id} value={s.id}>
+                            {proximity}{proximity ? ' ' : ''}{shiftDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} — {CRENEAUX_LABELS[s.creneau] || '?'}
+                            {s.modele_pseudo ? ` (${s.modele_pseudo})` : ''}
+                            {s.plateforme_nom ? ` [${s.plateforme_nom}]` : ''}
+                          </option>
+                        );
+                      })}
                     </select>
+                    {availableShifts.length > 0 && (
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
+                        {availableShifts.length} shift{availableShifts.length > 1 ? 's' : ''} trouv&eacute;{availableShifts.length > 1 ? 's' : ''} {'(\u2B50 = m\u00eame jour)'}
+                      </div>
+                    )}
                     {form.chatteur_id && availableShifts.length === 0 && (
                       <div style={{ fontSize: '0.75rem', color: '#f59e0b', marginTop: '0.3rem', padding: '0.4rem 0.6rem', background: 'rgba(245,158,11,0.08)', borderRadius: '0.3rem', border: '1px solid rgba(245,158,11,0.2)' }}>
-                        Aucun shift trouvé pour ce chatteur (14 derniers jours). Impossible d'ajouter une vente sans shift.
+                        Aucun shift trouv&eacute; autour de cette date. V&eacute;rifiez le planning ou changez la date du rapport.
                       </div>
                     )}
                   </div>

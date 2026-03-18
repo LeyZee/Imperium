@@ -47,7 +47,9 @@ const TYPE_META = {
   vente_import: { label: 'Import vente', color: '#10b981', icon: '\uD83D\uDCB5', dir: 'in' },
   vente_duplicate: { label: 'Doublon ignoré', color: '#94a3b8', icon: '\uD83D\uDD04', dir: 'in' },
   vente_error: { label: 'Erreur import', color: '#ef4444', icon: '\u26A0\uFE0F', dir: 'in' },
-  daily_summary: { label: 'Récap quotidien', color: '#6366f1', icon: '\uD83D\uDCCA', dir: 'out' },
+  shift_selection: { label: 'Shift confirm\u00e9', color: '#10b981', icon: '\u2705', dir: 'in' },
+  modele_selection: { label: 'Mod\u00e8le confirm\u00e9', color: '#10b981', icon: '\u2705', dir: 'in' },
+  daily_summary: { label: 'R\u00e9cap quotidien', color: '#6366f1', icon: '\uD83D\uDCCA', dir: 'out' },
 };
 
 export default function TelegramBot({ embedded = false }) {

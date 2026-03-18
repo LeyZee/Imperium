@@ -321,6 +321,34 @@ async function askChatteurNoShift(chatteurId, venteId, montant, plateforme, date
 }
 
 /**
+ * Ask chatteur to confirm the correct model when a conflict is detected.
+ * Shows the topic model and the shift model as buttons.
+ * @param {number} chatteurId
+ * @param {number} venteId
+ * @param {number} montant
+ * @param {string} plateforme
+ * @param {string} date
+ * @param {string} topicModele - model name from topic
+ * @param {string} shiftModele - model name from shift
+ * @param {number} topicModeleId
+ * @param {number} shiftModeleId
+ */
+async function askChatteurModele(chatteurId, venteId, montant, plateforme, date, topicModele, shiftModele, topicModeleId, shiftModeleId) {
+  const formatDate = (d) => d.split('-').reverse().join('/');
+
+  const text = `\u26A0\uFE0F <b>Conflit de mod\u00e8le d\u00e9tect\u00e9</b>\n\n` +
+    `Ta vente de <b>${escapeHTML(montant)}\u20AC</b> sur ${escapeHTML(plateforme)} (${formatDate(date)}) :\n\n` +
+    `\u2022 Le <b>topic Telegram</b> dit : <b>${escapeHTML(topicModele)}</b>\n` +
+    `\u2022 Ton <b>shift planifi\u00e9</b> dit : <b>${escapeHTML(shiftModele)}</b>\n\n` +
+    `\uD83D\uDC47 <b>Sur quel mod\u00e8le \u00e9tait cette vente ?</b>`;
+
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'vente_detected' }, [
+    [{ text: `\uD83D\uDC49 ${topicModele}`, callback_data: `modele_${venteId}_${topicModeleId}` }],
+    [{ text: `\uD83D\uDC49 ${shiftModele}`, callback_data: `modele_${venteId}_${shiftModeleId}` }],
+  ]));
+}
+
+/**
  * Notify chatteur that they reached a new palier.
  */
 async function notifyPalierReached(chatteurId, palierLabel, palierEmoji, bonus) {
@@ -461,6 +489,7 @@ module.exports = {
   notifyImportIncomplete,
   askChatteurShift,
   askChatteurNoShift,
+  askChatteurModele,
   notifyPalierReached,
   notifyPaieSummary,
   notifyShiftReminder,

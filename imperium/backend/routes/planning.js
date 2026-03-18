@@ -613,9 +613,10 @@ router.get('/export-csv', authMiddleware, adminOrManager, asyncHandler((req, res
 }));
 
 // GET /api/shifts/for-vente — shifts matching criteria for vente association
+// Supports optional `ref_date` to center the search window around a specific date
 router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
-  let { chatteur_id, modele_id, plateforme_id, days } = req.query;
-  const maxDays = parseInt(days) || 7;
+  let { chatteur_id, modele_id, plateforme_id, days, ref_date } = req.query;
+  const maxDays = Math.min(parseInt(days) || 14, 60);
 
   // Chatteur can only see their own shifts
   if (req.user.role === 'chatteur') {
@@ -623,8 +624,21 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
   }
   if (!chatteur_id) throw new ApiError(400, 'chatteur_id requis');
 
-  let where = ['s.chatteur_id = ?', `s.date >= date('now', '-${maxDays} days')`];
+  // Center the search window around ref_date (or today if not provided)
+  const center = ref_date || "date('now')";
+  const isRefDate = !!ref_date;
+
+  let where = ['s.chatteur_id = ?'];
   const params = [chatteur_id];
+
+  if (isRefDate) {
+    // Search ±maxDays around the reference date
+    where.push(`s.date BETWEEN date(?, '-${maxDays} days') AND date(?, '+${maxDays} days')`);
+    params.push(ref_date, ref_date);
+  } else {
+    // Default: past maxDays + 7 days in the future
+    where.push(`s.date BETWEEN date('now', '-${maxDays} days') AND date('now', '+7 days')`);
+  }
 
   if (modele_id) { where.push('s.modele_id = ?'); params.push(modele_id); }
   if (plateforme_id) { where.push('s.plateforme_id = ?'); params.push(plateforme_id); }
@@ -636,8 +650,9 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
     LEFT JOIN modeles m ON m.id = s.modele_id
     LEFT JOIN plateformes p ON p.id = s.plateforme_id
     WHERE ${where.join(' AND ')}
-    ORDER BY s.date DESC, s.creneau ASC
-  `).all(...params);
+    ORDER BY ${isRefDate ? `ABS(julianday(s.date) - julianday(?))` : 's.date DESC'}, s.creneau ASC
+    LIMIT 30
+  `).all(...params, ...(isRefDate ? [ref_date] : []));
 
   res.json(shifts);
 }));
