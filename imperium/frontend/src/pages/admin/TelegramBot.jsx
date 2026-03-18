@@ -570,7 +570,7 @@ export default function TelegramBot({ embedded = false }) {
           <table>
             <thead>
               <tr>
-                <th>Date / heure</th>
+                <th>Date rapport</th>
                 <th>Chatteur</th>
                 <th>Plateforme</th>
                 <th>Mod&egrave;le</th>
@@ -587,8 +587,15 @@ export default function TelegramBot({ embedded = false }) {
                 const isComplete = hasModel && hasShift && !hasConflict;
                 return (
                 <tr key={imp.id} style={!isComplete ? { background: 'rgba(245,158,11,0.04)' } : undefined}>
-                  <td style={{ fontSize: '0.8rem', color: '#64748b', whiteSpace: 'nowrap' }}>
-                    {formatDateTime(imp.created_at?.endsWith('Z') ? imp.created_at : (imp.created_at + 'Z'))}
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <div style={{ fontSize: '0.82rem', fontWeight: 500, color: '#1a1f2e' }}>
+                      {imp.periode_debut
+                        ? new Date(imp.periode_debut + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })
+                        : '—'}
+                    </div>
+                    <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+                      Import&eacute; {formatDateTime(imp.created_at?.endsWith('Z') ? imp.created_at : (imp.created_at + 'Z'))}
+                    </div>
                   </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

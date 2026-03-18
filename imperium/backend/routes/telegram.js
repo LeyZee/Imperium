@@ -101,6 +101,7 @@ router.get('/status', authMiddleware, adminOnly, asyncHandler((req, res) => {
 
   const recentImports = db.prepare(`
     SELECT v.id, v.montant_brut, v.modele_id, v.shift_id, v.notes, v.created_at,
+      v.periode_debut, v.periode_fin,
       c.prenom AS chatteur_prenom, c.couleur AS chatteur_couleur,
       p.nom AS plateforme_nom, p.devise, p.couleur_fond, p.couleur_texte,
       m.pseudo AS modele_pseudo

@@ -323,10 +323,19 @@ export default function Ventes() {
       const params = new URLSearchParams({ chatteur_id: chatteurId, days: 14 });
       if (modeleId) params.append('modele_id', modeleId);
       if (plateformeId) params.append('plateforme_id', plateformeId);
-      // Use report date as center for shift search window
       if (refDate) params.append('ref_date', refDate);
       const { data } = await api.get(`/api/shifts/for-vente?${params}`);
-      setAvailableShifts(data);
+
+      // If no shifts found with model filter, retry WITHOUT model to show all shifts
+      if (data.length === 0 && modeleId) {
+        const fallbackParams = new URLSearchParams({ chatteur_id: chatteurId, days: 14 });
+        if (plateformeId) fallbackParams.append('plateforme_id', plateformeId);
+        if (refDate) fallbackParams.append('ref_date', refDate);
+        const { data: allShifts } = await api.get(`/api/shifts/for-vente?${fallbackParams}`);
+        setAvailableShifts(allShifts);
+      } else {
+        setAvailableShifts(data);
+      }
     } catch { setAvailableShifts([]); }
   }
 
