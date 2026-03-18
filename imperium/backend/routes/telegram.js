@@ -253,34 +253,46 @@ router.post('/announce-start', authMiddleware, adminOnly, controlLimiter, asyncH
     throw new ApiError(409, 'Le bot doit \u00eatre d\u00e9marr\u00e9 pour envoyer des annonces');
   }
 
-  // Build list of unregistered chatteurs (have telegram_user_id from group but no /start)
+  // Categorize all active chatteurs by their Telegram status
+  const registered = db.prepare(
+    "SELECT prenom FROM chatteurs WHERE actif = 1 AND telegram_user_id IS NOT NULL AND telegram_dm_ok = 1 AND role != 'va' ORDER BY prenom"
+  ).all();
   const unregistered = db.prepare(
-    "SELECT prenom FROM chatteurs WHERE actif = 1 AND telegram_user_id IS NOT NULL AND (telegram_dm_ok = 0 OR telegram_dm_ok IS NULL)"
+    "SELECT prenom FROM chatteurs WHERE actif = 1 AND telegram_user_id IS NOT NULL AND (telegram_dm_ok = 0 OR telegram_dm_ok IS NULL) AND role != 'va' ORDER BY prenom"
   ).all();
   const noTelegram = db.prepare(
-    "SELECT prenom FROM chatteurs WHERE actif = 1 AND telegram_user_id IS NULL AND role != 'va'"
+    "SELECT prenom FROM chatteurs WHERE actif = 1 AND telegram_user_id IS NULL AND role != 'va' ORDER BY prenom"
   ).all();
 
-  let mentionList = '';
+  let statusList = '';
+
+  if (registered.length > 0) {
+    statusList += '\n\n\u2705 <b>D\u00e9j\u00e0 enregistr\u00e9s :</b>\n' +
+      registered.map(c => `\u2022 ${c.prenom} \u2714\uFE0F`).join('\n');
+  }
   if (unregistered.length > 0) {
-    mentionList += '\n\n\uD83D\uDD34 <b>Auto-link\u00e9s mais pas encore /start :</b>\n' +
-      unregistered.map(c => `\u2022 ${c.prenom}`).join('\n');
+    statusList += '\n\n\uD83D\uDD34 <b>D\u00e9tect\u00e9s mais pas encore /start :</b>\n' +
+      unregistered.map(c => `\u2022 <b>${c.prenom}</b> \u2190 doit faire /start !`).join('\n');
   }
   if (noTelegram.length > 0) {
-    mentionList += '\n\n\u26AA <b>Pas encore d\u00e9tect\u00e9s :</b>\n' +
-      noTelegram.map(c => `\u2022 ${c.prenom}`).join('\n');
+    statusList += '\n\n\u26AA <b>Pas encore d\u00e9tect\u00e9s :</b>\n' +
+      noTelegram.map(c => `\u2022 <b>${c.prenom}</b>`).join('\n');
   }
 
+  const needAction = unregistered.length + noTelegram.length;
   const message =
     `\uD83D\uDCE2 <b>IMPORTANT \u2014 Activez vos notifications Imperium !</b>\n\n` +
-    `Le bot <b>@${status.botUsername}</b> peut maintenant vous envoyer des <b>notifications en DM</b> :\n` +
-    `\u2022 \u2705 Confirmation quand votre rapport de shift est import\u00e9\n` +
-    `\u2022 \uD83D\uDCB0 R\u00e9sum\u00e9 de paie\n` +
+    `Le bot <b>@${status.botUsername}</b> vous envoie des <b>notifications en DM</b> :\n` +
+    `\u2022 \u2705 Confirmation quand votre vente est import\u00e9e\n` +
     `\u2022 \u23F0 Rappels de shift\n` +
+    `\u2022 \uD83D\uDCCA R\u00e9cap quotidien de vos ventes\n` +
     `\u2022 \uD83C\uDFC6 Paliers de primes atteints\n\n` +
-    `\uD83D\uDC49 <b>Pour activer :</b> envoyez <code>/start</code> en message priv\u00e9 \u00e0 @${status.botUsername}\n\n` +
-    `C'est rapide (10 secondes), il suffit de taper votre pr\u00e9nom et c'est fait !` +
-    mentionList;
+    (needAction > 0
+      ? `\uD83D\uDC49 <b>${needAction} personne${needAction > 1 ? 's' : ''} ${needAction > 1 ? 'doivent' : 'doit'} encore s'enregistrer !</b>\n` +
+        `Envoyez <code>/start</code> en message priv\u00e9 \u00e0 @${status.botUsername}\n` +
+        `C'est rapide : cliquez sur votre pr\u00e9nom et c'est fait !`
+      : `\u2705 <b>Tout le monde est enregistr\u00e9 !</b> Bravo \u00e0 toute l'\u00e9quipe.`) +
+    statusList;
 
   const results = await telegramPoller.sendToGroups(message);
   logActivity(req.user.id, 'telegram_announce_start', 'telegram', null, `Envoy\u00e9 dans ${results.sent} groupe(s)`);
@@ -288,6 +300,7 @@ router.post('/announce-start', authMiddleware, adminOnly, controlLimiter, asyncH
   res.json({
     message: `Annonce envoy\u00e9e dans ${results.sent} groupe(s)`,
     ...results,
+    registeredCount: registered.length,
     unregisteredCount: unregistered.length,
     noTelegramCount: noTelegram.length,
   });

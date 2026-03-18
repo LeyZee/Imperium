@@ -272,6 +272,19 @@ async function handleCallbackQuery(callbackQuery) {
     text: '',
   };
 
+  // Handle registration name buttons (reg_PRENOM)
+  if (data.startsWith('reg_')) {
+    const prenom = data.substring(4);
+    // Ensure we have a pending registration session (or create one)
+    const userIdStr = callbackQuery.from?.id ? String(callbackQuery.from.id) : null;
+    if (userIdStr) {
+      pendingRegistrations.set(userIdStr, { step: 'awaiting_name', startedAt: Date.now() });
+    }
+    fakeMsg.text = prenom;
+    await handlePrivateMessage(fakeMsg);
+    return;
+  }
+
   switch (data) {
     case 'cmd_start':
       fakeMsg.text = '/start';
@@ -322,11 +335,36 @@ async function handlePrivateMessage(msg) {
   cleanupRegistrations();
 
   // Check if already registered
-  const alreadyLinked = db.prepare('SELECT id, prenom FROM chatteurs WHERE telegram_user_id = ? AND actif = 1').get(userId);
+  const alreadyLinked = db.prepare('SELECT id, prenom, telegram_dm_ok FROM chatteurs WHERE telegram_user_id = ? AND actif = 1').get(userId);
 
-  // Handle /start command
-  if (text === '/start' || text.startsWith('/start ')) {
+  // Handle /start command (also match /start@BotName sent by Telegram menu)
+  if (text === '/start' || text.startsWith('/start ') || text.startsWith('/start@')) {
     if (alreadyLinked) {
+      // FIX: If auto-linked from group but never did /start, activate DM notifications now
+      if (!alreadyLinked.telegram_dm_ok) {
+        try {
+          db.prepare('UPDATE chatteurs SET telegram_dm_ok = 1 WHERE id = ?').run(alreadyLinked.id);
+          logger.info(`Telegram DM activé pour ${alreadyLinked.prenom} via /start (était auto-linké)`);
+          logTelegramIncoming(chatId, alreadyLinked.id, alreadyLinked.prenom, 'registration', `DM activé via /start — ${alreadyLinked.prenom} (était auto-linké)`);
+          await sendMessage(chatId,
+            `\u2705 Parfait <b>${alreadyLinked.prenom}</b> ! Tes notifications DM sont maintenant activ\u00e9es.\n\n` +
+            `Tu recevras d\u00e9sormais :\n` +
+            `\u2022 \u2705 Confirmations de ventes import\u00e9es\n` +
+            `\u2022 \u23F0 Rappels de shift\n` +
+            `\u2022 \uD83D\uDCCA R\u00e9cap quotidien\n` +
+            `\u2022 \uD83C\uDFC6 Notifications de paliers`, {
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: '\uD83D\uDCCA Mes ventes', callback_data: 'cmd_mesventes' }],
+                [{ text: '\u2753 Toutes les commandes', callback_data: 'cmd_aide' }],
+              ],
+            },
+          });
+          return true;
+        } catch (err) {
+          logger.error('Erreur activation DM via /start', { error: err.message });
+        }
+      }
       await sendMessage(chatId,
         `\u2705 Tu es d\u00e9j\u00e0 enregistr\u00e9(e) comme <b>${alreadyLinked.prenom}</b> !\n\n` +
         `Tes rapports de shift dans les groupes seront automatiquement li\u00e9s \u00e0 ton compte.`, {
@@ -346,22 +384,37 @@ async function handlePrivateMessage(msg) {
     }
     pendingRegistrations.set(userId, { step: 'awaiting_name', startedAt: Date.now() });
 
-    const chatteurs = db.prepare('SELECT prenom FROM chatteurs WHERE actif = 1 AND role != \'va\' AND telegram_user_id IS NULL ORDER BY prenom').all();
-    const nameList = chatteurs.map(c => `\u2022 ${c.prenom}`).join('\n');
+    // Show available names as clickable buttons for easy registration
+    const chatteurs = db.prepare("SELECT prenom FROM chatteurs WHERE actif = 1 AND role != 'va' AND telegram_user_id IS NULL ORDER BY prenom").all();
 
-    let message = `\uD83D\uDC4B Bienvenue sur le bot <b>Imperium</b> !\n\n` +
-      `Pour lier ton compte Telegram \u00e0 ton profil chatteur, envoie-moi ton <b>pr\u00e9nom</b> tel qu'il appara\u00eet dans l'application.`;
+    let message = `\uD83D\uDC4B <b>Bienvenue sur le bot Imperium !</b>\n\n` +
+      `Pour lier ton compte Telegram, envoie-moi ton <b>pr\u00e9nom</b> tel qu'il appara\u00eet dans l'application.\n\n`;
 
-    if (nameList) {
-      message += `\n\n<b>Chatteurs non encore li\u00e9s :</b>\n${nameList}`;
+    if (chatteurs.length > 0) {
+      message += `<b>Pr\u00e9noms disponibles :</b>\n${chatteurs.map(c => `\u2022 ${c.prenom}`).join('\n')}\n\n`;
+      message += `\uD83D\uDC47 <b>Clique sur ton pr\u00e9nom ci-dessous ou tape-le :</b>`;
+    } else {
+      message += `Tous les chatteurs sont d\u00e9j\u00e0 li\u00e9s ! Contacte un admin si tu n'es pas dans la liste.`;
     }
 
-    await sendMessage(chatId, message);
+    // Build inline keyboard with chatteur names as buttons (max 8 per row, max 3 rows)
+    const nameButtons = chatteurs.slice(0, 24).map(c => ({
+      text: c.prenom,
+      callback_data: `reg_${c.prenom.substring(0, 30)}`,
+    }));
+    const rows = [];
+    for (let i = 0; i < nameButtons.length; i += 3) {
+      rows.push(nameButtons.slice(i, i + 3));
+    }
+
+    await sendMessage(chatId, message, {
+      reply_markup: rows.length > 0 ? { inline_keyboard: rows } : undefined,
+    });
     return true;
   }
 
   // Handle /status command — let chatteur check their registration
-  if (text === '/status') {
+  if (text === '/status' || text.startsWith('/status@')) {
     if (alreadyLinked) {
       await sendMessage(chatId, `\u2705 Enregistr\u00e9(e) comme <b>${alreadyLinked.prenom}</b>.`, {
         reply_markup: {
@@ -384,13 +437,13 @@ async function handlePrivateMessage(msg) {
   }
 
   // Handle /aide or /help command — show interactive help menu
-  if (text === '/aide' || text === '/help') {
+  if (text === '/aide' || text === '/help' || text.startsWith('/aide@') || text.startsWith('/help@')) {
     await sendHelpMenu(chatId, alreadyLinked);
     return true;
   }
 
   // Handle /mes-ventes command — show current period ventes summary
-  if (text === '/mes-ventes' || text === '/mesventes') {
+  if (text === '/mes-ventes' || text === '/mesventes' || text.startsWith('/mesventes@') || text.startsWith('/mes-ventes@')) {
     if (!alreadyLinked) {
       await sendMessage(chatId, `\u274C Tu dois d'abord t'enregistrer pour voir tes ventes.`, {
         reply_markup: {

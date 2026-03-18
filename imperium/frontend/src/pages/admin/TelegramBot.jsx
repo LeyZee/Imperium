@@ -5,7 +5,7 @@ import {
   MessageSquare, Clock, TrendingUp, Play, Square,
   AlertTriangle, CheckCircle, RefreshCw, Wifi, WifiOff,
   Trash2, ExternalLink, ScrollText, Send, Filter, ChevronLeft, ChevronRight,
-  XCircle, Edit3, Link, LinkBreak, User, Check, X,
+  XCircle, Edit3, User,
 } from 'lucide-react';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
