@@ -1026,9 +1026,9 @@ function ChatteurTelegramStatus({ chatteurs }) {
         display: 'flex', gap: '1.25rem', flexWrap: 'wrap',
         fontSize: '0.7rem', color: '#94a3b8',
       }}>
-        <span>\u2705 Enregistr\u00e9 (DM actifs)</span>
-        <span>\u26A0\uFE0F D\u00e9tect\u00e9 (pas de /start)</span>
-        <span>\u274C Non li\u00e9</span>
+        <span>{'✅'} Enregistr&eacute; (DM actifs)</span>
+        <span>{'⚠️'} D&eacute;tect&eacute; (pas de /start)</span>
+        <span>{'❌'} Non li&eacute;</span>
       </div>
     </div>
   );
