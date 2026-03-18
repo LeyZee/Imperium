@@ -97,27 +97,44 @@ function findModele(topicName) {
 
 /**
  * Find shift with modele constraint (more precise when modele is known from topic).
- * Searches ±3 days to handle late feedback posting.
+ * Handles night shifts: créneau 3 (20h-02h) and 4 (02h-08h) from the previous day
+ * cover the next calendar day, so we also check date-1 with night créneaux.
  */
 function findShiftForVenteWithModele(chatteur_id, plateforme_id, modele_id, dateStr) {
-  // Match with modele_id for precision (±3 days window)
-  const shift = db.prepare(`
+  // 1. Exact date match (any créneau)
+  const exact = db.prepare(`
+    SELECT id, modele_id FROM shifts
+    WHERE chatteur_id = ? AND plateforme_id = ? AND modele_id = ? AND date = ?
+    LIMIT 1
+  `).get(chatteur_id, plateforme_id, modele_id, dateStr);
+  if (exact) return exact;
+
+  // 2. Night shift from previous day (créneau 3=20h-02h or 4=02h-08h covers next day)
+  const nightShift = db.prepare(`
+    SELECT id, modele_id FROM shifts
+    WHERE chatteur_id = ? AND plateforme_id = ? AND modele_id = ?
+      AND date = date(?, '-1 day') AND creneau IN (3, 4)
+    LIMIT 1
+  `).get(chatteur_id, plateforme_id, modele_id, dateStr);
+  if (nightShift) return nightShift;
+
+  // 3. Expanded window ±3 days (for late posting)
+  const nearby = db.prepare(`
     SELECT id, modele_id FROM shifts
     WHERE chatteur_id = ? AND plateforme_id = ? AND modele_id = ?
       AND date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
     ORDER BY ABS(julianday(date) - julianday(?)) ASC
     LIMIT 1
   `).get(chatteur_id, plateforme_id, modele_id, dateStr, dateStr, dateStr);
+  if (nearby) return nearby;
 
-  if (shift) return shift;
-
-  // Fallback: match without modele_id
+  // 4. Fallback: match without modele_id
   return findShiftForVente(chatteur_id, plateforme_id, dateStr);
 }
 
 /**
  * Find ALL candidate shifts for a vente (for disambiguation when multiple exist).
- * Returns array of shifts with details, sorted by date proximity.
+ * Includes night shifts from previous day.
  */
 function findShiftCandidates(chatteur_id, plateforme_id, dateStr) {
   return db.prepare(`
@@ -126,10 +143,13 @@ function findShiftCandidates(chatteur_id, plateforme_id, dateStr) {
     FROM shifts s
     LEFT JOIN modeles m ON m.id = s.modele_id
     WHERE s.chatteur_id = ? AND s.plateforme_id = ?
-      AND s.date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
+      AND (
+        s.date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
+        OR (s.date = date(?, '-1 day') AND s.creneau IN (3, 4))
+      )
     ORDER BY ABS(julianday(s.date) - julianday(?)) ASC
     LIMIT 5
-  `).all(chatteur_id, plateforme_id, dateStr, dateStr, dateStr);
+  `).all(chatteur_id, plateforme_id, dateStr, dateStr, dateStr, dateStr);
 }
 
 /**
@@ -221,9 +241,27 @@ function isDuplicate(chatteur_id, plateforme_id, montant_brut, periode_debut, pe
 
 /**
  * Find the most likely shift for a vente (same chatteur, plateforme, recent date).
- * Searches ±3 days to handle late feedback posting.
+ * Handles night shifts from previous day.
  */
 function findShiftForVente(chatteur_id, plateforme_id, dateStr) {
+  // 1. Exact date match
+  const exact = db.prepare(`
+    SELECT id, modele_id FROM shifts
+    WHERE chatteur_id = ? AND plateforme_id = ? AND date = ?
+    ORDER BY creneau ASC LIMIT 1
+  `).get(chatteur_id, plateforme_id, dateStr);
+  if (exact) return exact;
+
+  // 2. Night shift from previous day
+  const nightShift = db.prepare(`
+    SELECT id, modele_id FROM shifts
+    WHERE chatteur_id = ? AND plateforme_id = ?
+      AND date = date(?, '-1 day') AND creneau IN (3, 4)
+    LIMIT 1
+  `).get(chatteur_id, plateforme_id, dateStr);
+  if (nightShift) return nightShift;
+
+  // 3. Expanded window ±3 days
   const shift = db.prepare(`
     SELECT id, modele_id FROM shifts
     WHERE chatteur_id = ? AND plateforme_id = ?

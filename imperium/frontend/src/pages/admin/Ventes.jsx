@@ -1127,19 +1127,21 @@ export default function Ventes() {
                         const shiftDate = new Date(s.date + 'T00:00:00');
                         const refDate = form.date ? new Date(form.date + 'T00:00:00') : new Date();
                         const diffDays = Math.round((shiftDate - refDate) / (1000 * 60 * 60 * 24));
-                        const proximity = diffDays === 0 ? '\u2B50' : Math.abs(diffDays) <= 1 ? '\u2705' : '';
+                        // Night shifts (20h-02h, 02h-08h) from the day before cover the report date
+                        const isNightCover = diffDays === -1 && (s.creneau === 3 || s.creneau === 4);
+                        const proximity = diffDays === 0 ? '\u2B50' : (isNightCover ? '\uD83C\uDF19' : (Math.abs(diffDays) <= 1 ? '\u2705' : ''));
                         return (
                           <option key={s.id} value={s.id}>
                             {proximity}{proximity ? ' ' : ''}{shiftDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} — {CRENEAUX_LABELS[s.creneau] || '?'}
                             {s.modele_pseudo ? ` (${s.modele_pseudo})` : ''}
-                            {s.plateforme_nom ? ` [${s.plateforme_nom}]` : ''}
+                            {isNightCover ? ' \u2192 nuit du ' + shiftDate.toLocaleDateString('fr-FR', { day: 'numeric' }) + '-' + refDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : ''}
                           </option>
                         );
                       })}
                     </select>
                     {availableShifts.length > 0 && (
                       <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                        {availableShifts.length} shift{availableShifts.length > 1 ? 's' : ''} trouv&eacute;{availableShifts.length > 1 ? 's' : ''} {'(\u2B50 = m\u00eame jour)'}
+                        {availableShifts.length} shift{availableShifts.length > 1 ? 's' : ''} &bull; {'\u2B50'} m&ecirc;me jour &bull; {'\uD83C\uDF19'} shift de nuit (veille)
                       </div>
                     )}
                     {form.chatteur_id && availableShifts.length === 0 && (

@@ -644,7 +644,7 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
   if (plateforme_id) { where.push('s.plateforme_id = ?'); params.push(plateforme_id); }
 
   const shifts = db.prepare(`
-    SELECT s.id, s.date, s.creneau,
+    SELECT s.id, s.date, s.creneau, s.modele_id,
       m.pseudo as modele_pseudo, p.nom as plateforme_nom
     FROM shifts s
     LEFT JOIN modeles m ON m.id = s.modele_id
