@@ -671,20 +671,33 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
   }
   if (!chatteur_id) throw new ApiError(400, 'chatteur_id requis');
 
-  // Materialize template shifts for the next 7 days so they appear in the dropdown
+  // Materialize template shifts around the ref_date so they appear in the dropdown
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const future = new Date();
-    future.setDate(future.getDate() + 7);
-    const futureStr = future.toISOString().split('T')[0];
-    materializeTemplateShifts(today, futureStr);
+    const center = ref_date || new Date().toISOString().split('T')[0];
+    const from = new Date(center + 'T00:00:00');
+    from.setDate(from.getDate() - 7);
+    const to = new Date(center + 'T00:00:00');
+    to.setDate(to.getDate() + 7);
+    materializeTemplateShifts(from.toISOString().split('T')[0], to.toISOString().split('T')[0]);
   } catch (e) { /* silent */ }
 
   let where = ['s.chatteur_id = ?'];
   const params = [chatteur_id];
 
+  // Filter ±7 days around ref_date for a focused dropdown
+  if (ref_date) {
+    where.push(`s.date BETWEEN date(?, '-7 days') AND date(?, '+3 days')`);
+    params.push(ref_date, ref_date);
+  } else {
+    where.push(`s.date BETWEEN date('now', '-7 days') AND date('now', '+3 days')`);
+  }
+
   if (modele_id) { where.push('s.modele_id = ?'); params.push(modele_id); }
   if (plateforme_id) { where.push('s.plateforme_id = ?'); params.push(plateforme_id); }
+
+  // Sort by proximity to ref_date (closest first)
+  const orderParams = ref_date ? [ref_date] : [];
+  const orderBy = ref_date ? 'ABS(julianday(s.date) - julianday(?))' : 's.date DESC';
 
   const shifts = db.prepare(`
     SELECT s.id, s.date, s.creneau, s.modele_id,
@@ -693,9 +706,14 @@ router.get('/for-vente', authMiddleware, asyncHandler((req, res) => {
     LEFT JOIN modeles m ON m.id = s.modele_id
     LEFT JOIN plateformes p ON p.id = s.plateforme_id
     WHERE ${where.join(' AND ')}
-    ORDER BY s.date DESC, s.creneau DESC
-    LIMIT 40
-  `).all(...params);
+    ORDER BY ${orderBy}, s.creneau ASC
+    LIMIT 15
+  `).all(...params, ...orderParams);
+
+  // Add a `best_match` flag on the closest shift
+  if (shifts.length > 0) {
+    shifts[0].best_match = true;
+  }
 
   res.json(shifts);
 }));

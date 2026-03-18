@@ -317,15 +317,20 @@ export default function Ventes() {
     } catch { setChatteurModeles(null); }
   }
 
-  async function fetchShiftsForVente(chatteurId, modeleId, plateformeId, refDate) {
+  async function fetchShiftsForVente(chatteurId, modeleId, plateformeId, refDate, autoSelect = false) {
     if (!chatteurId) { setAvailableShifts([]); return; }
     try {
-      const params = new URLSearchParams({ chatteur_id: chatteurId, days: 14 });
+      const params = new URLSearchParams({ chatteur_id: chatteurId });
       if (modeleId) params.append('modele_id', modeleId);
       if (plateformeId) params.append('plateforme_id', plateformeId);
       if (refDate) params.append('ref_date', refDate);
       const { data } = await api.get(`/api/shifts/for-vente?${params}`);
       setAvailableShifts(data);
+      // Auto-select the best match if only one shift or if flagged
+      if (autoSelect && data.length > 0) {
+        const best = data.find(s => s.best_match) || data[0];
+        if (best) setForm(prev => ({ ...prev, shift_id: String(best.id) }));
+      }
     } catch { setAvailableShifts([]); }
   }
 
@@ -1117,36 +1122,40 @@ export default function Ventes() {
                   </div>
                 )}
 
-                {/* Shift (optional for admin) */}
+                {/* Shift */}
                 {form.chatteur_id && (
                   <div>
                     <label className="label">Shift *</label>
-                    <select className="input-field" value={form.shift_id} onChange={e => setForm({ ...form, shift_id: e.target.value })} required>
+                    <select className="input-field" value={form.shift_id} onChange={e => setForm({ ...form, shift_id: e.target.value })} required
+                      style={form.shift_id && availableShifts.find(s => String(s.id) === form.shift_id)?.best_match ? { borderColor: '#10b981' } : undefined}>
                       <option value="">S&eacute;lectionner le shift...</option>
                       {availableShifts.map(s => {
                         const shiftDate = new Date(s.date + 'T00:00:00');
-                        const refDate = form.date ? new Date(form.date + 'T00:00:00') : new Date();
-                        const diffDays = Math.round((shiftDate - refDate) / (1000 * 60 * 60 * 24));
-                        // Night shifts (20h-02h, 02h-08h) from the day before cover the report date
+                        const refDateObj = form.date ? new Date(form.date + 'T00:00:00') : new Date();
+                        const diffDays = Math.round((shiftDate - refDateObj) / (1000 * 60 * 60 * 24));
                         const isNightCover = diffDays === -1 && (s.creneau === 3 || s.creneau === 4);
-                        const proximity = diffDays === 0 ? '\u2B50' : (isNightCover ? '\uD83C\uDF19' : (Math.abs(diffDays) <= 1 ? '\u2705' : ''));
+                        const prefix = s.best_match ? '\u2B50 '
+                          : (diffDays === 0 ? '\u2705 '
+                          : (isNightCover ? '\uD83C\uDF19 ' : ''));
+                        const dateLabel = shiftDate.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'short' });
+                        const nightLabel = isNightCover
+                          ? ` \u2192 nuit du ${shiftDate.getDate()}-${refDateObj.getDate()}`
+                          : '';
                         return (
                           <option key={s.id} value={s.id}>
-                            {proximity}{proximity ? ' ' : ''}{shiftDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} — {CRENEAUX_LABELS[s.creneau] || '?'}
-                            {s.modele_pseudo ? ` (${s.modele_pseudo})` : ''}
-                            {isNightCover ? ' \u2192 nuit du ' + shiftDate.toLocaleDateString('fr-FR', { day: 'numeric' }) + '-' + refDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) : ''}
+                            {prefix}{dateLabel} \u2014 {CRENEAUX_LABELS[s.creneau] || '?'}{nightLabel}
                           </option>
                         );
                       })}
                     </select>
                     {availableShifts.length > 0 && (
                       <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '0.2rem' }}>
-                        {availableShifts.length} shift{availableShifts.length > 1 ? 's' : ''} &bull; {'\u2B50'} m&ecirc;me jour &bull; {'\uD83C\uDF19'} shift de nuit (veille)
+                        {availableShifts.length} shift{availableShifts.length > 1 ? 's' : ''} autour du {form.date ? new Date(form.date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }) : "rapport"} &bull; {'\u2B50'} meilleur match
                       </div>
                     )}
                     {form.chatteur_id && availableShifts.length === 0 && (
                       <div style={{ fontSize: '0.75rem', color: '#f59e0b', marginTop: '0.3rem', padding: '0.4rem 0.6rem', background: 'rgba(245,158,11,0.08)', borderRadius: '0.3rem', border: '1px solid rgba(245,158,11,0.2)' }}>
-                        Aucun shift trouv&eacute; autour de cette date. V&eacute;rifiez le planning ou changez la date du rapport.
+                        Aucun shift trouv&eacute; &plusmn;7 jours. V&eacute;rifiez le planning ou la date du rapport.
                       </div>
                     )}
                   </div>
