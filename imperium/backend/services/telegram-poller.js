@@ -720,12 +720,19 @@ function handleUpdate(update) {
       }).catch(() => {});
     }
 
+    // ⚠️ Handle model conflict (topic says X but shift says Y)
+    if (result.modeleConflict) {
+      const conflictMsg = `⚠️ Conflit modèle pour ${result.chatteur} — ${result.montant_brut}€ ${platName} [${result.date_rapport}] : ` +
+        `le topic dit "${result.modeleConflict.topic}" mais le shift planifié est "${result.modeleConflict.shift}". ` +
+        `Vérifiez si le chatteur a posté dans le bon topic ou si le planning est à jour.`;
+      notifyAdminsAndManagers('warning', '⚠️ Conflit modèle détecté', conflictMsg, '/admin/telegram');
+    }
+
     // ⚠️ Handle incomplete imports (missing modele or shift)
     const missingFields = [];
     if (!result.modele_id) missingFields.push('modèle inconnu');
     if (!result.shift_id) missingFields.push('shift non trouvé');
     if (missingFields.length > 0) {
-      // Notify admins (in-app)
       const warningMsg = `Import Telegram partiel pour ${result.chatteur} — ${result.montant_brut}€ ${platName} [${result.date_rapport}] : ${missingFields.join(', ')}. Vérifiez et complétez manuellement.`;
       notifyAdminsAndManagers('warning', '⚠️ Import Telegram incomplet', warningMsg, '/admin/telegram');
       logger.warn('Telegram import incomplet', { chatteur: result.chatteur, missingFields, vente_id: result.vente_id });

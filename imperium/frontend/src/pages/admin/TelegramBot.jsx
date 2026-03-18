@@ -581,7 +581,8 @@ export default function TelegramBot({ embedded = false }) {
               {(status?.recentImports || []).map(imp => {
                 const hasModel = !!imp.modele_pseudo;
                 const hasShift = !!imp.shift_id;
-                const isComplete = hasModel && hasShift;
+                const hasConflict = (imp.notes || '').includes('CONFLIT');
+                const isComplete = hasModel && hasShift && !hasConflict;
                 return (
                 <tr key={imp.id} style={!isComplete ? { background: 'rgba(245,158,11,0.04)' } : undefined}>
                   <td style={{ fontSize: '0.8rem', color: '#64748b', whiteSpace: 'nowrap' }}>
@@ -612,7 +613,15 @@ export default function TelegramBot({ embedded = false }) {
                   </td>
                   <td>
                     {hasModel ? (
-                      <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{imp.modele_pseudo}</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+                        <span style={{ fontSize: '0.82rem', fontWeight: 500 }}>{imp.modele_pseudo}</span>
+                        {hasConflict && (
+                          <span title="Le topic et le shift indiquent des mod&egrave;les diff&eacute;rents" style={{
+                            fontSize: '0.6rem', fontWeight: 700, padding: '0.1rem 0.3rem',
+                            borderRadius: '3px', background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                          }}>CONFLIT</span>
+                        )}
+                      </span>
                     ) : (
                       <span style={{
                         display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
@@ -634,13 +643,13 @@ export default function TelegramBot({ embedded = false }) {
                   </td>
                   <td>
                     <div style={{ display: 'flex', gap: '0.15rem', justifyContent: 'flex-end' }}>
-                      {!isComplete && (
-                        <a href={`/admin/ventes?highlight=${imp.id}`}
-                          title="Corriger cet import" aria-label="Corriger cet import"
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b', padding: '0.25rem', borderRadius: '0.25rem', display: 'flex', alignItems: 'center' }}>
-                          <Edit3 size={14} />
-                        </a>
-                      )}
+                      <a href={`/admin/ventes?highlight=${imp.id}`}
+                        title="Modifier cet import" aria-label="Modifier cet import"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: !isComplete ? '#f59e0b' : '#94a3b8', padding: '0.25rem', borderRadius: '0.25rem', display: 'flex', alignItems: 'center', opacity: isComplete ? 0.5 : 1 }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = isComplete ? '0.5' : '1'}>
+                        <Edit3 size={14} />
+                      </a>
                       <button onClick={() => setDeleteConfirm({ type: 'single', id: imp.id })}
                         title="Supprimer cet import" aria-label="Supprimer cet import"
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ef4444', padding: '0.25rem', borderRadius: '0.25rem', opacity: 0.6 }}

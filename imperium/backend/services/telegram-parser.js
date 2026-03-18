@@ -302,9 +302,27 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id,
   // Determine final modele_id: topic > shift
   const modele_id = topicModele?.id ?? shift?.modele_id ?? null;
 
+  // Cross-check: detect conflict between topic model and shift model
+  let modeleConflict = null;
+  if (topicModele && shift?.modele_id && topicModele.id !== shift.modele_id) {
+    // The topic says one model but the shift says another — flag it
+    const shiftModele = db.prepare('SELECT pseudo FROM modeles WHERE id = ?').get(shift.modele_id);
+    modeleConflict = {
+      topic: topicModele.pseudo,
+      shift: shiftModele?.pseudo || `#${shift.modele_id}`,
+    };
+    logger.warn('Telegram: conflit modèle topic/shift', {
+      chatteur: chatteur.prenom,
+      topicModele: topicModele.pseudo,
+      shiftModele: shiftModele?.pseudo,
+      shift_id: shift.id,
+    });
+  }
+
   // Insert + recalculate paies atomically
-  const modeleName = topicModele?.pseudo || (shift?.modele_id ? '' : '');
-  const notes = `Import Telegram${modeleName ? ` [${modeleName}]` : ''} — ${message.substring(0, 100)}`;
+  const modeleName = topicModele?.pseudo || '';
+  const conflictTag = modeleConflict ? ` ⚠️CONFLIT: topic=${modeleConflict.topic} shift=${modeleConflict.shift}` : '';
+  const notes = `Import Telegram${modeleName ? ` [${modeleName}]` : ''}${conflictTag} — ${message.substring(0, 100)}`;
   const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes, shift?.id, modele_id);
 
   // Mark as processed for idempotence
@@ -324,6 +342,7 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id,
     shift_id: shift?.id || null,
     modele_id: modele_id || null,
     modele: topicModele?.pseudo || null,
+    modeleConflict,
   };
 }
 
