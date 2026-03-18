@@ -621,6 +621,7 @@ function materializeTemplateShifts(startDate, endDate) {
   const templates = db.prepare('SELECT * FROM shift_templates').all();
   if (templates.length === 0) return 0;
 
+  // Build set of existing shifts — key includes ALL fields to avoid false positives
   const existing = new Set();
   const realShifts = db.prepare(
     'SELECT chatteur_id, modele_id, plateforme_id, date, creneau FROM shifts WHERE date BETWEEN ? AND ?'
@@ -657,6 +658,22 @@ function materializeTemplateShifts(startDate, endDate) {
       }
     }
   }
+
+  // Clean up exact duplicates (same chatteur+date+creneau+modele+plateforme)
+  try {
+    const dupes = db.prepare(`
+      DELETE FROM shifts WHERE id NOT IN (
+        SELECT MIN(id) FROM shifts
+        WHERE date BETWEEN ? AND ?
+        GROUP BY chatteur_id, date, creneau, modele_id, plateforme_id
+      ) AND date BETWEEN ? AND ?
+    `).run(startDate, endDate, startDate, endDate);
+    if (dupes.changes > 0) {
+      const logger = require('../utils/logger');
+      logger.info(`Materialize: cleaned ${dupes.changes} duplicate shifts`);
+    }
+  } catch (e) { /* silent */ }
+
   return created;
 }
 
