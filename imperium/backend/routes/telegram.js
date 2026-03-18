@@ -78,7 +78,7 @@ router.get('/report', authMiddleware, adminOnly, asyncHandler((req, res) => {
     FROM ventes v
     JOIN chatteurs c ON c.id = v.chatteur_id
     JOIN plateformes p ON p.id = v.plateforme_id
-    WHERE v.notes LIKE 'Import Telegram%'
+    WHERE v.source = 'telegram'
     ORDER BY v.created_at DESC
     LIMIT 50
   `).all();
@@ -109,27 +109,27 @@ router.get('/status', authMiddleware, adminOnly, asyncHandler((req, res) => {
     JOIN chatteurs c ON c.id = v.chatteur_id
     JOIN plateformes p ON p.id = v.plateforme_id
     LEFT JOIN modeles m ON m.id = v.modele_id
-    WHERE v.notes LIKE 'Import Telegram%'
+    WHERE v.source = 'telegram'
     ORDER BY v.created_at DESC
     LIMIT 20
   `).all();
 
   const todayCount = db.prepare(`
     SELECT COUNT(*) AS count FROM ventes
-    WHERE notes LIKE 'Import Telegram%'
+    WHERE source = 'telegram'
     AND date(created_at) = date('now')
   `).get();
 
   const todayComplete = db.prepare(`
     SELECT COUNT(*) AS count FROM ventes
-    WHERE notes LIKE 'Import Telegram%'
+    WHERE source = 'telegram'
     AND date(created_at) = date('now')
     AND modele_id IS NOT NULL AND shift_id IS NOT NULL
   `).get();
 
   const todayWarnings = db.prepare(`
     SELECT COUNT(*) AS count FROM ventes
-    WHERE notes LIKE 'Import Telegram%'
+    WHERE source = 'telegram'
     AND date(created_at) = date('now')
     AND (modele_id IS NULL OR shift_id IS NULL)
   `).get();
@@ -187,13 +187,13 @@ router.delete('/imports', authMiddleware, adminOnly, asyncHandler((req, res) => 
   // Collect affected periods for recalculation
   const periods = db.prepare(`
     SELECT DISTINCT periode_debut, periode_fin FROM ventes
-    WHERE notes LIKE 'Import Telegram%'
+    WHERE source = 'telegram'
   `).all();
 
   // Audit trail: log totals before deletion
-  const totalAmount = db.prepare("SELECT COALESCE(SUM(montant_brut), 0) as total FROM ventes WHERE notes LIKE 'Import Telegram%'").get();
+  const totalAmount = db.prepare("SELECT COALESCE(SUM(montant_brut), 0) as total FROM ventes WHERE source = 'telegram'").get();
 
-  const result = db.prepare("DELETE FROM ventes WHERE notes LIKE 'Import Telegram%'").run();
+  const result = db.prepare("DELETE FROM ventes WHERE source = 'telegram'").run();
 
   // Recalculate paies for all affected periods
   for (const p of periods) {

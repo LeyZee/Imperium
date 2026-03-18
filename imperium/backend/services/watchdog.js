@@ -166,7 +166,7 @@ function checkOldUnresolvedImports() {
         v.periode_debut, v.periode_fin, v.notes, v.montant_brut,
         v.created_at
       FROM ventes v
-      WHERE v.notes LIKE 'Import Telegram%'
+      WHERE v.source = 'telegram'
       AND (v.modele_id IS NULL OR v.shift_id IS NULL)
       AND v.created_at > datetime('now', '-72 hours')
     `).all();
@@ -185,21 +185,16 @@ function checkOldUnresolvedImports() {
       if (!v.shift_id) {
         const dateMatch = v.created_at ? v.created_at.split('T')[0] : null;
         if (dateMatch) {
-          // Try to extract model name from notes: "Import Telegram [MODELNAME]"
-          const modelMatch = (v.notes || '').match(/\[([^\]]+)\]/);
           let shift = null;
 
-          if (modelMatch) {
-            // We know the model from notes → search with model constraint
-            const modele = db.prepare('SELECT id FROM modeles WHERE UPPER(pseudo) = ? AND actif = 1').get(modelMatch[1].toUpperCase());
-            if (modele) {
-              shift = db.prepare(`
-                SELECT id, modele_id FROM shifts
-                WHERE chatteur_id = ? AND plateforme_id = ? AND modele_id = ?
+          if (v.modele_id) {
+            // We know the model → search with model constraint
+            shift = db.prepare(`
+              SELECT id, modele_id FROM shifts
+              WHERE chatteur_id = ? AND plateforme_id = ? AND modele_id = ?
                 AND date BETWEEN date(?, '-3 days') AND date(?, '+1 day')
                 ORDER BY ABS(julianday(date) - julianday(?)) ASC LIMIT 1
-              `).get(v.chatteur_id, v.plateforme_id, modele.id, dateMatch, dateMatch, dateMatch);
-            }
+              `).get(v.chatteur_id, v.plateforme_id, v.modele_id, dateMatch, dateMatch, dateMatch);
           }
 
           if (!shift) {

@@ -429,7 +429,7 @@ function checkDailyAdminSummary() {
         SUM(CASE WHEN modele_id IS NULL OR shift_id IS NULL THEN 1 ELSE 0 END) AS warnings,
         COALESCE(SUM(montant_brut), 0) AS total_montant
       FROM ventes
-      WHERE notes LIKE 'Import Telegram%' AND date(created_at) = ?
+      WHERE source = 'telegram' AND date(created_at) = ?
     `).get(yesterdayStr);
 
     const errors = db.prepare(`

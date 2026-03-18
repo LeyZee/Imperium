@@ -234,7 +234,7 @@ function isDuplicate(chatteur_id, plateforme_id, montant_brut, periode_debut, pe
     SELECT id FROM ventes
     WHERE chatteur_id = ? AND plateforme_id = ? AND ABS(montant_brut - ?) < 0.01
       AND periode_debut = ? AND periode_fin = ?
-      AND notes LIKE 'Import Telegram%'
+      AND source = 'telegram'
   `).get(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin);
   return dup || null;
 }
@@ -378,9 +378,7 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id,
   }
 
   // Insert + recalculate paies atomically
-  const modeleName = topicModele?.pseudo || '';
-  const conflictTag = modeleConflict ? ` ⚠️CONFLIT: topic=${modeleConflict.topic} shift=${modeleConflict.shift}` : '';
-  const notes = `Import Telegram${modeleName ? ` [${modeleName}]` : ''}${conflictTag} — ${message.substring(0, 100)}`;
+  const notes = message.substring(0, 200).trim();
   const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes, shift?.id, modele_id);
 
   // Mark as processed for idempotence
