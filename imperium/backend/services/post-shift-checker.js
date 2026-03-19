@@ -7,6 +7,7 @@ const {
   notifyShiftReminder,
   notifyMissingReport,
   sendToChatteur,
+  sendTelegramMessage,
 } = require('../utils/telegramSender');
 
 /**
@@ -377,6 +378,8 @@ function checkDailyChatteurSummary() {
     if (hour < 21 || hour >= 22 || hasDailyTaskRun('daily_chatteur_summary')) return;
     markDailyTaskRun('daily_chatteur_summary');
 
+    const todayKey = now.toISOString().slice(0, 10);
+
     const chatteurs = db.prepare(`
       SELECT c.id, c.prenom, c.telegram_user_id, c.telegram_dm_ok
       FROM chatteurs c
@@ -494,7 +497,47 @@ function checkDailyAdminSummary() {
       ? '\u26A0\uFE0F R\u00e9cap Telegram hier'
       : '\u2705 R\u00e9cap Telegram hier';
 
+    // In-app notification
     notifyAdminsAndManagers('telegram', title, msg, '/admin/telegram');
+
+    // Telegram DM to admins/directeurs with telegram linked
+    try {
+      const admins = db.prepare(`
+        SELECT c.telegram_user_id, c.telegram_dm_ok, c.prenom
+        FROM chatteurs c
+        JOIN users u ON u.id = c.user_id
+        WHERE u.role IN ('admin') AND c.actif = 1
+          AND c.telegram_user_id IS NOT NULL AND c.telegram_dm_ok = 1
+        UNION
+        SELECT c.telegram_user_id, c.telegram_dm_ok, c.prenom
+        FROM chatteurs c
+        WHERE c.role = 'directeur' AND c.actif = 1
+          AND c.telegram_user_id IS NOT NULL AND c.telegram_dm_ok = 1
+      `).all();
+
+      const errCount = errors?.count || 0;
+      let dmText = `\uD83D\uDCCB <b>${title}</b>\n\n`;
+      dmText += `\uD83D\uDCE5 Imports : <b>${stats.total}</b>\n`;
+      dmText += `\u2705 Complets : <b>${stats.complete}</b>\n`;
+      if (stats.warnings > 0) dmText += `\u26A0\uFE0F Warnings : <b>${stats.warnings}</b>\n`;
+      if (errCount > 0) dmText += `\u274C Erreurs : <b>${errCount}</b>\n`;
+      dmText += `\uD83D\uDCB0 Total : <b>${stats.total_montant.toFixed(2)}\u20AC</b>`;
+
+      for (const admin of admins) {
+        sendTelegramMessage(admin.telegram_user_id, dmText, {
+          _type: 'daily_admin_summary',
+          _chatteurPrenom: admin.prenom,
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: '\uD83D\uDCCA Voir les imports', callback_data: 'cmd_aide' }],
+            ],
+          },
+        }).catch(() => {});
+      }
+    } catch (e) {
+      logger.warn('Admin Telegram summary failed', { error: e.message });
+    }
+
     logger.info(`Daily admin summary sent: ${stats.total} imports yesterday`);
   } catch (err) {
     logger.error('Daily admin summary error', { error: err.message });

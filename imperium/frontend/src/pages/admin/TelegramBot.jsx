@@ -50,6 +50,7 @@ const TYPE_META = {
   shift_selection: { label: 'Shift confirm\u00e9', color: '#10b981', icon: '\u2705', dir: 'in' },
   modele_selection: { label: 'Mod\u00e8le confirm\u00e9', color: '#10b981', icon: '\u2705', dir: 'in' },
   daily_summary: { label: 'R\u00e9cap quotidien', color: '#6366f1', icon: '\uD83D\uDCCA', dir: 'out' },
+  daily_admin_summary: { label: 'R\u00e9cap admin', color: '#1b2e4b', icon: '\uD83D\uDCCB', dir: 'out' },
 };
 
 export default function TelegramBot({ embedded = false }) {
@@ -792,43 +793,48 @@ function TelegramJournal() {
   const hasFilters = typeFilter || successFilter || dirFilter || dateFrom || dateTo;
   const totalPages = Math.ceil(total / PAGE_SIZE);
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
+
   return (
     <div>
       {/* Filters */}
       <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem' }}>
+        {/* Row 1: Filter icon + selects */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
           <Filter size={15} color="#64748b" />
 
           <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(0); }}
-            className="input-field" style={{ width: 'auto', minWidth: 140, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
+            className="input-field" style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? 0 : 140, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
             <option value="">Tous les types</option>
             {Object.entries(TYPE_META).map(([key, meta]) => (
               <option key={key} value={key}>{meta.icon} {meta.label}</option>
             ))}
           </select>
           <select value={dirFilter} onChange={e => { setDirFilter(e.target.value); setPage(0); }}
-            className="input-field" style={{ width: 'auto', minWidth: 110, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
+            className="input-field" style={{ width: isMobile ? 'calc(50% - 0.5rem)' : 'auto', minWidth: isMobile ? 0 : 110, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
             <option value="">Tous</option>
             <option value="out">{'📤'} Envoy&eacute;s</option>
             <option value="in">{'📥'} Re&ccedil;us</option>
           </select>
           <select value={successFilter} onChange={e => { setSuccessFilter(e.target.value); setPage(0); }}
-            className="input-field" style={{ width: 'auto', minWidth: 110, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
+            className="input-field" style={{ width: isMobile ? 'calc(50% - 0.5rem)' : 'auto', minWidth: isMobile ? 0 : 110, padding: '0.4rem 0.6rem', fontSize: '0.8rem' }}>
             <option value="">Statuts</option>
             <option value="1">{'✅'} R&eacute;ussi</option>
             <option value="0">{'❌'} &Eacute;chou&eacute;</option>
           </select>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.5rem', background: 'rgba(0,0,0,0.02)', borderRadius: '6px' }}>
-            <Clock size={12} color="#94a3b8" />
-            <span style={{ fontSize: '0.7rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>Activit&eacute; du</span>
-            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
-              className="input-field"
-              style={{ width: 'auto', padding: '0.3rem 0.4rem', fontSize: '0.75rem' }} />
-            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>au</span>
-            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
-              className="input-field"
-              style={{ width: 'auto', padding: '0.3rem 0.4rem', fontSize: '0.75rem' }} />
-          </div>
+          {!isMobile && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.5rem', background: 'rgba(0,0,0,0.02)', borderRadius: '6px' }}>
+              <Clock size={12} color="#94a3b8" />
+              <span style={{ fontSize: '0.7rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>Du</span>
+              <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
+                className="input-field"
+                style={{ width: 'auto', padding: '0.3rem 0.4rem', fontSize: '0.75rem' }} />
+              <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>au</span>
+              <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
+                className="input-field"
+                style={{ width: 'auto', padding: '0.3rem 0.4rem', fontSize: '0.75rem' }} />
+            </div>
+          )}
 
           {hasFilters && (
             <button onClick={clearFilters} title="R&eacute;initialiser les filtres"
@@ -849,94 +855,162 @@ function TelegramJournal() {
             </button>
           </div>
         </div>
+        {/* Date range — mobile only (shown inline on desktop above) */}
+        {isMobile && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', marginTop: '0.5rem', padding: '0.2rem 0.5rem', background: 'rgba(0,0,0,0.02)', borderRadius: '6px' }}>
+            <Clock size={12} color="#94a3b8" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>Du</span>
+            <input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }}
+              className="input-field"
+              style={{ flex: '1 1 100px', minWidth: 0, padding: '0.3rem 0.4rem', fontSize: '0.75rem' }} />
+            <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>au</span>
+            <input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }}
+              className="input-field"
+              style={{ flex: '1 1 100px', minWidth: 0, padding: '0.3rem 0.4rem', fontSize: '0.75rem' }} />
+          </div>
+        )}
       </div>
 
-      {/* Table */}
+      {/* Log entries */}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ overflowX: 'auto' }}>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: 140 }}>Date</th>
-                <th style={{ width: 30, textAlign: 'center' }}></th>
-                <th style={{ width: 160 }}>Type</th>
-                <th>Chatteur</th>
-                <th>Contenu</th>
-                <th style={{ width: 80, textAlign: 'center' }}>Statut</th>
-              </tr>
-            </thead>
-            <tbody className="stagger-rows">
-              {loading ? (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2rem' }}><div className="spinner" /></td></tr>
-              ) : logs.length === 0 ? (
-                <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
-                    <div style={{
-                      width: 48, height: 48, borderRadius: '50%', margin: '0 auto 0.75rem',
-                      background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: '2rem' }}><div className="spinner" /></div>
+        ) : logs.length === 0 ? (
+          <div style={{ textAlign: 'center', color: '#94a3b8', padding: '2.5rem' }}>
+            <div style={{
+              width: 48, height: 48, borderRadius: '50%', margin: '0 auto 0.75rem',
+              background: 'rgba(99,102,241,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <ScrollText size={22} color="#6366f1" strokeWidth={1.5} />
+            </div>
+            <p style={{ fontWeight: 500, color: '#64748b' }}>Aucun message dans le journal</p>
+            <p style={{ fontSize: '0.8rem' }}>Les messages envoyés et reçus par le bot apparaîtront ici.</p>
+          </div>
+        ) : isMobile ? (
+          /* ── Mobile: card layout ── */
+          <div style={{ display: 'flex', flexDirection: 'column' }}>
+            {logs.map((log, i) => {
+              const meta = TYPE_META[log.message_type] || TYPE_META.message;
+              const isIncoming = log.direction === 'in';
+              return (
+                <div key={log.id} style={{
+                  padding: '0.75rem 1rem',
+                  borderBottom: i < logs.length - 1 ? '1px solid rgba(0,0,0,0.06)' : undefined,
+                }}>
+                  {/* Top row: type badge + direction + status */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.35rem' }}>
+                    <span style={{ fontSize: '0.8rem' }}>{isIncoming ? '📥' : '📤'}</span>
+                    <span style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '0.25rem',
+                      padding: '0.15rem 0.45rem', borderRadius: '6px',
+                      fontSize: '0.72rem', fontWeight: 600,
+                      background: `${meta.color}15`, color: meta.color,
                     }}>
-                      <ScrollText size={22} color="#6366f1" strokeWidth={1.5} />
-                    </div>
-                    <p style={{ fontWeight: 500, color: '#64748b' }}>Aucun message dans le journal</p>
-                    <p style={{ fontSize: '0.8rem' }}>Les messages envoyés et reçus par le bot apparaîtront ici.</p>
-                  </td>
-                </tr>
-              ) : logs.map(log => {
-                const meta = TYPE_META[log.message_type] || TYPE_META.message;
-                const isIncoming = log.direction === 'in';
-                return (
-                  <tr key={log.id}>
-                    <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
-                      {formatDateTime(log.created_at?.endsWith('Z') ? log.created_at : (log.created_at + 'Z'))}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <span title={isIncoming ? 'Reçu' : 'Envoyé'} style={{
-                        fontSize: '0.85rem',
-                        filter: 'none',
-                      }}>
-                        {isIncoming ? '📥' : '📤'}
-                      </span>
-                    </td>
-                    <td>
-                      <span style={{
-                        display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                        padding: '0.2rem 0.5rem', borderRadius: '6px',
-                        fontSize: '0.75rem', fontWeight: 600,
-                        background: `${meta.color}15`, color: meta.color,
-                      }}>
-                        {meta.icon} {meta.label}
-                      </span>
-                    </td>
-                    <td>
-                      {log.chatteur_prenom ? (
-                        <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>{log.chatteur_prenom}</span>
-                      ) : (
-                        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{log.chat_id ? `ID: ${log.chat_id}` : '—'}</span>
-                      )}
-                    </td>
-                    <td style={{
-                      fontSize: '0.78rem', color: '#475569',
-                      maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {(log.content || '').replace(/<[^>]*>/g, '').substring(0, 120)}
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
+                      {meta.icon} {meta.label}
+                    </span>
+                    <span style={{ marginLeft: 'auto' }}>
                       {log.success ? (
-                        <span title={isIncoming ? 'Traité' : 'Envoyé'} style={{ color: '#10b981' }}>
-                          <CheckCircle size={16} />
-                        </span>
+                        <CheckCircle size={15} color="#10b981" />
                       ) : (
-                        <span title={log.error_message || 'Échoué'} style={{ color: '#ef4444', cursor: 'help' }}>
-                          <XCircle size={16} />
+                        <span title={log.error_message || 'Échoué'} style={{ cursor: 'help' }}>
+                          <XCircle size={15} color="#ef4444" />
                         </span>
                       )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                    </span>
+                  </div>
+                  {/* Chatteur + date */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                    {log.chatteur_prenom ? (
+                      <span style={{ fontWeight: 600, fontSize: '0.82rem', color: '#1a1f2e' }}>{log.chatteur_prenom}</span>
+                    ) : (
+                      <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>{log.chat_id ? `ID: ${log.chat_id}` : '—'}</span>
+                    )}
+                    <span style={{ fontSize: '0.7rem', color: '#94a3b8', marginLeft: 'auto', whiteSpace: 'nowrap' }}>
+                      {formatDateTime(log.created_at?.endsWith('Z') ? log.created_at : (log.created_at + 'Z'))}
+                    </span>
+                  </div>
+                  {/* Content preview */}
+                  {log.content && (
+                    <p style={{
+                      fontSize: '0.75rem', color: '#64748b', margin: 0,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {(log.content || '').replace(/<[^>]*>/g, '').substring(0, 100)}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          /* ── Desktop: table layout ── */
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th style={{ width: 140 }}>Date</th>
+                  <th style={{ width: 30, textAlign: 'center' }}></th>
+                  <th style={{ width: 160 }}>Type</th>
+                  <th>Chatteur</th>
+                  <th>Contenu</th>
+                  <th style={{ width: 80, textAlign: 'center' }}>Statut</th>
+                </tr>
+              </thead>
+              <tbody className="stagger-rows">
+                {logs.map(log => {
+                  const meta = TYPE_META[log.message_type] || TYPE_META.message;
+                  const isIncoming = log.direction === 'in';
+                  return (
+                    <tr key={log.id}>
+                      <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                        {formatDateTime(log.created_at?.endsWith('Z') ? log.created_at : (log.created_at + 'Z'))}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span title={isIncoming ? 'Reçu' : 'Envoyé'} style={{ fontSize: '0.85rem' }}>
+                          {isIncoming ? '📥' : '📤'}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                          padding: '0.2rem 0.5rem', borderRadius: '6px',
+                          fontSize: '0.75rem', fontWeight: 600,
+                          background: `${meta.color}15`, color: meta.color,
+                        }}>
+                          {meta.icon} {meta.label}
+                        </span>
+                      </td>
+                      <td>
+                        {log.chatteur_prenom ? (
+                          <span style={{ fontWeight: 500, fontSize: '0.85rem' }}>{log.chatteur_prenom}</span>
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>{log.chat_id ? `ID: ${log.chat_id}` : '—'}</span>
+                        )}
+                      </td>
+                      <td style={{
+                        fontSize: '0.78rem', color: '#475569',
+                        maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      }}>
+                        {(log.content || '').replace(/<[^>]*>/g, '').substring(0, 120)}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {log.success ? (
+                          <span title={isIncoming ? 'Traité' : 'Envoyé'} style={{ color: '#10b981' }}>
+                            <CheckCircle size={16} />
+                          </span>
+                        ) : (
+                          <span title={log.error_message || 'Échoué'} style={{ color: '#ef4444', cursor: 'help' }}>
+                            <XCircle size={16} />
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Pagination */}
         {totalPages > 1 && (
