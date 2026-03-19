@@ -150,10 +150,16 @@ router.get('/par-modele', authMiddleware, asyncHandler((req, res) => {
 
   where.push("v.statut != 'rejetée'");
   const whereStr = 'WHERE ' + where.join(' AND ');
+  // Convert all amounts to EUR using taux_change or plateforme devise
   const result = db.prepare(`
-    SELECT m.pseudo, m.couleur_fond, m.couleur_texte, SUM(v.montant_brut) as total_brut, COUNT(*) as nb_ventes
+    SELECT m.pseudo, m.couleur_fond, m.couleur_texte,
+      SUM(CASE WHEN p.devise != 'EUR' THEN v.montant_brut * COALESCE(tc.taux, 0.92) ELSE v.montant_brut END) as total_brut,
+      COUNT(*) as nb_ventes
     FROM ventes v
     LEFT JOIN modeles m ON m.id = v.modele_id
+    JOIN plateformes p ON p.id = v.plateforme_id
+    LEFT JOIN taux_change tc ON tc.devise_base = p.devise AND tc.devise_cible = 'EUR'
+      AND tc.date_maj = (SELECT MAX(t2.date_maj) FROM taux_change t2 WHERE t2.devise_base = p.devise AND t2.devise_cible = 'EUR')
     ${whereStr}
     GROUP BY v.modele_id
     ORDER BY total_brut DESC

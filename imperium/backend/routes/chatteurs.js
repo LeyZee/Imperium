@@ -483,14 +483,17 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
     params.push(periode_debut, periode_fin);
   }
 
-  // Total ventes
+  // Total ventes — convert everything to EUR
   const ventes = db.prepare(`
     SELECT
-      SUM(v.montant_brut) as total_brut,
+      SUM(v.montant_brut) as total_brut_raw,
+      SUM(CASE WHEN p.devise != 'EUR' THEN v.montant_brut * COALESCE(tc.taux, 0.92) ELSE v.montant_brut END) as total_brut,
       COUNT(*) as nb_ventes,
       p.devise
     FROM ventes v
     JOIN plateformes p ON p.id = v.plateforme_id
+    LEFT JOIN taux_change tc ON tc.devise_base = p.devise AND tc.devise_cible = 'EUR'
+      AND tc.date_maj = (SELECT MAX(t2.date_maj) FROM taux_change t2 WHERE t2.devise_base = p.devise AND t2.devise_cible = 'EUR')
     WHERE v.chatteur_id = ? AND v.statut != 'rejetée' ${dateFilter}
     GROUP BY p.devise
   `).all(...params);
@@ -503,13 +506,17 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
     LIMIT 6
   `).all(id);
 
-  // Rang par ventes brutes (dans la période ou tous temps)
+  // Rang par ventes brutes converties en EUR (dans la période ou tous temps)
   let rangQuery = `
-    SELECT chatteur_id, SUM(montant_brut) as total
-    FROM ventes
-    WHERE statut != 'rejetée'
-    ${periode_debut && periode_fin ? 'AND periode_debut >= ? AND periode_fin <= ?' : ''}
-    GROUP BY chatteur_id
+    SELECT v.chatteur_id,
+      SUM(CASE WHEN p.devise != 'EUR' THEN v.montant_brut * COALESCE(tc.taux, 0.92) ELSE v.montant_brut END) as total
+    FROM ventes v
+    JOIN plateformes p ON p.id = v.plateforme_id
+    LEFT JOIN taux_change tc ON tc.devise_base = p.devise AND tc.devise_cible = 'EUR'
+      AND tc.date_maj = (SELECT MAX(t2.date_maj) FROM taux_change t2 WHERE t2.devise_base = p.devise AND t2.devise_cible = 'EUR')
+    WHERE v.statut != 'rejetée'
+    ${periode_debut && periode_fin ? 'AND v.periode_debut >= ? AND v.periode_fin <= ?' : ''}
+    GROUP BY v.chatteur_id
     ORDER BY total DESC
   `;
   const rangParams = periode_debut && periode_fin ? [periode_debut, periode_fin] : [];
@@ -579,11 +586,15 @@ router.get('/:id/kpis', authMiddleware, asyncHandler((req, res) => {
     ${periode_debut && periode_fin ? 'AND date >= ? AND date <= ?' : ''}
   `).get(id, ...(periode_debut && periode_fin ? [periode_debut, periode_fin] : []));
 
-  // Ventes par plateforme (for PieChart)
+  // Ventes par plateforme (for PieChart) — converted to EUR
   const ventesParPlateforme = db.prepare(`
-    SELECT p.nom as plateforme, SUM(v.montant_brut) as total_brut, COUNT(*) as nb_ventes
+    SELECT p.nom as plateforme,
+      SUM(CASE WHEN p.devise != 'EUR' THEN v.montant_brut * COALESCE(tc.taux, 0.92) ELSE v.montant_brut END) as total_brut,
+      COUNT(*) as nb_ventes
     FROM ventes v
     JOIN plateformes p ON p.id = v.plateforme_id
+    LEFT JOIN taux_change tc ON tc.devise_base = p.devise AND tc.devise_cible = 'EUR'
+      AND tc.date_maj = (SELECT MAX(t2.date_maj) FROM taux_change t2 WHERE t2.devise_base = p.devise AND t2.devise_cible = 'EUR')
     WHERE v.chatteur_id = ? AND v.statut != 'rejetée' ${dateFilter}
     GROUP BY v.plateforme_id
     ORDER BY total_brut DESC

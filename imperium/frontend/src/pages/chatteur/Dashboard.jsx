@@ -837,8 +837,8 @@ export default function ChatteurDashboard() {
   const paieBase = currentPaies.reduce((s, p) => s + (p.total_chatteur || 0), 0);
   const rang = kpis?.rang || 0;
   const nbChatteurs = kpis?.nb_chatteurs || 0;
+  // total_brut is now already converted to EUR by the backend
   const totalBrut = (kpis?.ventes || []).reduce((s, v) => s + (v.total_brut || 0), 0);
-  const devise = kpis?.ventes?.[0]?.devise || 'EUR';
 
   const prevCurrentPaies = (prevKpis?.paies || []).filter(p => p.periode_debut === prevPeriode.debut);
   const prevPaie = prevCurrentPaies.reduce((s, p) => s + (p.total_chatteur || 0), 0);
@@ -962,7 +962,7 @@ export default function ChatteurDashboard() {
           />
           <StatCard
             title="Ventes (période)"
-            value={`${totalBrut.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} ${devise === 'USD' ? '$' : '\u20ac'}`}
+            value={`${totalBrut.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} \u20ac`}
             subtitle={<span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>Montant brut <DeltaBadge current={totalBrut} previous={prevBrut} /></span>}
             icon={TrendingUp}
             color="#10b981"
