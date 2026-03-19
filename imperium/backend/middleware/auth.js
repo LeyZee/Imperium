@@ -47,6 +47,13 @@ function adminOrManager(req, res, next) {
   next();
 }
 
+function directeurOnly(req, res, next) {
+  if (req.user.role !== 'admin' || req.user.chatteur_role !== 'directeur') {
+    throw new ApiError(403, 'Accès réservé au directeur');
+  }
+  next();
+}
+
 /**
  * Sign a JWT token. Centralizes token creation so JWT_SECRET stays private.
  */
@@ -54,4 +61,4 @@ function signToken(payload, options = {}) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '24h', ...options });
 }
 
-module.exports = { authMiddleware, adminOnly, adminOrManager, signToken };
+module.exports = { authMiddleware, adminOnly, adminOrManager, directeurOnly, signToken };

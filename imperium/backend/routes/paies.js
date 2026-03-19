@@ -167,9 +167,9 @@ router.put('/:id/statut', authMiddleware, adminOrManager, asyncHandler((req, res
     throw new ApiError(403, 'Seul un administrateur peut marquer une paie comme payée');
   }
   const paie = db.prepare('SELECT p.chatteur_id, c.role as chatteur_role FROM paies p JOIN chatteurs c ON c.id = p.chatteur_id WHERE p.id = ?').get(req.params.id);
-  // Manager cannot modify directeur paies
-  if (req.user.role === 'manager' && paie?.chatteur_role === 'directeur') {
-    throw new ApiError(403, 'Seul un administrateur peut modifier la paie du directeur');
+  // Only directeur can modify directeur paies
+  if (paie?.chatteur_role === 'directeur' && req.user.chatteur_role !== 'directeur') {
+    throw new ApiError(403, 'Seul le directeur peut modifier sa propre paie');
   }
   db.prepare('UPDATE paies SET statut = ? WHERE id = ?').run(statut, req.params.id);
 

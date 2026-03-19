@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../database');
-const { authMiddleware, adminOrManager } = require('../middleware/auth');
+const { authMiddleware, adminOnly } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { logActivity } = require('../utils/activityLogger');
@@ -45,7 +45,7 @@ router.get('/', authMiddleware, asyncHandler((req, res) => {
 }));
 
 // POST /api/primes
-router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+router.post('/', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const { chatteur_id, montant, raison, periode_debut, periode_fin } = req.body;
 
   if (!chatteur_id || !montant || !periode_debut || !periode_fin) {
@@ -71,7 +71,7 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 }));
 
 // PUT /api/primes/:id
-router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+router.put('/:id', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const { id } = req.params;
   const { montant, raison } = req.body;
 
@@ -91,7 +91,7 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
 }));
 
 // DELETE /api/primes/:id (soft delete)
-router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+router.delete('/:id', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const { id } = req.params;
   const deleteAndLog = db.transaction(() => {
     const p = db.prepare('SELECT periode_debut, periode_fin FROM primes_manuelles WHERE id = ? AND actif = 1').get(id);

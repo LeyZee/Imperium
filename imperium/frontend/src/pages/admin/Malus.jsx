@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { MinusCircle, Plus, Gift, Edit2, Trash2, Award, TrendingDown, Sparkles } from 'lucide-react';
 import api from '../../utils/api';
 import { useToast } from '../../components/Toast.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { CHATTEUR_COLORS } from '../../constants/colors.js';
 import { PALIER_COLOR_OPTIONS, getTierColorFromPalier } from '../../utils/palierColors.js';
@@ -35,6 +36,8 @@ function getDefaultPeriode() {
 
 export default function MalusPage() {
   const isMobile = useIsMobile();
+  const { user } = useAuth();
+  const isManager = user?.role === 'manager';
   const [tab, setTab] = useState('malus');
   const [malus, setMalus] = useState([]);
   const [primes, setPrimes] = useState([]);
@@ -199,6 +202,7 @@ export default function MalusPage() {
         </div>
 
         {/* Primes manuelles */}
+        {!isManager && (
         <div className="card hover-lift" style={{ borderLeft: '4px solid #22c55e', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', opacity: 0.08 }}>
             <Gift size={40} />
@@ -210,8 +214,10 @@ export default function MalusPage() {
           <p style={{ fontSize: '1.4rem', fontWeight: 700, color: '#22c55e' }}>{totalPrimesManuelles.toFixed(2)} €</p>
           <p style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: '0.2rem' }}>{primes.length} entrée(s)</p>
         </div>
+        )}
 
         {/* Primes par palier */}
+        {!isManager && (
         <div className="card hover-lift" style={{ borderLeft: '4px solid #3b82f6', position: 'relative', overflow: 'hidden' }}>
           <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', opacity: 0.08 }}>
             <Award size={40} />
@@ -227,10 +233,11 @@ export default function MalusPage() {
             {paliersPrimes.length > 0 ? `Max +${maxPalierBonus}€ par chatteur` : 'Aucun palier défini'}
           </p>
         </div>
+        )}
       </div>
 
       {/* ─── SECTION 1: Paliers de primes individuelles ─── */}
-      {!loading && (
+      {!loading && !isManager && (
         <PaliersPrimesSection
           paliers={paliersPrimes}
           onEdit={() => setPaliersPrimesModal(paliersPrimes.length > 0 ? { paliers: paliersPrimes } : {})}
@@ -249,7 +256,7 @@ export default function MalusPage() {
           <div style={{ display: 'flex', gap: '0.25rem' }}>
             {[
               { key: 'malus', icon: MinusCircle, label: 'Malus', color: '#ef4444' },
-              { key: 'primes', icon: Gift, label: 'Primes manuelles', color: '#22c55e' },
+              ...(!isManager ? [{ key: 'primes', icon: Gift, label: 'Primes manuelles', color: '#22c55e' }] : []),
             ].map(t => {
               const active = tab === t.key;
               return (

@@ -47,7 +47,7 @@ function initDB() {
       pays TEXT DEFAULT 'France',
       iban TEXT,
       taux_commission REAL NOT NULL DEFAULT 0.15,
-      role TEXT NOT NULL DEFAULT 'chatteur' CHECK(role IN ('chatteur', 'manager', 'va', 'directeur')),
+      role TEXT NOT NULL DEFAULT 'chatteur' CHECK(role IN ('chatteur', 'manager', 'va', 'directeur', 'admin')),
       taux_net_equipe REAL NOT NULL DEFAULT 0,
       couleur INTEGER NOT NULL DEFAULT 0,
       is_nouveau INTEGER NOT NULL DEFAULT 0,
@@ -985,6 +985,22 @@ runMigration('activity_logs_nullable_user_id', () => {});
 runMigration('cleanup_activity_logs_new', () => {
   try { db.exec('DROP TABLE IF EXISTS activity_logs_new'); } catch {}
   try { db.exec('DROP TABLE IF EXISTS activity_logs_v3'); } catch {}
+});
+
+// --- Add 'admin' to chatteurs role CHECK constraint ---
+runMigration('add_admin_role', () => {
+  const schemaRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='chatteurs'").get();
+  if (schemaRow && schemaRow.sql && !schemaRow.sql.includes("'admin'")) {
+    db.exec('PRAGMA writable_schema = ON');
+    const newSql = schemaRow.sql.replace(
+      "CHECK(role IN ('chatteur', 'manager', 'va', 'directeur'))",
+      "CHECK(role IN ('chatteur', 'manager', 'va', 'directeur', 'admin'))"
+    );
+    db.prepare("UPDATE sqlite_master SET sql = ? WHERE type='table' AND name='chatteurs'").run(newSql);
+    db.exec('PRAGMA writable_schema = OFF');
+    db.exec('PRAGMA integrity_check');
+    console.log('  → Added admin to chatteurs role CHECK constraint');
+  }
 });
 
 module.exports = compatDb;

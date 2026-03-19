@@ -17,10 +17,11 @@ const emptyForm = {
   new_password: '', confirm_password: '', photo: null, telegram_user_id: '',
 };
 
-const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', directeur: 'Directeur', va: 'VA' };
+const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', admin: 'Admin', directeur: 'Directeur', va: 'VA' };
 const ROLE_COLORS = {
   chatteur: { bg: '#dbeafe', color: '#1e40af' },
   manager: { bg: '#fef3c7', color: '#b45309' },
+  admin: { bg: '#dcfce7', color: '#15803d' },
   directeur: { bg: '#ede9fe', color: '#6366f1' },
   va: { bg: '#f3e8ff', color: '#7c3aed' },
 };
@@ -28,6 +29,7 @@ const ROLE_COLORS = {
 const TABS = [
   { key: 'chatteur', label: 'Chatteurs', roles: ['chatteur', 'va'] },
   { key: 'manager', label: 'Managers', roles: ['manager'] },
+  { key: 'admin', label: 'Admins', roles: ['admin'] },
   { key: 'directeur', label: 'Directeur', roles: ['directeur'] },
 ];
 
@@ -355,7 +357,7 @@ export default function Chatteurs({ embedded = false }) {
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', justifyContent: 'center' }}>
                           <button onClick={() => navigate(`${basePath}/chatteurs/${c.id}`)} className="btn-ghost" title="Voir détail" aria-label={`Voir détail de ${c.prenom}`} style={{ padding: '0.35rem' }}><Eye size={16} /></button>
                           <button onClick={() => openEdit(c)} className="btn-ghost" title="Modifier" aria-label={`Modifier ${c.prenom}`} style={{ padding: '0.35rem' }}><Edit size={16} /></button>
-                          {c.statut !== 'inactif' && c.role !== 'directeur' && !(isManager && (c.id === user?.chatteur_id || c.role === 'manager')) ? (
+                          {c.statut !== 'inactif' && c.role !== 'directeur' && !(c.role === 'admin' && user?.chatteur_role !== 'directeur') && !(isManager && (c.id === user?.chatteur_id || c.role === 'manager')) ? (
                             <button onClick={() => setConfirmDel({ id: c.id, prenom: c.prenom })} className="btn-ghost" title="Désactiver" aria-label={`Désactiver ${c.prenom}`} style={{ color: '#ef4444', padding: '0.35rem' }}><UserX size={16} /></button>
                           ) : (
                             <span style={{ width: 30, display: 'inline-block' }} />
@@ -429,7 +431,8 @@ export default function Chatteurs({ embedded = false }) {
                   <select className="input-field" value={form.role} onChange={e => setForm({...form, role: e.target.value})} aria-label="Rôle du chatteur">
                     <option value="chatteur">Chatteur</option>
                     <option value="manager">Manager</option>
-                    <option value="directeur">Directeur</option>
+                    {user?.chatteur_role === 'directeur' && <option value="admin">Admin</option>}
+                    {user?.chatteur_role === 'directeur' && <option value="directeur">Directeur</option>}
                     <option value="va">VA</option>
                   </select>
                 </div>
@@ -447,7 +450,7 @@ export default function Chatteurs({ embedded = false }) {
                     {(form.taux_commission * 100).toFixed(1).replace('.0', '')}%
                     <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: '#94a3b8' }}>(non modifiable)</span>
                   </div>
-                  {(form.role === 'manager' || form.role === 'directeur') && (
+                  {(form.role === 'manager' || form.role === 'directeur' || form.role === 'admin') && (
                     <div style={{ marginTop: '0.5rem' }}>
                       <label className="label">Commission équipe</label>
                       <div style={{
@@ -479,7 +482,7 @@ export default function Chatteurs({ embedded = false }) {
                   {/* Commission presets */}
                   <div className="form-group">
                     <label className="label">Commission personnelle</label>
-                    {(form.role === 'manager' || form.role === 'directeur') ? (
+                    {(form.role === 'manager' || form.role === 'directeur' || form.role === 'admin') ? (
                       <>
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
                           <button type="button"
@@ -557,7 +560,7 @@ export default function Chatteurs({ embedded = false }) {
                   </div>
 
                   {/* Manager/Directeur: team commission rate */}
-                  {(form.role === 'manager' || form.role === 'directeur') && (
+                  {(form.role === 'manager' || form.role === 'directeur' || form.role === 'admin') && (
                     <div className="form-group">
                       <label className="label">Commission équipe (%)</label>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

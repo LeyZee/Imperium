@@ -196,9 +196,12 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler(async (req, res) =
     }
   }
 
-  // Manager can only create chatteurs, not other managers/directeurs
-  if (req.user.role === 'manager' && (role === 'manager' || role === 'directeur')) {
-    throw new ApiError(403, 'Un manager ne peut pas créer d\'autres managers ou directeurs');
+  // Permission matrix: directeur → all, admin → chatteur/manager/va, manager → chatteur/va only
+  if (req.user.role === 'manager' && (role === 'manager' || role === 'directeur' || role === 'admin')) {
+    throw new ApiError(403, 'Un manager ne peut créer que des chatteurs');
+  }
+  if (req.user.chatteur_role !== 'directeur' && (role === 'admin' || role === 'directeur')) {
+    throw new ApiError(403, 'Seul le directeur peut créer des administrateurs ou directeurs');
   }
 
   let user_id = null;
@@ -210,7 +213,8 @@ router.post('/', authMiddleware, adminOrManager, asyncHandler(async (req, res) =
       const exists = db.prepare('SELECT id FROM users WHERE email = ?').get(email);
       if (exists) throw new ApiError(409, 'Cet email est déjà utilisé');
 
-      const userRole = (role === 'manager' || role === 'directeur') ? 'manager' : 'chatteur';
+      const userRole = (role === 'admin' || role === 'directeur') ? 'admin'
+        : (role === 'manager') ? 'manager' : 'chatteur';
 
       if (password) {
         // Legacy: admin provides password directly (backward compat for seed.js)
@@ -293,15 +297,41 @@ router.post('/:id/resend-invite', authMiddleware, adminOrManager, asyncHandler(a
 router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;
 
-  // Directeur protection — cannot change role or deactivate a directeur
+  // Fetch target chatteur role for permission checks
   const targetChatteur = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
+
+  // Directeur protection — only directeur can modify directeur
   if (targetChatteur && targetChatteur.role === 'directeur') {
+    if (req.user.chatteur_role !== 'directeur') {
+      throw new ApiError(403, 'Seul le directeur peut modifier son propre profil');
+    }
     if (req.body.role && req.body.role !== 'directeur') {
       throw new ApiError(403, 'Le rôle du directeur ne peut pas être modifié');
     }
     if (req.body.actif === false || req.body.actif === 0) {
       throw new ApiError(403, 'Le compte directeur ne peut pas être désactivé');
     }
+  }
+
+  // Admin protection — only directeur can modify admins
+  if (targetChatteur && targetChatteur.role === 'admin' && req.user.chatteur_role !== 'directeur') {
+    // Admin can edit own non-sensitive fields but not role/actif of other admins
+    if (req.user.chatteur_id !== parseInt(id, 10)) {
+      throw new ApiError(403, 'Seul le directeur peut modifier un administrateur');
+    }
+    // Admin editing self: cannot change own role or deactivate self
+    delete req.body.role;
+    delete req.body.actif;
+  }
+
+  // Role promotion restrictions: only directeur can assign admin/directeur roles
+  if (req.body.role && (req.body.role === 'admin' || req.body.role === 'directeur') && req.user.chatteur_role !== 'directeur') {
+    throw new ApiError(403, 'Seul le directeur peut attribuer le rôle admin ou directeur');
+  }
+
+  // Admin (non-directeur) cannot assign manager role — only directeur can
+  if (req.body.role === 'manager' && req.user.role === 'manager') {
+    throw new ApiError(403, 'Un manager ne peut pas promouvoir au rôle manager');
   }
 
   // Manager restrictions
@@ -363,6 +393,16 @@ router.put('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
     id
   );
 
+  // Sync users.role when chatteur role changes
+  if (role) {
+    const chatteurRow = db.prepare('SELECT user_id FROM chatteurs WHERE id = ?').get(id);
+    if (chatteurRow?.user_id) {
+      const userRole = (role === 'admin' || role === 'directeur') ? 'admin'
+        : (role === 'manager') ? 'manager' : 'chatteur';
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(userRole, chatteurRow.user_id);
+    }
+  }
+
   res.json({ message: 'Chatteur mis à jour' });
 }));
 
@@ -384,13 +424,19 @@ router.put('/:id/account', authMiddleware, adminOnly, asyncHandler(async (req, r
   const chatteur = db.prepare('SELECT id, user_id, email, role FROM chatteurs WHERE id = ?').get(id);
   if (!chatteur) throw new ApiError(404, 'Chatteur introuvable');
 
+  // Only directeur can manage directeur's account
+  if (chatteur.role === 'directeur' && req.user.chatteur_role !== 'directeur') {
+    throw new ApiError(403, 'Seul le directeur peut gérer le compte du directeur');
+  }
+
   if (chatteur.user_id) {
     // Update existing user account
     const conflict = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email.trim(), chatteur.user_id);
     if (conflict) throw new ApiError(409, 'Cet email est déjà utilisé');
 
     // Sync role from chatteur profile to user account
-    const userRole = (chatteur.role === 'manager' || chatteur.role === 'directeur') ? 'manager' : 'chatteur';
+    const userRole = (chatteur.role === 'admin' || chatteur.role === 'directeur') ? 'admin'
+      : (chatteur.role === 'manager') ? 'manager' : 'chatteur';
     db.prepare('UPDATE users SET email = ?, username = ?, role = ? WHERE id = ?').run(email.trim(), email.trim(), userRole, chatteur.user_id);
     // Also sync email on the chatteur profile
     db.prepare('UPDATE chatteurs SET email = ? WHERE id = ?').run(email.trim(), id);
@@ -407,7 +453,8 @@ router.put('/:id/account', authMiddleware, adminOnly, asyncHandler(async (req, r
     if (conflict) throw new ApiError(409, 'Cet email est déjà utilisé');
 
     const chatteurData = db.prepare('SELECT role, prenom FROM chatteurs WHERE id = ?').get(id);
-    const userRole = (chatteurData?.role === 'manager' || chatteurData?.role === 'directeur') ? 'manager' : 'chatteur';
+    const userRole = (chatteurData?.role === 'admin' || chatteurData?.role === 'directeur') ? 'admin'
+      : (chatteurData?.role === 'manager') ? 'manager' : 'chatteur';
 
     if (new_password) {
       // Admin provides password directly
@@ -446,10 +493,16 @@ router.put('/:id/account', authMiddleware, adminOnly, asyncHandler(async (req, r
 router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;
 
-  // Directeur is protected — nobody can deactivate a directeur
   const target = db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(id);
+
+  // Directeur is protected — nobody can deactivate a directeur
   if (target && target.role === 'directeur') {
     throw new ApiError(403, 'Le compte directeur ne peut pas être désactivé');
+  }
+
+  // Only directeur can deactivate an admin
+  if (target && target.role === 'admin' && req.user.chatteur_role !== 'directeur') {
+    throw new ApiError(403, 'Seul le directeur peut désactiver un admin');
   }
 
   if (req.user.role === 'manager') {
@@ -457,7 +510,7 @@ router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) =>
     if (req.user.chatteur_id === parseInt(id)) {
       throw new ApiError(403, 'Vous ne pouvez pas vous désactiver vous-même');
     }
-    // Manager cannot deactivate other managers (admin only)
+    // Manager cannot deactivate other managers
     if (target && target.role === 'manager') {
       throw new ApiError(403, 'Seul un admin peut désactiver un manager');
     }

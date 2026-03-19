@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../database');
-const { authMiddleware, adminOrManager } = require('../middleware/auth');
+const { authMiddleware, adminOrManager, adminOnly } = require('../middleware/auth');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
 const { logActivity } = require('../utils/activityLogger');
@@ -316,7 +316,7 @@ router.get('/paliers-primes', authMiddleware, asyncHandler((req, res) => {
 }));
 
 // POST /api/objectifs/paliers-primes — global (not period-specific)
-router.post('/paliers-primes', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+router.post('/paliers-primes', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const { paliers } = req.body;
 
   if (!paliers || !Array.isArray(paliers) || paliers.length === 0) {
@@ -350,7 +350,7 @@ router.post('/paliers-primes', authMiddleware, adminOrManager, asyncHandler((req
 }));
 
 // PUT /api/objectifs/paliers-primes — replace all paliers (global)
-router.put('/paliers-primes', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+router.put('/paliers-primes', authMiddleware, adminOnly, asyncHandler((req, res) => {
   const { paliers } = req.body;
 
   if (!paliers || !Array.isArray(paliers) || paliers.length === 0) {
@@ -381,7 +381,7 @@ router.put('/paliers-primes', authMiddleware, adminOrManager, asyncHandler((req,
 }));
 
 // DELETE /api/objectifs/paliers-primes (soft delete — global)
-router.delete('/paliers-primes', authMiddleware, adminOrManager, asyncHandler((req, res) => {
+router.delete('/paliers-primes', authMiddleware, adminOnly, asyncHandler((req, res) => {
   db.prepare('UPDATE paliers_primes SET actif = 0 WHERE actif = 1').run();
 
   logActivity(req.user.id, 'delete_paliers_primes', 'paliers_primes');

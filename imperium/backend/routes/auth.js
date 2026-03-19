@@ -75,7 +75,8 @@ router.post('/login', asyncHandler((req, res) => {
     id: user.id,
     email: user.email,
     role: user.role,
-    chatteur_id: chatteur?.id || null
+    chatteur_id: chatteur?.id || null,
+    chatteur_role: chatteur?.role || null,
   });
 
   // Set httpOnly cookie
@@ -95,6 +96,7 @@ router.post('/login', asyncHandler((req, res) => {
       chatteur_id: chatteur?.id || null,
       photo: user.photo || null,
       couleur: chatteur?.couleur ?? null,
+      chatteur_role: chatteur?.role || null,
     }
   });
 }));
@@ -121,6 +123,7 @@ router.get('/me', authMiddleware, asyncHandler((req, res) => {
       chatteur_id: chatteur?.id || null,
       photo: user.photo || null,
       couleur: chatteur?.couleur ?? null,
+      chatteur_role: chatteur?.role || null,
     }
   });
 }));
@@ -293,12 +296,16 @@ router.post('/setup-password/:token', asyncHandler((req, res) => {
   // Mark token as used
   db.prepare('UPDATE invitation_tokens SET used_at = datetime(\'now\') WHERE id = ?').run(row.id);
 
+  // Get chatteur role for JWT
+  const chatteur = row.chatteur_id ? db.prepare('SELECT role FROM chatteurs WHERE id = ?').get(row.chatteur_id) : null;
+
   // Auto-login
   const jwtToken = signToken({
     id: row.user_id,
     email: row.email,
     role: row.user_role,
     chatteur_id: row.chatteur_id || null,
+    chatteur_role: chatteur?.role || null,
   });
 
   res.cookie('token', jwtToken, {
@@ -316,6 +323,7 @@ router.post('/setup-password/:token', asyncHandler((req, res) => {
       prenom: row.prenom || null,
       chatteur_id: row.chatteur_id || null,
       photo: null,
+      chatteur_role: chatteur?.role || null,
     },
   });
 }));
