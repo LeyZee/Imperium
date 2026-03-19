@@ -428,7 +428,18 @@ export default function Chatteurs({ embedded = false }) {
               {!isManager && (
                 <div className="form-group">
                   <label className="label">Rôle</label>
-                  <select className="input-field" value={form.role} onChange={e => setForm({...form, role: e.target.value})} aria-label="Rôle du chatteur">
+                  <select className="input-field" value={form.role} onChange={e => {
+                    const newRole = e.target.value;
+                    const isAdminOrDir = newRole === 'admin' || newRole === 'directeur';
+                    const wasAdminOrDir = form.role === 'admin' || form.role === 'directeur';
+                    setForm({
+                      ...form,
+                      role: newRole,
+                      // Reset commission to 0 when switching TO admin/directeur, restore default when switching FROM
+                      ...(isAdminOrDir && !wasAdminOrDir ? { taux_commission: 0, taux_net_equipe: 0 } : {}),
+                      ...(!isAdminOrDir && wasAdminOrDir ? { taux_commission: 0.15, taux_net_equipe: newRole === 'manager' ? 0.05 : 0 } : {}),
+                    });
+                  }} aria-label="Rôle du chatteur">
                     <option value="chatteur">Chatteur</option>
                     <option value="manager">Manager</option>
                     {user?.chatteur_role === 'directeur' && <option value="admin">Admin</option>}
