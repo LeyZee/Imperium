@@ -69,38 +69,42 @@ router.get('/classement', authMiddleware, asyncHandler((req, res) => {
 
   let total_net_ht_equipe = totalRow?.total || 0;
 
-  // Fallback: estimate from ventes when no paies exist yet
-  if (classement.length === 0) {
-    const ventesClassement = db.prepare(`
-      SELECT
-        c.id, c.prenom, c.couleur, c.role, c.pays,
-        v.montant_brut, pl.devise, pl.tva_rate, pl.commission_rate
-      FROM ventes v
-      JOIN chatteurs c ON c.id = v.chatteur_id
-      JOIN plateformes pl ON pl.id = v.plateforme_id
-      WHERE v.periode_debut = ? AND v.periode_fin = ?
-        AND v.statut != 'rejetée'
-        AND c.actif = 1 AND c.role NOT IN ('va', 'manager')
-    `).all(periode_debut, periode_fin);
+  // Complement: estimate from ventes for chatteurs who have no paies yet
+  // This ensures chatteurs with validated ventes but no generated paies still appear in ranking
+  const paieChatteurIds = new Set(classement.map(c => c.id));
+  const tauxChange = getExchangeRate();
 
-    if (ventesClassement.length > 0) {
-      const byChatteur = {};
-      for (const v of ventesClassement) {
-        if (!byChatteur[v.id]) {
-          byChatteur[v.id] = { id: v.id, prenom: v.prenom, couleur: v.couleur, role: v.role, pays: v.pays, total_net_ht: 0, prime: 0, total_paie: 0 };
-        }
-        const brut = v.montant_brut || 0;
-        const tva = v.tva_rate ?? 0.2;
-        const comm = v.commission_rate ?? 0.2;
-        const brutEur = v.devise === 'USD' ? brut * 0.92 : brut;
-        byChatteur[v.id].total_net_ht += (brutEur / (1 + tva)) * (1 - comm);
+  const ventesClassement = db.prepare(`
+    SELECT
+      c.id, c.prenom, c.couleur, c.role, c.pays,
+      v.montant_brut, pl.devise, pl.tva_rate, pl.commission_rate
+    FROM ventes v
+    JOIN chatteurs c ON c.id = v.chatteur_id
+    JOIN plateformes pl ON pl.id = v.plateforme_id
+    WHERE v.periode_debut = ? AND v.periode_fin = ?
+      AND v.statut != 'rejetée'
+      AND c.actif = 1 AND c.role NOT IN ('va', 'manager')
+  `).all(periode_debut, periode_fin);
+
+  if (ventesClassement.length > 0) {
+    const byChatteur = {};
+    for (const v of ventesClassement) {
+      // Skip chatteurs who already have paies
+      if (paieChatteurIds.has(v.id)) continue;
+      if (!byChatteur[v.id]) {
+        byChatteur[v.id] = { id: v.id, prenom: v.prenom, couleur: v.couleur, role: v.role, pays: v.pays, total_net_ht: 0, prime: 0, total_paie: 0, estimated: true };
       }
-      classement = Object.values(byChatteur)
-        .map(c => ({ ...c, total_net_ht: Math.round(c.total_net_ht * 100) / 100 }))
-        .filter(c => c.total_net_ht > 0)
-        .sort((a, b) => b.total_net_ht - a.total_net_ht);
-      total_net_ht_equipe = classement.reduce((s, c) => s + c.total_net_ht, 0);
+      const brut = v.montant_brut || 0;
+      const tva = v.tva_rate ?? 0.2;
+      const comm = v.commission_rate ?? 0.2;
+      const brutEur = v.devise === 'USD' ? brut * tauxChange : brut;
+      byChatteur[v.id].total_net_ht += (brutEur / (1 + tva)) * (1 - comm);
     }
+    const estimated = Object.values(byChatteur)
+      .map(c => ({ ...c, total_net_ht: Math.round(c.total_net_ht * 100) / 100 }))
+      .filter(c => c.total_net_ht > 0);
+    classement = [...classement, ...estimated].sort((a, b) => b.total_net_ht - a.total_net_ht);
+    total_net_ht_equipe = classement.reduce((s, c) => s + c.total_net_ht, 0);
   }
 
   // Fetch individual paliers (global)

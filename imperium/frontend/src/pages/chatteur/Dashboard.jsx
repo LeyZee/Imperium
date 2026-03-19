@@ -998,7 +998,7 @@ export default function ChatteurDashboard() {
       {!loading && <DonutChart
         data={ventesParModele.map(d => ({ label: d.pseudo || 'N/A', value: d.total_brut || 0, color: d.couleur_fond }))}
         title="Ventes par modèle"
-        valueLabel="$"
+        valueLabel="€"
         emptyText="Tes ventes par modèle apparaîtront ici."
         maxLegend={5}
       />}
@@ -1036,7 +1036,7 @@ export default function ChatteurDashboard() {
                       )}
                     </div>
                     <span style={{ fontWeight: 700, color: '#f5b731' }}>
-                      {(v.montant_brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} $
+                      {(v.montant_brut || 0).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} {v.devise === 'USD' ? '$' : '€'}
                     </span>
                   </div>
                 ))}

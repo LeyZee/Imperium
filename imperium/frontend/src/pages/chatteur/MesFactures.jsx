@@ -43,63 +43,66 @@ function PaieDetail({ paie, tauxCommission, malusForPeriod }) {
   return (
     <tr style={{ animation: 'expandIn 300ms ease forwards' }}>
       <td colSpan={5} style={{ padding: 0, background: '#fafaf8' }}>
-        <div style={{ padding: '1rem 1.25rem', borderTop: '1px dashed #e2e8f0' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+        <div style={{ padding: '0.75rem 0.75rem', borderTop: '1px dashed #e2e8f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.6rem' }}>
             <Calculator size={14} color="#64748b" />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#64748b', letterSpacing: '0.05em' }}>
+            <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', letterSpacing: '0.05em' }}>
               {"D\u00c9TAIL DU CALCUL"} — {paie.plateforme_nom || 'Global'}
             </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.5rem' }}>
-            {/* Left column: conversion chain */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <Step label="Ventes brutes" value={`${fmt(paie.ventes_brutes)} ${isUSD ? '$' : '\u20ac'}`} />
-              {isUSD && (
-                <Step label={`Taux de change (\u00d7${paie.taux_change})`} value={`${fmt(paie.ventes_ttc_eur)} \u20ac`} op={"\u00d7"} />
-              )}
-              <Step label={`TVA (${pct(paie.tva_rate || 0)}%)`} value={`${fmt(paie.ventes_ht_eur)} \u20ac HT`} op={"\u00f7"} />
-              <Step label={`Commission plateforme (${pct(paie.commission_rate || 0)}%)`} value={`${fmt(paie.net_ht_eur)} \u20ac net`} op={"\u2212"} />
-            </div>
-            {/* Right column: commission details */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
-              <Step label={`Ta commission (${pct(tauxCommission)}%)`} value={`${fmt(paie.commission_chatteur)} \u20ac`} highlight />
-              {(paie.prime || 0) > 0 && (
-                <Step label={"Prime \uD83C\uDFC6"} value={`+${fmt(paie.prime)} \u20ac`} color="#10b981" />
-              )}
-              {(paie.malus_total || 0) > 0 && (
-                malusForPeriod.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
-                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#ef4444', padding: '0.15rem 0.5rem' }}>Malus :</span>
-                    {malusForPeriod.map(m => (
-                      <div key={m.id} style={{
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '0.2rem 0.5rem 0.2rem 1rem',
-                      }}>
-                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{m.raison || 'Malus'}</span>
-                        <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ef4444', whiteSpace: 'nowrap' }}>
-                          {m.type_malus === 'pourcentage' ? `\u2212${fmt(m.montant)}%` : `\u2212${fmt(m.montant)} \u20ac`}
-                        </span>
-                      </div>
-                    ))}
-                    <div style={{
+          {/* Single column layout — works on all screen sizes */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+            {/* Conversion chain */}
+            <Step label="Ventes brutes" value={`${fmt(paie.ventes_brutes)} ${isUSD ? '$' : '\u20ac'}`} />
+            {isUSD && (
+              <Step label={`Change (\u00d7${paie.taux_change})`} value={`${fmt(paie.ventes_ttc_eur)} \u20ac`} op={"\u00d7"} />
+            )}
+            <Step label={`TVA (${pct(paie.tva_rate || 0)}%)`} value={`${fmt(paie.ventes_ht_eur)} \u20ac HT`} op={"\u00f7"} />
+            <Step label={`Com. plateforme (${pct(paie.commission_rate || 0)}%)`} value={`${fmt(paie.net_ht_eur)} \u20ac net`} op={"\u2212"} />
+
+            {/* Separator */}
+            <div style={{ borderTop: '1px dashed #e2e8f0', margin: '0.25rem 0' }} />
+
+            {/* Commission details */}
+            <Step label={`Ta commission (${pct(tauxCommission)}%)`} value={`${fmt(paie.commission_chatteur)} \u20ac`} highlight />
+            {(paie.prime || 0) > 0 && (
+              <Step label={"Prime \uD83C\uDFC6"} value={`+${fmt(paie.prime)} \u20ac`} color="#10b981" />
+            )}
+            {(paie.malus_total || 0) > 0 && (
+              malusForPeriod.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#ef4444', padding: '0.15rem 0.5rem' }}>Malus :</span>
+                  {malusForPeriod.map(m => (
+                    <div key={m.id} style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                      padding: '0.25rem 0.5rem', borderTop: '1px dashed rgba(239,68,68,0.3)', marginTop: '0.1rem',
+                      padding: '0.2rem 0.5rem 0.2rem 1rem',
                     }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#ef4444' }}>Total malus</span>
-                      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: '#ef4444' }}>{`\u2212${fmt(paie.malus_total)} \u20ac`}</span>
+                      <span style={{ fontSize: '0.72rem', color: '#94a3b8' }}>{m.raison || 'Malus'}</span>
+                      <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#ef4444', whiteSpace: 'nowrap' }}>
+                        {m.type_malus === 'pourcentage' ? `\u2212${fmt(m.montant)}%` : `\u2212${fmt(m.montant)} \u20ac`}
+                      </span>
                     </div>
+                  ))}
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    padding: '0.25rem 0.5rem', borderTop: '1px dashed rgba(239,68,68,0.3)', marginTop: '0.1rem',
+                  }}>
+                    <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#ef4444' }}>Total malus</span>
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, color: '#ef4444' }}>{`\u2212${fmt(paie.malus_total)} \u20ac`}</span>
                   </div>
-                ) : (
-                  <Step label="Malus" value={`\u2212${fmt(paie.malus_total)} \u20ac`} color="#ef4444" />
-                )
-              )}
-              <div style={{
-                borderTop: '2px solid #1b2e4b', paddingTop: '0.4rem', marginTop: '0.2rem',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-              }}>
-                <span style={{ fontWeight: 700, color: '#1b2e4b', fontSize: '0.85rem' }}>Total</span>
-                <span style={{ fontWeight: 700, color: '#f5b731', fontSize: '1rem' }}>{fmt(paie.total_chatteur)} {"\u20ac"}</span>
-              </div>
+                </div>
+              ) : (
+                <Step label="Malus" value={`\u2212${fmt(paie.malus_total)} \u20ac`} color="#ef4444" />
+              )
+            )}
+
+            {/* Total */}
+            <div style={{
+              borderTop: '2px solid #1b2e4b', paddingTop: '0.4rem', marginTop: '0.2rem',
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            }}>
+              <span style={{ fontWeight: 700, color: '#1b2e4b', fontSize: '0.85rem' }}>Total</span>
+              <span style={{ fontWeight: 700, color: '#f5b731', fontSize: '1rem' }}>{fmt(paie.total_chatteur)} {"\u20ac"}</span>
             </div>
           </div>
         </div>
@@ -112,14 +115,15 @@ function Step({ label, value, op, highlight, color }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-      padding: '0.3rem 0.5rem', borderRadius: '6px',
+      padding: '0.25rem 0.4rem', borderRadius: '6px',
       background: highlight ? 'rgba(245,183,49,0.08)' : 'transparent',
+      gap: '0.5rem',
     }}>
-      <span style={{ fontSize: '0.78rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-        {op && <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: '0.7rem' }}>{op}</span>}
-        {label}
+      <span style={{ fontSize: '0.72rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.3rem', minWidth: 0 }}>
+        {op && <span style={{ color: '#94a3b8', fontWeight: 600, fontSize: '0.65rem', flexShrink: 0 }}>{op}</span>}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
       </span>
-      <span style={{ fontSize: '0.82rem', fontWeight: 600, color: color || (highlight ? '#b8860b' : '#334155'), whiteSpace: 'nowrap' }}>
+      <span style={{ fontSize: '0.78rem', fontWeight: 600, color: color || (highlight ? '#b8860b' : '#334155'), whiteSpace: 'nowrap', flexShrink: 0 }}>
         {value}
       </span>
     </div>
@@ -473,14 +477,14 @@ export default function MesFactures() {
                 )}
 
                 {/* Paies table for this period */}
-                <div style={{ overflowX: 'auto' }}>
-                  <table>
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <table style={{ minWidth: '460px' }}>
                     <thead>
                       <tr>
                         <th>Plateforme</th>
                         <th style={{ textAlign: 'right' }}>Ventes brutes</th>
                         <th style={{ textAlign: 'right' }}>Ma paie</th>
-                        <th>Statut</th>
+                        <th style={{ whiteSpace: 'nowrap' }}>Statut</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -513,11 +517,12 @@ export default function MesFactures() {
                             <td style={{ textAlign: 'right', fontWeight: 700, color: '#f5b731' }}>
                               {fmt(p.total_chatteur)} {"€"}
                             </td>
-                            <td>
+                            <td style={{ whiteSpace: 'nowrap' }}>
                               <span style={{
                                 ...statutStyle,
                                 padding: '0.2rem 0.6rem', borderRadius: '20px',
                                 fontSize: '0.72rem', fontWeight: 600, textTransform: 'capitalize',
+                                whiteSpace: 'nowrap',
                               }}>
                                 {p.statut}
                               </span>

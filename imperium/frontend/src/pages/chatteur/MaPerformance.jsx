@@ -7,7 +7,14 @@ import { Trophy, TrendingUp, BarChart2, AlertTriangle, Zap, Target, Flame, Star,
 import { computeStreaksAndRecords } from '../../utils/gamification.js';
 import { getTierColorFromPalier } from '../../utils/palierColors.js';
 
-const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
+
+const RANK_BADGES = [
+  { rank: '1er', badgeBg: 'linear-gradient(135deg, #f5b731, #e6a817)' },
+  { rank: '2e', badgeBg: 'linear-gradient(135deg, #94a3b8, #64748b)' },
+  { rank: '3e', badgeBg: 'linear-gradient(135deg, #cd7f32, #a0522d)' },
+  { rank: '4e', badgeBg: 'linear-gradient(135deg, #6366f1, #4f46e5)' },
+  { rank: '5e', badgeBg: 'linear-gradient(135deg, #14b8a6, #0d9488)' },
+];
 
 /* ─── Badge descriptions for unlock conditions ─── */
 const BADGE_DESCRIPTIONS = {
@@ -886,20 +893,20 @@ export default function MaPerformance() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
                       <div style={{
                         width: '42px', height: '42px', borderRadius: '50%',
-                        background: myRang > 0 && myRang <= 3
-                          ? 'linear-gradient(135deg, #f5b731, #f59e0b)'
+                        background: myRang > 0
+                          ? (RANK_BADGES[myRang - 1] || { badgeBg: 'linear-gradient(135deg, #94a3b8, #64748b)' }).badgeBg
                           : `linear-gradient(135deg, ${motivation.color}20, ${motivation.color}10)`,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         flexShrink: 0,
-                        border: myRang > 0 && myRang <= 3 ? '2px solid #f5b731' : `2px solid ${motivation.color}30`,
+                        boxShadow: myRang > 0 ? '0 2px 6px rgba(0,0,0,0.15)' : 'none',
                       }}>
                         {myRang > 0 ? (
                           <span style={{
-                            fontSize: myRang <= 3 ? '1.1rem' : '0.85rem',
+                            fontSize: '0.85rem',
                             fontWeight: 800,
-                            color: myRang <= 3 ? '#ffffff' : motivation.color,
+                            color: '#ffffff',
                           }}>
-                            {myRang <= 3 ? medals[myRang - 1] : `#${myRang}`}
+                            {(RANK_BADGES[myRang - 1] || { rank: `${myRang}e` }).rank}
                           </span>
                         ) : (
                           <Target size={18} color={motivation.color} />
@@ -930,9 +937,19 @@ export default function MaPerformance() {
                           background: isMe ? 'rgba(59,130,246,0.06)' : 'transparent',
                           border: isMe ? '1px solid rgba(59,130,246,0.15)' : '1px solid transparent',
                         }}>
-                          <span style={{ fontSize: '0.85rem', width: '24px', textAlign: 'center', flexShrink: 0 }}>
-                            {i < 3 ? medals[i] : `#${i + 1}`}
-                          </span>
+                          {(() => {
+                            const badge = RANK_BADGES[i] || { rank: `${i+1}e`, badgeBg: 'linear-gradient(135deg, #94a3b8, #64748b)' };
+                            return (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                width: '1.5rem', height: '1.5rem', borderRadius: '50%',
+                                background: badge.badgeBg,
+                                color: '#fff', fontSize: '0.6rem', fontWeight: 800,
+                                flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,0.15)',
+                                letterSpacing: '-0.02em',
+                              }}>{badge.rank}</span>
+                            );
+                          })()}
                           <span style={{
                             flex: 1, fontSize: '0.82rem',
                             fontWeight: isMe ? 700 : 500,
