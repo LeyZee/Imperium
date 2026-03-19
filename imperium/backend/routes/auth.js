@@ -114,6 +114,23 @@ router.get('/me', authMiddleware, asyncHandler((req, res) => {
 
   const chatteur = db.prepare('SELECT * FROM chatteurs WHERE user_id = ?').get(user.id) || null;
 
+  // Refresh JWT cookie if chatteur_role is missing (token issued before migration)
+  if (chatteur && !req.user.chatteur_role) {
+    const freshToken = signToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      chatteur_id: chatteur.id,
+      chatteur_role: chatteur.role,
+    });
+    res.cookie('token', freshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+  }
+
   res.json({
     user: {
       id: user.id,

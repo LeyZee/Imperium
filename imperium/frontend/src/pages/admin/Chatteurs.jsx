@@ -465,7 +465,47 @@ export default function Chatteurs({ embedded = false }) {
                   )}
                 </div>
               )}
-              {isEditingSelf ? null : form.role === 'va' ? (
+              {isEditingSelf ? null : (form.role === 'admin' || form.role === 'directeur') ? (
+                /* Admin/Directeur: commission optionnelle */
+                <details style={{ marginTop: '0.25rem' }}>
+                  <summary style={{
+                    cursor: 'pointer', fontSize: '0.78rem', color: '#94a3b8',
+                    fontWeight: 500, padding: '0.3rem 0',
+                  }}>
+                    💰 Configurer la rémunération <span style={{ fontSize: '0.7rem' }}>(optionnel)</span>
+                  </summary>
+                  <div style={{ marginTop: '0.5rem', padding: '0.75rem', borderRadius: '8px', background: '#f8fafc', border: '1px solid #e2e8f0' }}>
+                    <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+                      <label className="label">Commission personnelle (%)</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input className="input-field" type="number" step="0.5" min="0" max="100"
+                          style={{ width: '6rem', fontSize: '0.85rem' }}
+                          value={(form.taux_commission * 100) || ''}
+                          placeholder="0"
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            if (!isNaN(v) && v >= 0 && v <= 100) setForm({...form, taux_commission: v / 100});
+                          }} />
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>%</span>
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label className="label">Commission équipe (%)</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <input className="input-field" type="number" step="0.5" min="0" max="100"
+                          style={{ width: '6rem' }}
+                          value={(form.taux_net_equipe * 100) || ''}
+                          placeholder="0"
+                          onChange={e => {
+                            const v = parseFloat(e.target.value);
+                            if (!isNaN(v) && v >= 0 && v <= 100) setForm({...form, taux_net_equipe: v / 100});
+                          }} />
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Sur toutes les ventes générées</span>
+                      </div>
+                    </div>
+                  </div>
+                </details>
+              ) : form.role === 'va' ? (
                 <div className="form-group">
                   <label className="label">Taux horaire (€/h)</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -482,7 +522,7 @@ export default function Chatteurs({ embedded = false }) {
                   {/* Commission presets */}
                   <div className="form-group">
                     <label className="label">Commission personnelle</label>
-                    {(form.role === 'manager' || form.role === 'directeur' || form.role === 'admin') ? (
+                    {form.role === 'manager' ? (
                       <>
                         <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.3rem' }}>
                           <button type="button"
@@ -559,8 +599,8 @@ export default function Chatteurs({ embedded = false }) {
                     )}
                   </div>
 
-                  {/* Manager/Directeur: team commission rate */}
-                  {(form.role === 'manager' || form.role === 'directeur' || form.role === 'admin') && (
+                  {/* Manager: team commission rate */}
+                  {form.role === 'manager' && (
                     <div className="form-group">
                       <label className="label">Commission équipe (%)</label>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
