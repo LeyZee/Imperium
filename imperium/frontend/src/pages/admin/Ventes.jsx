@@ -158,9 +158,27 @@ function SortableHeader({ label, field, sortCol, sortDir, onSort, align }) {
   );
 }
 
+/* ─── Responsive hook ─── */
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia(`(max-width: ${breakpoint}px)`).matches;
+  });
+
+  useEffect(() => {
+    const mql = window.matchMedia(`(max-width: ${breakpoint}px)`);
+    const handler = (e) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [breakpoint]);
+
+  return isMobile;
+}
+
 /* ─────────────────────────────────────────── */
 export default function Ventes() {
   const toast = useToast();
+  const isMobile = useIsMobile();
   const [allVentes, setAllVentes] = useState([]);
   const [chatteurs, setChatteurs] = useState([]);
   const [modeles, setModeles] = useState([]);
@@ -588,9 +606,9 @@ export default function Ventes() {
   return (
     <div className="page-enter">
       {/* ─── Header ─── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem', flexDirection: isMobile ? 'column' : 'row', alignItems: isMobile ? 'stretch' : 'center' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <h1 style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}><TrendingUp size={22} color="#f5b731" /> Ventes</h1>
+          <h1 style={{ fontWeight: 700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: isMobile ? '1.15rem' : undefined }}><TrendingUp size={isMobile ? 18 : 22} color="#f5b731" /> Ventes</h1>
           {(() => {
             const pendingCount = ventes.filter(v => v.statut === 'en_attente').length;
             return pendingCount > 0 ? (
@@ -604,7 +622,7 @@ export default function Ventes() {
             ) : null;
           })()}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap', justifyContent: isMobile ? 'stretch' : 'flex-end', width: isMobile ? '100%' : 'auto' }}>
           {/* Period selector */}
           <div style={{ position: 'relative' }}>
             <button
@@ -658,14 +676,14 @@ export default function Ventes() {
           </div>
 
           {selectedPeriod && (
-            <button className="btn-secondary" style={{ fontSize: '0.8rem' }}
+            <button className="btn-secondary" style={{ fontSize: '0.8rem', flex: isMobile ? 1 : undefined }}
               aria-label="Exporter les ventes en CSV"
               onClick={() => window.open(`/api/ventes/export-csv?periode_debut=${selectedPeriod.debut}&periode_fin=${selectedPeriod.fin}`, '_blank')}>
               <Download size={14} /> CSV
             </button>
           )}
 
-          <button className="btn-primary" onClick={openAddModal}>
+          <button className="btn-primary" onClick={openAddModal} style={{ flex: isMobile ? 1 : undefined }}>
             <Plus size={16} /> Nouvelle vente
           </button>
         </div>
@@ -705,18 +723,20 @@ export default function Ventes() {
       </div>
 
       {/* ─── Filter Bar ─── */}
-      <div className="card" style={{ padding: '0.6rem 1rem', marginBottom: '1rem' }}>
+      <div className="card" style={{ padding: isMobile ? '0.5rem 0.75rem' : '0.6rem 1rem', marginBottom: '1rem' }}>
         <div style={{
-          display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+          display: isMobile ? 'grid' : 'flex',
+          gridTemplateColumns: isMobile ? '1fr 1fr' : undefined,
+          alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
         }}>
           <select
             className="input-field"
             value={activePlatform ?? ''}
             onChange={e => selectPlatform(e.target.value ? Number(e.target.value) : null)}
             aria-label="Filtrer par plateforme"
-            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+            style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '150px', fontSize: '0.8rem' }}
           >
-            <option value="">Toutes les plateformes</option>
+            <option value="">Toutes plateformes</option>
             {plateformes.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
           </select>
           <select
@@ -724,9 +744,9 @@ export default function Ventes() {
             value={filterModele}
             onChange={e => changeModele(e.target.value)}
             aria-label="Filtrer par modèle"
-            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+            style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '150px', fontSize: '0.8rem' }}
           >
-            <option value="">Tous les modèles</option>
+            <option value="">Tous modèles</option>
             {modeleOptionsWithCounts.map(m => <option key={m.id} value={m.id}>{m.pseudo} ({m.venteCount})</option>)}
           </select>
           <select
@@ -734,9 +754,9 @@ export default function Ventes() {
             value={filterChatteur}
             onChange={e => changeChatteur(e.target.value)}
             aria-label="Filtrer par chatteur"
-            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+            style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '150px', fontSize: '0.8rem' }}
           >
-            <option value="">Tous les chatteurs</option>
+            <option value="">Tous chatteurs</option>
             {chatteurOptionsWithCounts.map(c => <option key={c.id} value={c.id}>{c.prenom} ({c.venteCount})</option>)}
           </select>
           <select
@@ -744,9 +764,9 @@ export default function Ventes() {
             value={sourceFilter}
             onChange={e => setSourceFilter(e.target.value)}
             aria-label="Filtrer par source"
-            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+            style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '150px', fontSize: '0.8rem' }}
           >
-            <option value="all">Toutes les sources</option>
+            <option value="all">Toutes sources</option>
             <option value="telegram">Telegram ({sourceCounts.telegram})</option>
             <option value="chatteur">Chatteur ({sourceCounts.chatteur})</option>
             <option value="manager">Manager ({sourceCounts.manager})</option>
@@ -757,9 +777,9 @@ export default function Ventes() {
             value={statutFilter}
             onChange={e => setStatutFilter(e.target.value)}
             aria-label="Filtrer par statut"
-            style={{ width: 'auto', minWidth: '150px', fontSize: '0.8rem' }}
+            style={{ width: isMobile ? '100%' : 'auto', minWidth: isMobile ? undefined : '150px', fontSize: '0.8rem' }}
           >
-            <option value="all">Tous les statuts</option>
+            <option value="all">Tous statuts</option>
             <option value="en_attente">En attente ({statutCounts.en_attente})</option>
             <option value="validée">Validée ({statutCounts['validée']})</option>
             <option value="rejetée">Rejetée ({statutCounts['rejetée']})</option>
@@ -770,7 +790,7 @@ export default function Ventes() {
             <button
               onClick={() => { setSourceFilter('all'); setStatutFilter('all'); setActivePlatform(null); setFilterModele(''); setFilterChatteur(''); }}
               className="btn-ghost"
-              style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+              style={{ fontSize: '0.75rem', padding: '0.35rem 0.6rem', display: 'flex', alignItems: 'center', gap: '0.25rem', gridColumn: isMobile ? '1 / -1' : undefined, justifyContent: isMobile ? 'center' : undefined }}
             >
               <RotateCcw size={12} /> Reset
             </button>
@@ -815,19 +835,19 @@ export default function Ventes() {
       ) : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-          <table style={{ minWidth: '1050px' }}>
+          <table style={{ minWidth: isMobile ? '600px' : '1050px' }}>
             <thead>
               <tr>
                 <SortableHeader label="Période" field="periode" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <SortableHeader label="Chatteur" field="chatteur" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                 <th style={{ whiteSpace: 'nowrap' }}>Modèle</th>
                 <SortableHeader label="Plateforme" field="plateforme" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                <th style={{ whiteSpace: 'nowrap' }}>Shift</th>
-                <SortableHeader label="Montant brut" field="montant" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
-                <SortableHeader label="Source" field="source" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                <th className="hide-sm" style={{ whiteSpace: 'nowrap' }}>Shift</th>
+                <SortableHeader label="Montant" field="montant" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} align="right" />
+                <th className="hide-sm" style={{ whiteSpace: 'nowrap' }}>Source</th>
                 <SortableHeader label="Statut" field="statut" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
-                <th style={{ whiteSpace: 'nowrap' }}>Notes</th>
-                <th style={{ width: 180, textAlign: 'center', whiteSpace: 'nowrap' }}>Actions</th>
+                <th className="hide-sm" style={{ whiteSpace: 'nowrap' }}>Notes</th>
+                <th style={{ width: isMobile ? 80 : 180, textAlign: 'center', whiteSpace: 'nowrap' }}>Actions</th>
               </tr>
             </thead>
             <tbody className="stagger-rows">
@@ -850,7 +870,7 @@ export default function Ventes() {
                   >
                     <td style={{ fontSize: '0.82rem', color: '#64748b', whiteSpace: 'nowrap' }}>
                       <div>{formatPeriodLabel(v.periode_debut, v.periode_fin)}</div>
-                      {v.created_at && (
+                      {v.created_at && !isMobile && (
                         <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px' }}>
                           Ajoutée le {formatCreatedAt(v.created_at)}
                         </div>
@@ -887,7 +907,7 @@ export default function Ventes() {
                         {getPlatName(v.plateforme_id)}
                       </span>
                     </td>
-                    <td style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                    <td className="hide-sm" style={{ fontSize: '0.78rem', color: '#64748b', whiteSpace: 'nowrap' }}>
                       {v.shift_date ? (
                         <span>
                           {new Date(v.shift_date + 'T00:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
@@ -898,7 +918,7 @@ export default function Ventes() {
                     <td style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: '#f5b731', whiteSpace: 'nowrap' }}>
                       {v.montant_brut.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} {devise === 'USD' ? '$' : '€'}
                     </td>
-                    <td>
+                    <td className="hide-sm">
                       <SourceBadge source={v.source} />
                     </td>
                     <td>
@@ -915,18 +935,19 @@ export default function Ventes() {
                         );
                       })()}
                     </td>
-                    <td style={{ fontSize: '0.78rem', color: '#94a3b8', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <td className="hide-sm" style={{ fontSize: '0.78rem', color: '#94a3b8', maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {v.notes || '—'}
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', gap: '0.3rem', justifyContent: 'center', alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
                         {isPending && (
                           <>
                             <button
                               onClick={() => handleValider(v.id, 'validée')}
+                              title="Valider"
                               style={{
                                 display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
-                                padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 600,
+                                padding: isMobile ? '0.3rem 0.4rem' : '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 600,
                                 background: 'rgba(16,185,129,0.1)', color: '#10b981',
                                 border: '1px solid rgba(16,185,129,0.25)', cursor: 'pointer',
                                 transition: 'all 150ms',
@@ -934,13 +955,14 @@ export default function Ventes() {
                               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.2)'; }}
                               onMouseLeave={e => { e.currentTarget.style.background = 'rgba(16,185,129,0.1)'; }}
                             >
-                              <Check size={13} /> Valider
+                              <Check size={13} />{!isMobile && ' Valider'}
                             </button>
                             <button
                               onClick={() => handleValider(v.id, 'rejetée')}
+                              title="Rejeter"
                               style={{
                                 display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
-                                padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 600,
+                                padding: isMobile ? '0.3rem 0.4rem' : '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.72rem', fontWeight: 600,
                                 background: 'rgba(239,68,68,0.1)', color: '#ef4444',
                                 border: '1px solid rgba(239,68,68,0.25)', cursor: 'pointer',
                                 transition: 'all 150ms',
@@ -948,7 +970,7 @@ export default function Ventes() {
                               onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.2)'; }}
                               onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.1)'; }}
                             >
-                              <XCircle size={13} /> Rejeter
+                              <XCircle size={13} />{!isMobile && ' Rejeter'}
                             </button>
                           </>
                         )}
