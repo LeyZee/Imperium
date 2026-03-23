@@ -5,6 +5,7 @@ import { TableSkeleton } from '../../components/Skeleton.jsx';
 import { useToast } from '../../components/Toast.jsx';
 import {
   Euro, Building2, Users, ChevronDown, User, ChevronRight, Calendar, FileText,
+  ArrowDown, TrendingDown, Percent,
 } from 'lucide-react';
 
 /* ─── Period generator (no periods before March 2026 — app launch) ─── */
@@ -55,6 +56,46 @@ function fmtEur(n) {
 
 function fmtPercent(n) {
   return (n * 100).toFixed(0) + '%';
+}
+
+function fmtDevise(n, devise) {
+  if (n == null) return '—';
+  if (devise === 'USD') return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return fmtEur(n);
+}
+
+/* ─── Calculation step component ─── */
+function CalcStep({ label, operation, result, icon, highlight, last }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: '0.75rem',
+      padding: '0.45rem 0',
+      borderBottom: last ? 'none' : '1px dashed rgba(148,163,184,0.2)',
+    }}>
+      <div style={{
+        width: '24px', height: '24px', borderRadius: '50%',
+        background: highlight ? 'rgba(245,183,49,0.12)' : 'rgba(100,116,139,0.06)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+      }}>
+        {icon || <ArrowDown size={11} color={highlight ? '#f5b731' : '#94a3b8'} />}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{label}</span>
+        {operation && (
+          <span style={{
+            fontSize: '0.68rem', color: '#cbd5e1', marginLeft: '0.4rem',
+            fontFamily: 'monospace', fontStyle: 'italic',
+          }}>{operation}</span>
+        )}
+      </div>
+      <span style={{
+        fontWeight: highlight ? 800 : 600,
+        fontSize: highlight ? '0.9rem' : '0.82rem',
+        color: highlight ? '#f5b731' : '#1b2e4b',
+        fontFamily: 'monospace', whiteSpace: 'nowrap',
+      }}>{result}</span>
+    </div>
+  );
 }
 
 
@@ -218,7 +259,7 @@ export default function FacturationModeles() {
                   const isExpanded = expandedRow === m.modele_id;
                   const isHovered = hoveredRow === m.modele_id;
                   const barPercent = (m.net_ht_eur / maxNetHT) * 100;
-                  const hasDetail = m.plateformes.length >= 2;
+                  const hasDetail = m.plateformes.length >= 1;
 
                   const rows = [(
                     <tr
@@ -333,36 +374,89 @@ export default function FacturationModeles() {
                     </tr>
                   )];
 
-                  /* Expanded detail rows — right after parent */
+                  /* Expanded detail — platform cards with calculation cascade */
                   if (isExpanded && hasDetail) {
-                    m.plateformes.forEach(p => {
-                      rows.push(
-                        <tr key={`${m.modele_id}-${p.plateforme_id}`} className="expand-enter" style={{
-                          background: 'rgba(245,183,49,0.02)',
-                          borderLeft: '3px solid rgba(245,183,49,0.3)',
-                        }}>
-                          <td></td>
-                          <td style={{ paddingLeft: '3.2rem' }}>
-                            <span style={{ fontSize: '0.78rem', color: '#94a3b8', fontStyle: 'italic' }}>└ {p.plateforme_nom}</span>
-                          </td>
-                          <td>
-                            <span style={{
-                              fontSize: '0.62rem', fontWeight: 600,
-                              padding: '0.12rem 0.4rem', borderRadius: '20px',
-                              background: p.couleur_fond || '#f1f5f9',
-                              color: p.couleur_texte || '#475569',
-                              opacity: 0.8,
-                            }}>
-                              {p.plateforme_nom}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'center', fontSize: '0.78rem', color: '#94a3b8' }}>{p.nb_ventes}</td>
-                          <td style={{ fontSize: '0.82rem', color: '#64748b' }}>{fmtEur(p.net_ht_eur)}</td>
-                          <td style={{ fontSize: '0.78rem', color: '#94a3b8' }}>{fmtPercent(m.part_percent)}</td>
-                          <td style={{ fontSize: '0.82rem', color: '#64748b', fontWeight: 600 }}>{fmtEur(p.part_agence)}</td>
-                        </tr>
-                      );
-                    });
+                    const tauxChange = data?.taux_change || 0.92;
+                    rows.push(
+                      <tr key={`${m.modele_id}-detail`} className="expand-enter" style={{ background: 'rgba(245,183,49,0.02)', borderLeft: '3px solid rgba(245,183,49,0.3)' }}>
+                        <td colSpan={7} style={{ padding: '0.75rem 1.25rem 1rem', minWidth: 0 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(260px, 1fr))`, gap: '1rem' }}>
+                            {m.plateformes.map(p => {
+                              const isUSD = p.devise === 'USD';
+                              const hasTVA = p.tva_rate > 0;
+                              return (
+                                <div key={p.plateforme_id} style={{
+                                  background: 'var(--bg-card)', borderRadius: '12px',
+                                  border: `1px solid ${(p.couleur_fond || '#e2e8f0') + '40'}`,
+                                  overflow: 'hidden',
+                                  boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+                                }}>
+                                  {/* Platform header */}
+                                  <div style={{
+                                    padding: '0.6rem 0.85rem',
+                                    background: (p.couleur_fond || '#f1f5f9') + '15',
+                                    borderBottom: `2px solid ${p.couleur_fond || '#e2e8f0'}`,
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                  }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                      <span style={{
+                                        fontSize: '0.7rem', fontWeight: 700,
+                                        padding: '0.18rem 0.55rem', borderRadius: '20px',
+                                        background: p.couleur_fond || '#f1f5f9',
+                                        color: p.couleur_texte || '#475569',
+                                      }}>{p.plateforme_nom}</span>
+                                      <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 500 }}>
+                                        {p.devise} · {p.nb_ventes} vente{p.nb_ventes > 1 ? 's' : ''}
+                                      </span>
+                                    </div>
+                                    <span style={{ fontSize: '0.82rem', fontWeight: 800, color: '#f5b731' }}>
+                                      {fmtEur(p.part_agence)}
+                                    </span>
+                                  </div>
+
+                                  {/* Calculation cascade */}
+                                  <div style={{ padding: '0.5rem 0.85rem' }}>
+                                    <CalcStep
+                                      label="CA Brut"
+                                      result={fmtDevise(p.total_brut, p.devise)}
+                                      icon={<Euro size={11} color="#64748b" />}
+                                    />
+                                    {isUSD && (
+                                      <CalcStep
+                                        label="Conversion EUR"
+                                        operation={`× ${parseFloat(tauxChange.toFixed(4))}`}
+                                        result={fmtEur(p.ttc_eur)}
+                                        icon={<TrendingDown size={11} color="#3b82f6" />}
+                                      />
+                                    )}
+                                    {hasTVA && (
+                                      <CalcStep
+                                        label="Hors Taxe"
+                                        operation={`÷ ${(1 + p.tva_rate).toFixed(2)} (TVA ${fmtPercent(p.tva_rate)})`}
+                                        result={fmtEur(p.ht_eur)}
+                                        icon={<Percent size={11} color="#8b5cf6" />}
+                                      />
+                                    )}
+                                    <CalcStep
+                                      label="Net HT"
+                                      operation={`× ${(1 - p.commission_rate).toFixed(2)} (comm. ${fmtPercent(p.commission_rate)})`}
+                                      result={fmtEur(p.net_ht_eur)}
+                                    />
+                                    <CalcStep
+                                      label="Part Agence"
+                                      operation={`× ${fmtPercent(m.part_percent)}`}
+                                      result={fmtEur(p.part_agence)}
+                                      highlight
+                                      last
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    );
                   }
 
                   return rows;
