@@ -71,6 +71,7 @@ export default function Modeles({ embedded = false }) {
       couleur_fond: m.couleur_fond || '#F2A7C3',
       couleur_texte: m.couleur_texte || '#ffffff',
       access_email: m.access_email || '',
+      original_email: m.access_email || '',
       new_password: '',
       confirm_password: '',
       user_id: m.user_id || null,
@@ -137,11 +138,15 @@ export default function Modeles({ embedded = false }) {
           password: form.new_password,
         });
       }
-      // Handle password update for existing account
-      if (form.user_id && form.new_password) {
-        await api.put(`/api/modeles/${modeleId}/access`, {
-          password: form.new_password,
-        });
+      // Handle email/password update for existing account
+      if (form.user_id) {
+        const emailChanged = form.access_email !== form.original_email;
+        if (emailChanged || form.new_password) {
+          await api.put(`/api/modeles/${modeleId}/access`, {
+            ...(emailChanged ? { email: form.access_email } : {}),
+            ...(form.new_password ? { password: form.new_password } : {}),
+          });
+        }
       }
 
       setModal(false);
@@ -395,16 +400,19 @@ export default function Modeles({ embedded = false }) {
                   </div>
                 )}
 
+                {/* Email field — always visible */}
+                <div className="form-group">
+                  <label className="label">Email (identifiant)</label>
+                  <input className="input-field" type="email"
+                    value={form.access_email}
+                    onChange={e => setForm({...form, access_email: e.target.value})}
+                    autoComplete="off"
+                    placeholder="Adresse email" />
+                </div>
+
+                {/* Password fields — new account creation */}
                 {!form.user_id && (
                   <>
-                    <div className="form-group">
-                      <label className="label">Email (identifiant)</label>
-                      <input className="input-field" type="email"
-                        value={form.access_email}
-                        onChange={e => setForm({...form, access_email: e.target.value})}
-                        autoComplete="off"
-                        placeholder="Adresse email" />
-                    </div>
                     <div className="form-group">
                       <label className="label">Mot de passe</label>
                       <input className="input-field" type="password" value={form.new_password}

@@ -135,20 +135,28 @@ router.post('/:id/access', authMiddleware, adminOnly, asyncHandler((req, res) =>
   });
 }));
 
-// PUT /api/modeles/:id/access — Update password for a model's account
+// PUT /api/modeles/:id/access — Update email/password for a model's account
 router.put('/:id/access', authMiddleware, adminOnly, asyncHandler((req, res) => {
-  const { password } = req.body;
-  if (!password) throw new ApiError(400, 'Mot de passe requis');
-  if (password.length < 6) throw new ApiError(400, 'Mot de passe trop court (min 6 caractères)');
+  const { email, password } = req.body;
+  if (!email && !password) throw new ApiError(400, 'Email ou mot de passe requis');
+  if (password && password.length < 6) throw new ApiError(400, 'Mot de passe trop court (min 6 caractères)');
 
   const modele = db.prepare('SELECT id, pseudo, user_id FROM modeles WHERE id = ? AND actif = 1').get(req.params.id);
   if (!modele) throw new ApiError(404, 'Modèle introuvable');
   if (!modele.user_id) throw new ApiError(404, 'Ce modèle n\'a pas de compte');
 
-  const password_hash = bcrypt.hashSync(password, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, modele.user_id);
+  if (email) {
+    // Check email uniqueness
+    const existing = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email, modele.user_id);
+    if (existing) throw new ApiError(409, 'Cet email est déjà utilisé');
+    db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, modele.user_id);
+  }
+  if (password) {
+    const password_hash = bcrypt.hashSync(password, 10);
+    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(password_hash, modele.user_id);
+  }
 
-  res.json({ message: `Mot de passe mis à jour pour ${modele.pseudo}` });
+  res.json({ message: `Compte mis à jour pour ${modele.pseudo}` });
 }));
 
 // DELETE /api/modeles/:id/access — Remove login account for a model
