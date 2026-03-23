@@ -152,7 +152,10 @@ export default function Settings() {
     const { current_password, new_password, confirm_password } = pwdForm;
     if (!current_password) return toast('Mot de passe actuel requis', 'error');
     if (!new_password) return toast('Nouveau mot de passe requis', 'error');
-    if (new_password.length < 8) return toast('Min. 8 caractères', 'error');
+    if (new_password.length < 8) return toast('Min. 8 caractères requis', 'error');
+    if (!/[A-Z]/.test(new_password)) return toast('Le mot de passe doit contenir une majuscule', 'error');
+    if (!/[0-9]/.test(new_password)) return toast('Le mot de passe doit contenir un chiffre', 'error');
+    if (!/[^a-zA-Z0-9]/.test(new_password)) return toast('Le mot de passe doit contenir un caractère spécial', 'error');
     if (new_password !== confirm_password) return toast('Les mots de passe ne correspondent pas', 'error');
 
     setSavingPwd(true);
@@ -236,8 +239,8 @@ export default function Settings() {
           </div>
         ) : (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-            <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1b2e4b', marginBottom: 0 }}>
-              {user?.prenom || 'Mon Profil'}
+            <h1 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#1b2e4b', marginBottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
+              <UserIcon size={22} color="#f5b731" /> {user?.prenom || 'Mon Profil'}
             </h1>
             <button
               onClick={() => { setPrenomValue(user?.prenom || ''); setEditingPrenom(true); }}
@@ -248,6 +251,14 @@ export default function Settings() {
             </button>
           </div>
         )}
+        <span style={{
+          fontSize: '0.72rem', fontWeight: 600,
+          padding: '0.2rem 0.6rem', borderRadius: '20px',
+          background: roleColor.bg, color: roleColor.color,
+          display: 'inline-block', marginTop: '0.5rem',
+        }}>
+          {roleLabel}
+        </span>
       </div>
 
       {/* Info cards */}
@@ -318,46 +329,72 @@ export default function Settings() {
             <Lock size={16} /> Changer mon mot de passe
           </button>
         ) : (
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
-              <Lock size={16} color="#1b2e4b" />
-              <span style={{ fontWeight: 700, color: '#1b2e4b', fontSize: '0.9rem' }}>Changer le mot de passe</span>
-            </div>
-            <div className="form-group">
-              <label className="label">Mot de passe actuel</label>
-              <input className="input-field" type="password"
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#1b2e4b', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Lock size={16} color="#f5b731" /> Changer le mot de passe
+            </h3>
+
+            <div>
+              <label className="label" style={{ fontSize: '0.75rem' }}>Mot de passe actuel</label>
+              <input
+                type={showPwd ? 'text' : 'password'}
                 value={pwdForm.current_password}
                 onChange={e => setPwdForm(p => ({ ...p, current_password: e.target.value }))}
-                placeholder="Mot de passe actuel" />
+                className="input-field"
+                placeholder="Mot de passe actuel"
+                autoComplete="current-password"
+              />
             </div>
-            <div className="form-group">
-              <label className="label">Nouveau mot de passe</label>
+
+            <div>
+              <label className="label" style={{ fontSize: '0.75rem' }}>Nouveau mot de passe</label>
               <div style={{ position: 'relative' }}>
-                <input className="input-field" type={showPwd ? 'text' : 'password'}
+                <input
+                  type={showPwd ? 'text' : 'password'}
                   value={pwdForm.new_password}
                   onChange={e => setPwdForm(p => ({ ...p, new_password: e.target.value }))}
+                  className="input-field"
+                  style={{ paddingRight: '2.5rem' }}
                   placeholder="Min. 8 car., 1 maj., 1 chiffre, 1 spécial"
-                  style={{ paddingRight: '2.5rem' }} />
-                <button type="button" onClick={() => setShowPwd(!showPwd)}
-                  style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '0.25rem', display: 'flex' }}>
-                  {showPwd ? <EyeOff size={16} /> : <Eye size={16} />}
+                  autoComplete="new-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPwd(!showPwd)}
+                  style={{
+                    position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem',
+                  }}
+                  title={showPwd ? 'Masquer' : 'Afficher'}
+                >
+                  {showPwd ? <EyeOff size={16} color="#94a3b8" /> : <Eye size={16} color="#94a3b8" />}
                 </button>
               </div>
             </div>
-            <div className="form-group">
-              <label className="label">Confirmer</label>
-              <input className="input-field" type="password"
+
+            <div>
+              <label className="label" style={{ fontSize: '0.75rem' }}>Confirmer</label>
+              <input
+                type={showPwd ? 'text' : 'password'}
                 value={pwdForm.confirm_password}
                 onChange={e => setPwdForm(p => ({ ...p, confirm_password: e.target.value }))}
-                placeholder="Confirmer le mot de passe" />
+                className="input-field"
+                placeholder="Confirmer le mot de passe"
+                autoComplete="new-password"
+              />
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+
+            {pwdForm.new_password && pwdForm.confirm_password && pwdForm.new_password !== pwdForm.confirm_password && (
+              <p style={{ fontSize: '0.75rem', color: '#ef4444', margin: 0 }}>Les mots de passe ne correspondent pas</p>
+            )}
+
+            <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.25rem' }}>
               <button onClick={() => { setShowPwdForm(false); setPwdForm({ current_password: '', new_password: '', confirm_password: '' }); }}
                 className="btn-secondary" style={{ flex: 1 }}>
                 Annuler
               </button>
               <button onClick={handlePasswordSave} disabled={savingPwd}
-                className="btn-primary haptic" style={{ flex: 1, justifyContent: 'center' }}>
+                className="btn-primary haptic" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
                 {savingPwd ? <span className="spinner" style={{ width: 16, height: 16 }} /> : <Save size={16} />}
                 Enregistrer
               </button>

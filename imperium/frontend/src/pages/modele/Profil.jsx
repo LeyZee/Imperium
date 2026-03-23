@@ -55,15 +55,15 @@ export default function ModeleProfil() {
   const [emailSent, setEmailSent] = useState(false);
 
   async function handleEmailChange() {
-    if (!newEmail.trim()) return toast.error('Saisis un nouvel email');
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) return toast.error('Email invalide');
+    if (!newEmail.trim()) return toast('Saisis un nouvel email', 'error');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) return toast('Email invalide', 'error');
     setEmailSaving(true);
     try {
       await api.post('/api/auth/change-email', { new_email: newEmail.trim() });
       setEmailSent(true);
-      toast.success('Email de vérification envoyé');
+      toast('Email de vérification envoyé', 'success');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Erreur');
+      toast(err.response?.data?.error || 'Erreur', 'error');
     } finally {
       setEmailSaving(false);
     }
