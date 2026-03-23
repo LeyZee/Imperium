@@ -10,8 +10,9 @@ const ROLE_COLORS = {
   directeur: { bg: '#ede9fe', color: '#6366f1' },
   va: { bg: '#f3e8ff', color: '#7c3aed' },
   admin: { bg: '#fef3c7', color: '#92400e' },
+  modele: { bg: '#fce7f3', color: '#be185d' },
 };
-const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', directeur: 'Directeur', va: 'VA', admin: 'Admin' };
+const ROLE_LABELS = { chatteur: 'Chatteur', manager: 'Manager', directeur: 'Directeur', va: 'VA', admin: 'Admin', modele: 'Modèle' };
 
 export default function Navbar({ onMenuClick }) {
   const { user, logout } = useAuth();
