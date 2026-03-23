@@ -278,16 +278,30 @@ export default function FacturationModeles() {
                       }}
                     >
                       {/* Expand chevron */}
-                      <td style={{ width: '28px', padding: '0.5rem 0 0.5rem 0.75rem' }}>
+                      <td style={{ width: '36px', padding: '0.5rem 0 0.5rem 0.5rem' }}>
                         {hasDetail && (
-                          <ChevronRight
-                            size={14}
-                            color={isExpanded ? '#f5b731' : '#94a3b8'}
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => { e.stopPropagation(); setExpandedRow(isExpanded ? null : m.modele_id); }}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedRow(isExpanded ? null : m.modele_id); } }}
                             style={{
-                              transition: 'all 200ms ease',
-                              transform: isExpanded ? 'rotate(90deg)' : 'none',
+                              width: '28px', height: '28px', borderRadius: '6px',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              cursor: 'pointer', transition: 'all 200ms ease',
+                              background: isExpanded ? 'rgba(245,183,49,0.1)' : 'transparent',
                             }}
-                          />
+                            className="hover-scale"
+                          >
+                            <ChevronRight
+                              size={14}
+                              color={isExpanded ? '#f5b731' : '#94a3b8'}
+                              style={{
+                                transition: 'all 200ms ease',
+                                transform: isExpanded ? 'rotate(90deg)' : 'none',
+                              }}
+                            />
+                          </div>
                         )}
                       </td>
 
