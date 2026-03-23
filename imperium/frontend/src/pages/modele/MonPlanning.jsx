@@ -441,12 +441,48 @@ function ShiftCell({ shifts, isToday }) {
     );
   }
 
-  // Filled cell — get color from first shift's chatteur
+  // Filled cell — background = chatteur color (like admin ShiftCell)
   const firstShift = shifts[0];
   const clr = firstShift.chatteur_couleur != null
     ? CHATTEUR_COLORS[firstShift.chatteur_couleur % CHATTEUR_COLORS.length]
     : null;
 
+  // Single shift = one colored cell, multiple = stacked
+  if (shifts.length === 1) {
+    const name = firstShift.chatteur_prenom || '?';
+    return (
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          minHeight: '30px',
+          borderRadius: '5px',
+          border: `1.5px solid ${hovered ? (clr?.text || '#475569') : (clr?.border || '#e2e8f0')}`,
+          background: hovered ? (clr?.border || '#e2e8f0') + '40' : (clr?.bg || '#f1f5f9'),
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          lineHeight: 1.1,
+          transition: 'all 180ms cubic-bezier(0.4, 0, 0.2, 1)',
+          transform: hovered ? 'scale(1.08)' : 'scale(1)',
+          boxShadow: hovered ? `0 3px 10px ${clr?.border || 'rgba(0,0,0,0.1)'}60` : 'none',
+          position: 'relative',
+          zIndex: hovered ? 2 : 1,
+          cursor: 'default',
+        }}
+      >
+        <span style={{
+          fontSize: '0.55rem', fontWeight: 600,
+          color: clr?.text || '#475569',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          padding: '0 2px',
+        }}>{name}</span>
+      </div>
+    );
+  }
+
+  // Multiple shifts in one cell — stack them
   return (
     <div
       onMouseEnter={() => setHovered(true)}
@@ -454,19 +490,16 @@ function ShiftCell({ shifts, isToday }) {
       style={{
         minHeight: '30px',
         borderRadius: '5px',
-        border: `1.5px solid ${hovered ? (clr?.text || '#94a3b8') : (isToday ? 'rgba(245,183,49,0.35)' : (clr?.border || '#e8ecf1'))}`,
-        background: hovered ? (clr?.border || 'rgba(0,0,0,0.1)') + '40' : (isToday ? 'rgba(245,183,49,0.06)' : '#fff'),
-        padding: '3px',
+        border: `1.5px solid ${isToday ? 'rgba(245,183,49,0.35)' : '#e2e8f0'}`,
+        background: isToday ? 'rgba(245,183,49,0.04)' : '#fff',
+        padding: '1px',
         display: 'flex',
         flexDirection: 'column',
-        alignItems: 'stretch',
-        justifyContent: 'flex-start',
-        gap: '2px',
+        gap: '1px',
         overflow: 'hidden',
         lineHeight: 1.1,
         transition: 'all 180ms cubic-bezier(0.4, 0, 0.2, 1)',
-        transform: hovered ? 'scale(1.08)' : 'scale(1)',
-        boxShadow: hovered ? `0 3px 10px ${clr?.border || 'rgba(0,0,0,0.1)'}60` : 'none',
+        transform: hovered ? 'scale(1.05)' : 'scale(1)',
         position: 'relative',
         zIndex: hovered ? 2 : 1,
       }}
@@ -477,25 +510,18 @@ function ShiftCell({ shifts, isToday }) {
           : null;
         return (
           <div key={s.id} style={{
-            display: 'flex', alignItems: 'center', gap: '2px',
-            flexWrap: 'wrap',
+            flex: 1,
+            borderRadius: '3px',
+            background: sClr?.bg || '#f1f5f9',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            minHeight: '14px',
           }}>
-            {/* Chatteur badge */}
-            {s.chatteur_prenom && (
-              <span style={{
-                fontSize: '0.55rem', fontWeight: 600,
-                padding: '1px 4px', borderRadius: '99px',
-                background: sClr?.bg || '#f1f5f9',
-                color: sClr?.text || '#475569',
-                lineHeight: 1.3,
-                whiteSpace: 'nowrap',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                maxWidth: '100%',
-              }}>
-                {s.chatteur_prenom}
-              </span>
-            )}
+            <span style={{
+              fontSize: '0.45rem', fontWeight: 600,
+              color: sClr?.text || '#475569',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+              padding: '0 2px',
+            }}>{s.chatteur_prenom}</span>
           </div>
         );
       })}
