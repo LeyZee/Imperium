@@ -69,6 +69,7 @@ export default function MonPlanning() {
   const [shifts, setShifts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [chatteurPays, setChatteurPays] = useState(null);
+  const currentCreneau = (() => { const h = new Date().getHours(); return h >= 8 && h < 14 ? 1 : h >= 14 && h < 20 ? 2 : h >= 20 || h < 2 ? 3 : 4; })();
 
   useEffect(() => {
     if (!user?.chatteur_id) return;
@@ -210,15 +211,23 @@ export default function MonPlanning() {
                         <div key={s.id} style={{
                           display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
                         }}>
-                          <span style={{
-                            display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                            background: 'rgba(245,183,49,0.12)', color: '#b8860b',
-                            padding: '0.25rem 0.6rem', borderRadius: '6px',
-                            fontSize: '0.75rem', fontWeight: 600,
-                          }}>
-                            <Clock size={12} />
-                            {label}
-                          </span>
+                          {(() => {
+                            const isActive = today && s.creneau === currentCreneau;
+                            return (
+                              <span style={{
+                                display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+                                background: isActive ? 'rgba(16,185,129,0.15)' : 'rgba(245,183,49,0.12)',
+                                color: isActive ? '#16a34a' : '#b8860b',
+                                padding: '0.25rem 0.6rem', borderRadius: '6px',
+                                fontSize: '0.75rem', fontWeight: 600,
+                                border: isActive ? '1px solid rgba(16,185,129,0.3)' : '1px solid transparent',
+                              }}>
+                                <Clock size={12} />
+                                {label}
+                                {isActive && <span style={{ fontSize: '0.55rem', fontWeight: 700, marginLeft: '0.15rem' }}>EN COURS</span>}
+                              </span>
+                            );
+                          })()}
                           {s.plateforme_nom && (
                             <span style={{
                               background: s.plateforme_couleur_fond || 'rgba(27,46,75,0.08)',

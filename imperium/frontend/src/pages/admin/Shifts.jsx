@@ -171,6 +171,10 @@ export default function Shifts() {
   const tzOffset = TIMEZONES.find(t => t.key === selectedTZ)?.offset || 0;
   const isMobile = useIsMobile(768);
   const todayISO = useMemo(() => toISO(new Date()), []);
+  const currentCreneau = useMemo(() => {
+    const h = new Date().getHours();
+    return h >= 8 && h < 14 ? 1 : h >= 14 && h < 20 ? 2 : h >= 20 || h < 2 ? 3 : 4;
+  }, []);
 
   const getChatteurColor = useCallback((id) => {
     const c = chatteurs.find(x => x.id === id);
@@ -803,6 +807,7 @@ function ModelCard({ model, shifts, days, tzOffset, getChatteurName, getChatteur
             <ShiftRow
               key={cr.id}
               creneau={cr}
+              isCurrent={cr.id === currentCreneau}
               tzOffset={tzOffset}
               days={days}
               shiftMap={shiftMap}
@@ -858,12 +863,13 @@ function MobileShiftPill({ shift, color, name, isTemplate, creneauShort, onClick
 }
 
 /* ─── Single creneau row ─── */
-function ShiftRow({ creneau, tzOffset, days, shiftMap, getChatteurName, getChatteurColor, onCellClick, todayISO }) {
+function ShiftRow({ creneau, isCurrent, tzOffset, days, shiftMap, getChatteurName, getChatteurColor, onCellClick, todayISO }) {
   return (
     <>
       <div style={{
-        fontSize: '0.5rem', color: '#94a3b8', fontWeight: 500,
-        display: 'flex', alignItems: 'center', padding: '0 2px', whiteSpace: 'nowrap'
+        fontSize: '0.5rem', color: isCurrent ? '#16a34a' : '#94a3b8', fontWeight: isCurrent ? 700 : 500,
+        display: 'flex', alignItems: 'center', padding: '0 2px', whiteSpace: 'nowrap',
+        borderLeft: isCurrent ? '2px solid #16a34a' : '2px solid transparent',
       }}>
         {getCreneauShort(creneau, tzOffset)}
       </div>
