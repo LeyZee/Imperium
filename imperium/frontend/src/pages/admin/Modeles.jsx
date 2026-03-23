@@ -200,7 +200,6 @@ export default function Modeles({ embedded = false }) {
                   <th>Pseudo</th>
                   <th>Plateformes</th>
                   <th>Part agence (%)</th>
-                  <th>Email</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -246,7 +245,6 @@ export default function Modeles({ embedded = false }) {
                         </div>
                       </td>
                       <td style={{ fontWeight: 700, color: '#f5b731' }}>{(m.part_percent * 100).toFixed(0)}%</td>
-                      <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{m.access_email || '—'}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button onClick={() => openEdit(m)} className="btn-ghost"><Edit size={16} /></button>
@@ -264,7 +262,7 @@ export default function Modeles({ embedded = false }) {
 
       {modal && (
         <div className="modal-overlay" onClick={() => setModal(false)}>
-          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '28rem' }}>
+          <div className="modal-card" onClick={e => e.stopPropagation()} style={{ maxWidth: '32rem' }}>
             <div className="modal-header">
               <span className="modal-title-text">{editId ? 'Modifier' : 'Ajouter'} un modèle</span>
               <button onClick={() => setModal(false)} className="close-btn"><X size={20} /></button>

@@ -489,6 +489,18 @@ router.put('/:id/account', authMiddleware, adminOnly, asyncHandler(async (req, r
   }
 }));
 
+// DELETE /api/chatteurs/:id/account — Remove login account for a chatteur
+router.delete('/:id/account', authMiddleware, adminOnly, asyncHandler((req, res) => {
+  const chatteur = db.prepare('SELECT id, prenom, user_id FROM chatteurs WHERE id = ?').get(req.params.id);
+  if (!chatteur) throw new ApiError(404, 'Chatteur introuvable');
+  if (!chatteur.user_id) throw new ApiError(404, 'Ce chatteur n\'a pas de compte');
+
+  db.prepare('UPDATE chatteurs SET user_id = NULL WHERE id = ?').run(chatteur.id);
+  db.prepare('DELETE FROM users WHERE id = ?').run(chatteur.user_id);
+
+  res.json({ message: `Accès supprimé pour ${chatteur.prenom}` });
+}));
+
 // DELETE /api/chatteurs/:id (soft delete)
 router.delete('/:id', authMiddleware, adminOrManager, asyncHandler((req, res) => {
   const { id } = req.params;

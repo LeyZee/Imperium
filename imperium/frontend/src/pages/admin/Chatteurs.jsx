@@ -169,6 +169,18 @@ export default function Chatteurs({ embedded = false }) {
     }
   }
 
+  async function handleDeleteAccess(chatteurId) {
+    if (!confirm('Supprimer l\'accès de ce chatteur ?')) return;
+    try {
+      await api.delete(`/api/chatteurs/${chatteurId}/account`);
+      toast.success('Accès supprimé');
+      setForm(f => ({ ...f, user_id: null, user_email: '', pending_invitation: false }));
+      fetchChatteurs();
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Erreur');
+    }
+  }
+
   const isEditingSelf = isManager && editId && user?.chatteur_id === editId;
   const commissionCustom = !COMMISSION_PRESETS.some(p => p.value === form.taux_commission);
 
@@ -715,6 +727,26 @@ export default function Chatteurs({ embedded = false }) {
                     <KeyRound size={14} /> Compte utilisateur
                   </div>
 
+                  {/* Active account state */}
+                  {form.user_id && !form.pending_invitation && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      padding: '0.65rem 0.85rem', borderRadius: '10px',
+                      background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)',
+                      marginBottom: '0.75rem',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                        <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} />
+                        <span style={{ fontSize: '0.8rem', color: '#065f46', fontWeight: 600 }}>Compte actif</span>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>({form.user_email || form.email})</span>
+                      </div>
+                      <button type="button" onClick={() => handleDeleteAccess(editId)}
+                        style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>
+                        Supprimer l'accès
+                      </button>
+                    </div>
+                  )}
+
                   {/* Pending invitation state */}
                   {form.user_id && form.pending_invitation && (
                     <div style={{
@@ -772,12 +804,14 @@ export default function Chatteurs({ embedded = false }) {
                           onChange={e => setForm({...form, new_password: e.target.value})}
                           autoComplete="new-password" placeholder="••••••••" />
                       </div>
-                      <div className="form-group">
-                        <label className="label">Confirmer le mot de passe</label>
-                        <input className="input-field" type="password" value={form.confirm_password || ''}
-                          onChange={e => setForm({...form, confirm_password: e.target.value})}
-                          autoComplete="new-password" placeholder="Retapez le mot de passe" />
-                      </div>
+                      {form.new_password && (
+                        <div className="form-group">
+                          <label className="label">Confirmer le mot de passe</label>
+                          <input className="input-field" type="password" value={form.confirm_password || ''}
+                            onChange={e => setForm({...form, confirm_password: e.target.value})}
+                            autoComplete="new-password" placeholder="Retapez le mot de passe" />
+                        </div>
+                      )}
                     </>
                   )}
 
