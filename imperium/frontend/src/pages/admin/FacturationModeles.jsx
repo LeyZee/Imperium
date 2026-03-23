@@ -67,7 +67,7 @@ function fmtDevise(n, devise) {
 /* ─── Calculation step component ─── */
 function CalcStep({ label, operation, result, icon, highlight, last }) {
   return (
-    <div style={{
+    <div className="fact-calc-step" style={{
       display: 'flex', alignItems: 'center', gap: '0.75rem',
       padding: '0.45rem 0',
       borderBottom: last ? 'none' : '1px dashed rgba(148,163,184,0.2)',
@@ -111,6 +111,18 @@ export default function FacturationModeles() {
   const [fetchError, setFetchError] = useState(null);
   const [hoveredRow, setHoveredRow] = useState(null);
   const [expandedRow, setExpandedRow] = useState(null);
+  const expandRef = useRef(null);
+
+  // Auto-scroll expanded row so detail card is visible
+  useEffect(() => {
+    if (expandedRow != null) {
+      setTimeout(() => {
+        // Scroll the parent row (not the detail) to the top so detail card shows below
+        const parentRow = document.querySelector(`tr[data-modele-id="${expandedRow}"]`);
+        if (parentRow) parentRow.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 50);
+    }
+  }, [expandedRow]);
 
   useEffect(() => {
     function handleClickOutside(e) {
@@ -149,6 +161,18 @@ export default function FacturationModeles() {
 
   return (
     <div className="page-enter">
+      <style>{`
+        @media (max-width: 640px) {
+          .fact-hide-mobile { display: none !important; }
+          .fact-calc-step { padding: 0.2rem 0 !important; gap: 0.4rem !important; }
+          .fact-calc-step > div:first-child { display: none !important; }
+          .fact-platform-header { padding: 0.35rem 0.5rem !important; }
+          .fact-platform-body { padding: 0.2rem 0.5rem !important; }
+          .fact-expand-td { padding: 0.3rem 0.4rem 0.4rem !important; }
+          .fact-stat-cards { display: none !important; }
+          .fact-summary-bar { display: flex !important; }
+        }
+      `}</style>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem', gap: '1rem', flexWrap: 'wrap' }}>
         <div>
@@ -203,10 +227,27 @@ export default function FacturationModeles() {
         </div>
       </div>
 
-      {/* StatCards */}
-      <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+      {/* StatCards — hidden on mobile when compact bar shows */}
+      <div className="stagger-children fact-stat-cards" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
         <StatCard title="CA Net HT" value={fmtEur(resume.total_net_ht || 0)} icon={Euro} color="#f5b731" />
         <StatCard title="Part Agence" value={fmtEur(resume.total_part_agence || 0)} icon={Building2} color="#1b2e4b" subtitle="Ce qu'on facture" />
+      </div>
+      {/* Compact summary bar — mobile only */}
+      <div className="fact-summary-bar" style={{
+        display: 'none', gap: '1rem', marginBottom: '0.75rem',
+        padding: '0.5rem 0.75rem', borderRadius: '10px',
+        background: 'var(--bg-card)', border: '1px solid var(--border-subtle)',
+        alignItems: 'center', justifyContent: 'space-around',
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '0.6rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Net HT</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1b2e4b' }}>{fmtEur(resume.total_net_ht || 0)}</div>
+        </div>
+        <div style={{ width: '1px', height: '24px', background: 'var(--border-subtle)' }} />
+        <div style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: '0.6rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 600 }}>Part Agence</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: '#f5b731' }}>{fmtEur(resume.total_part_agence || 0)}</div>
+        </div>
       </div>
 
       {/* Table */}
@@ -231,7 +272,7 @@ export default function FacturationModeles() {
           <p style={{ color: '#94a3b8', margin: '0.3rem 0 0', fontSize: '0.82rem' }}>Sélectionnez une autre période</p>
         </div>
       ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="card fact-table-card" style={{ padding: 0 }}>
           <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 600, color: '#1b2e4b', fontSize: '0.95rem' }}>Détail par modèle</span>
             <span style={{
@@ -241,16 +282,16 @@ export default function FacturationModeles() {
               {modeles.length} modèle{modeles.length > 1 ? 's' : ''}
             </span>
           </div>
-          <div style={{ overflowX: 'auto' }}>
+          <div className="fact-table-wrap" style={{ overflowX: 'auto' }}>
             <table>
               <thead>
                 <tr>
                   <th style={{ width: '28px' }}></th>
                   <th>Modèle</th>
-                  <th>Plateformes</th>
-                  <th>Ventes</th>
-                  <th>Net HT</th>
-                  <th>Part agence</th>
+                  <th className="fact-hide-mobile">Plateformes</th>
+                  <th className="fact-hide-mobile">Ventes</th>
+                  <th className="fact-hide-mobile">Net HT</th>
+                  <th className="fact-hide-mobile">Part agence</th>
                   <th>Facture agence</th>
                 </tr>
               </thead>
@@ -264,6 +305,7 @@ export default function FacturationModeles() {
                   const rows = [(
                     <tr
                       key={m.modele_id}
+                      data-modele-id={m.modele_id}
                       className="haptic"
                       onClick={() => hasDetail && setExpandedRow(isExpanded ? null : m.modele_id)}
                       onMouseEnter={() => setHoveredRow(m.modele_id)}
@@ -337,7 +379,7 @@ export default function FacturationModeles() {
                       </td>
 
                       {/* Plateformes */}
-                      <td>
+                      <td className="fact-hide-mobile">
                         <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
                           {m.plateformes.map(p => (
                             <span key={p.plateforme_id} style={{
@@ -357,7 +399,7 @@ export default function FacturationModeles() {
                       </td>
 
                       {/* Nb ventes */}
-                      <td style={{ textAlign: 'center' }}>
+                      <td className="fact-hide-mobile" style={{ textAlign: 'center' }}>
                         <span style={{
                           fontWeight: 600, color: '#64748b',
                           background: 'rgba(100,116,139,0.08)', padding: '0.2rem 0.55rem',
@@ -366,10 +408,10 @@ export default function FacturationModeles() {
                       </td>
 
                       {/* Net HT */}
-                      <td style={{ fontWeight: 700, color: '#1b2e4b' }}>{fmtEur(m.net_ht_eur)}</td>
+                      <td className="fact-hide-mobile" style={{ fontWeight: 700, color: '#1b2e4b' }}>{fmtEur(m.net_ht_eur)}</td>
 
                       {/* Part agence % */}
-                      <td>
+                      <td className="fact-hide-mobile">
                         <span style={{
                           fontWeight: 700, color: '#f5b731',
                           background: 'rgba(245,183,49,0.08)', padding: '0.2rem 0.55rem',
@@ -392,8 +434,8 @@ export default function FacturationModeles() {
                   if (isExpanded && hasDetail) {
                     const tauxChange = data?.taux_change || 0.92;
                     rows.push(
-                      <tr key={`${m.modele_id}-detail`} className="expand-enter" style={{ background: 'rgba(245,183,49,0.02)', borderLeft: '3px solid rgba(245,183,49,0.3)' }}>
-                        <td colSpan={7} style={{ padding: '0.75rem 1.25rem 1rem', minWidth: 0 }}>
+                      <tr ref={expandRef} key={`${m.modele_id}-detail`} className="expand-enter" style={{ background: 'rgba(245,183,49,0.02)', borderLeft: '3px solid rgba(245,183,49,0.3)' }}>
+                        <td className="fact-expand-td" colSpan={7} style={{ padding: '0.75rem 1.25rem 1rem', minWidth: 0 }}>
                           <div style={{ display: 'grid', gridTemplateColumns: `repeat(auto-fit, minmax(260px, 1fr))`, gap: '1rem' }}>
                             {m.plateformes.map(p => {
                               const isUSD = p.devise === 'USD';
@@ -406,7 +448,7 @@ export default function FacturationModeles() {
                                   boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
                                 }}>
                                   {/* Platform header */}
-                                  <div style={{
+                                  <div className="fact-platform-header" style={{
                                     padding: '0.6rem 0.85rem',
                                     background: (p.couleur_fond || '#f1f5f9') + '15',
                                     borderBottom: `2px solid ${p.couleur_fond || '#e2e8f0'}`,
@@ -429,7 +471,7 @@ export default function FacturationModeles() {
                                   </div>
 
                                   {/* Calculation cascade */}
-                                  <div style={{ padding: '0.5rem 0.85rem' }}>
+                                  <div className="fact-platform-body" style={{ padding: '0.5rem 0.85rem' }}>
                                     <CalcStep
                                       label="CA Brut"
                                       result={fmtDevise(p.total_brut, p.devise)}
