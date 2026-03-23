@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { ChevronLeft, ChevronRight, Clock, Coffee, ClipboardList } from 'lucide-react';
+import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
 const CRENEAU_LABELS = { 1: '08h–14h', 2: '14h–20h', 3: '20h–02h', 4: '02h–08h' };
 
@@ -154,13 +155,20 @@ export default function ModeleMonPlanning() {
                             {s.plateforme_nom}
                           </span>
                         )}
-                        {s.chatteur_prenom && (
-                          <span style={{
-                            fontSize: '0.75rem', fontWeight: 500, color: '#64748b',
-                          }}>
-                            {s.chatteur_prenom}
-                          </span>
-                        )}
+                        {s.chatteur_prenom && (() => {
+                          const clr = s.chatteur_couleur != null ? CHATTEUR_COLORS[s.chatteur_couleur % CHATTEUR_COLORS.length] : null;
+                          return (
+                            <span style={{
+                              fontSize: '0.72rem', fontWeight: 600,
+                              padding: '0.2rem 0.5rem', borderRadius: '6px',
+                              background: clr?.bg || '#f1f5f9',
+                              color: clr?.text || '#475569',
+                              border: `1px solid ${clr?.border || '#e2e8f0'}`,
+                            }}>
+                              {s.chatteur_prenom}
+                            </span>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>

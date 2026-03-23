@@ -232,8 +232,8 @@ export default function ModeleProfil() {
           }
         />
         <InfoRow
-          icon={Percent} label="Part modèle"
-          value={modele?.part_percent != null ? `${(modele.part_percent * 100).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%` : '\u2014'}
+          icon={Percent} label="Part agence"
+          value={modele?.part_percent != null ? `${(modele.part_percent * 100).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%` : '—'}
         />
       </div>
 

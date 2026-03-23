@@ -79,9 +79,10 @@ export default function Navbar({ onMenuClick }) {
           >
             {(() => {
               const clr = user.couleur != null ? CHATTEUR_COLORS[user.couleur] : null;
-              const avatarBg = clr?.bg || ROLE_COLORS[user.role]?.bg || '#f1f5f9';
-              const avatarText = clr?.text || ROLE_COLORS[user.role]?.color || '#475569';
-              const avatarBorder = clr?.border || `${ROLE_COLORS[user.role]?.color || '#f5b731'}30`;
+              const modelClr = user.couleur_fond ? { bg: user.couleur_fond, text: user.couleur_texte || '#fff', border: user.couleur_fond + '60' } : null;
+              const avatarBg = clr?.bg || modelClr?.bg || ROLE_COLORS[user.role]?.bg || '#f1f5f9';
+              const avatarText = clr?.text || modelClr?.text || ROLE_COLORS[user.role]?.color || '#475569';
+              const avatarBorder = clr?.border || modelClr?.border || `${ROLE_COLORS[user.role]?.color || '#f5b731'}30`;
               return user.photo ? (
                 <img src={user.photo} alt="" style={{
                   width: 36, height: 36, borderRadius: '50%', objectFit: 'cover',

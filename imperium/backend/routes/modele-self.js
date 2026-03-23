@@ -137,6 +137,15 @@ router.get('/dashboard', asyncHandler((req, res) => {
       shifts: activite?.shifts_total || 0,
       chatteurs: activite?.chatteurs_actifs || 0,
     },
+    shiftsAujourdhui: db.prepare(`
+      SELECT s.id, s.creneau, c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+             p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte
+      FROM shifts s
+      JOIN chatteurs c ON c.id = s.chatteur_id
+      JOIN plateformes p ON p.id = s.plateforme_id
+      WHERE s.modele_id = ? AND s.date = ?
+      ORDER BY s.creneau, c.prenom
+    `).all(modeleId, new Date().toISOString().slice(0, 10)),
     tauxChange: taux,
   });
 }));
@@ -255,7 +264,7 @@ router.get('/shifts', asyncHandler((req, res) => {
   const shifts = db.prepare(`
     SELECT s.id, s.date, s.creneau, s.fuseau_horaire,
            p.nom as plateforme_nom, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte,
-           c.prenom as chatteur_prenom
+           c.prenom as chatteur_prenom, c.couleur as chatteur_couleur
     FROM shifts s
     JOIN plateformes p ON p.id = s.plateforme_id
     LEFT JOIN chatteurs c ON c.id = s.chatteur_id
@@ -271,7 +280,7 @@ router.get('/profil', asyncHandler((req, res) => {
   const modeleId = req.user.modele_id;
   if (!modeleId) throw new ApiError(403, 'Modèle non lié');
 
-  const modele = db.prepare('SELECT id, pseudo, photo, couleur_fond, couleur_texte FROM modeles WHERE id = ?').get(modeleId);
+  const modele = db.prepare('SELECT id, pseudo, photo, couleur_fond, couleur_texte, part_percent FROM modeles WHERE id = ?').get(modeleId);
   if (!modele) throw new ApiError(404, 'Modèle introuvable');
 
   const plateformes = db.prepare(`

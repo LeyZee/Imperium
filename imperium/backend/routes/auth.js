@@ -102,6 +102,8 @@ router.post('/login', asyncHandler((req, res) => {
       couleur: chatteur?.couleur ?? null,
       chatteur_role: chatteur?.role || null,
       modele_id: modele?.id || null,
+      couleur_fond: modele?.couleur_fond || null,
+      couleur_texte: modele?.couleur_texte || null,
     }
   });
 }));
@@ -149,6 +151,8 @@ router.get('/me', authMiddleware, asyncHandler((req, res) => {
       couleur: chatteur?.couleur ?? null,
       chatteur_role: chatteur?.role || null,
       modele_id: modele?.id || null,
+      couleur_fond: modele?.couleur_fond || null,
+      couleur_texte: modele?.couleur_texte || null,
     }
   });
 }));
