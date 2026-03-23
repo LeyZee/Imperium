@@ -9,7 +9,7 @@ import {
   Euro, TrendingUp, ShoppingCart, Calendar, ChevronDown,
   LayoutDashboard, Users, BarChart3, Wallet, Clock,
 } from 'lucide-react';
-import { CHATTEUR_COLORS } from '../../constants/colors.js';
+import ShiftsAujourdhui from '../../components/ShiftsAujourdhui.jsx';
 
 /* ─── Period generator (same pattern as FacturationModeles) ─── */
 const APP_START_DATE = '2026-03-01';
@@ -300,71 +300,11 @@ export default function ModeleDashboard() {
           )}
 
           {/* Shifts aujourd'hui */}
-          {(data?.shiftsAujourdhui || []).length > 0 && (() => {
-            const CRENEAU_LABELS = { 1: '08h–14h', 2: '14h–20h', 3: '20h–02h', 4: '02h–08h' };
-            const now = new Date();
-            const currentHour = now.getHours();
-            const currentCreneau = currentHour >= 8 && currentHour < 14 ? 1 : currentHour >= 14 && currentHour < 20 ? 2 : currentHour >= 20 || currentHour < 2 ? 3 : 4;
-            const shifts = data.shiftsAujourdhui;
-            const creneaux = [...new Set(shifts.map(s => s.creneau))].sort((a, b) => a - b);
-
-            return (
-              <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: '1rem' }}>
-                <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1b2e4b', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Clock size={16} color="#f5b731" /> Shifts aujourd'hui
-                  </h3>
-                  <span style={{ fontSize: '0.72rem', fontWeight: 600, padding: '0.2rem 0.6rem', borderRadius: '20px', background: 'rgba(245,183,49,0.1)', color: '#f5b731' }}>
-                    {shifts.length} shift{shifts.length > 1 ? 's' : ''}
-                  </span>
-                </div>
-                <div style={{ padding: '0.75rem 1.25rem' }}>
-                  {creneaux.map(c => {
-                    const isActive = c === currentCreneau;
-                    const creneauShifts = shifts.filter(s => s.creneau === c);
-                    return (
-                      <div key={c} style={{
-                        padding: '0.6rem 0.75rem', marginBottom: '0.5rem', borderRadius: '10px',
-                        borderLeft: isActive ? '3px solid #10b981' : '3px solid transparent',
-                        background: isActive ? 'rgba(16,185,129,0.04)' : 'rgba(0,0,0,0.02)',
-                      }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
-                          <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#1b2e4b' }}>{CRENEAU_LABELS[c]}</span>
-                          {isActive && (
-                            <span style={{ fontSize: '0.6rem', fontWeight: 700, padding: '0.1rem 0.4rem', borderRadius: '4px', background: '#10b981', color: '#fff' }}>EN COURS</span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
-                          {creneauShifts.map(s => {
-                            const clr = s.chatteur_couleur != null ? CHATTEUR_COLORS[s.chatteur_couleur % CHATTEUR_COLORS.length] : null;
-                            return (
-                              <span key={s.id} style={{
-                                display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                                fontSize: '0.7rem', fontWeight: 600,
-                                padding: '0.2rem 0.5rem', borderRadius: '6px',
-                                background: clr?.bg || '#f1f5f9',
-                                color: clr?.text || '#475569',
-                                border: `1px solid ${clr?.border || '#e2e8f0'}`,
-                              }}>
-                                {s.chatteur_prenom}
-                                <span style={{
-                                  fontSize: '0.6rem', fontWeight: 700,
-                                  padding: '0.05rem 0.3rem', borderRadius: '4px',
-                                  background: s.plateforme_couleur_fond || '#1b2e4b',
-                                  color: s.plateforme_couleur_texte || '#fff',
-                                  marginLeft: '0.15rem',
-                                }}>{s.plateforme_nom}</span>
-                              </span>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
+          {(data?.shiftsAujourdhui || []).length > 0 && (
+            <div style={{ marginTop: '1rem' }}>
+              <ShiftsAujourdhui shifts={data.shiftsAujourdhui} />
+            </div>
+          )}
         </>
       )}
     </div>

@@ -8,6 +8,7 @@ import { CardSkeleton } from '../../components/Skeleton.jsx';
 import usePolling from '../../hooks/usePolling.js';
 import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip } from 'recharts';
 import { CHATTEUR_COLORS } from '../../constants/colors';
+import ShiftsAujourdhui from '../../components/ShiftsAujourdhui.jsx';
 import { buildPalierColorsMap } from '../../utils/palierColors.js';
 
 function formatPeriodLabel(debut, fin) {
@@ -723,124 +724,13 @@ export default function AdminDashboard() {
       {/* ── Shifts en cours + Classement ── */}
       {!loading && (enLigne || cagnotteData) && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-          {enLigne && (() => {
-            const CRENEAU_LABELS = { 1: '08h-14h', 2: '14h-20h', 3: '20h-02h', 4: '02h-08h' };
-            const currentCreneau = enLigne.creneau_actuel;
-            const allShifts = enLigne.all_shifts || [];
-            const grouped = { 1: [], 2: [], 3: [], 4: [] };
-            allShifts.forEach(s => {
-              if (grouped[s.creneau]) grouped[s.creneau].push(s);
-            });
-            if (allShifts.length === 0 && enLigne.en_ligne?.length > 0) {
-              grouped[currentCreneau] = enLigne.en_ligne;
-            }
-
-            // Group shifts by chatteur within a créneau
-            const groupByChatteur = (shifts) => {
-              const byChatteur = {};
-              shifts.forEach(s => {
-                if (!byChatteur[s.chatteur_prenom]) byChatteur[s.chatteur_prenom] = [];
-                const entry = [s.modele_pseudo, s.plateforme_nom].filter(Boolean).join(' · ');
-                if (entry && !byChatteur[s.chatteur_prenom].includes(entry)) {
-                  byChatteur[s.chatteur_prenom].push(entry);
-                }
-              });
-              return byChatteur;
-            };
-
-            return (
-              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-                <div style={{ padding: '0.75rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <Clock size={16} color="#f5b731" />
-                    <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--navy)' }}>Shifts en cours</h3>
-                  </div>
-                  <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                    {enLigne.total_shifts_today || 0} shifts aujourd'hui
-                  </span>
-                </div>
-                <div style={{ padding: '0.25rem 0' }}>
-                  {[1, 2, 3, 4].map(creneau => {
-                    const isCurrent = creneau === currentCreneau;
-                    const isPast = creneau < currentCreneau;
-                    const shifts = grouped[creneau] || [];
-                    const isExpanded = expandedCreneau === creneau;
-                    const byChatteur = groupByChatteur(shifts);
-                    const chatteurCount = Object.keys(byChatteur).length;
-
-                    return (
-                      <div key={creneau} style={{ opacity: isPast ? 0.5 : 1 }}>
-                        {/* Créneau header - clickable to expand/collapse */}
-                        <button
-                          onClick={() => setExpandedCreneau(isExpanded ? null : creneau)}
-                          style={{
-                            width: '100%', display: 'flex', alignItems: 'center', gap: '0.5rem',
-                            padding: '0.5rem 1rem', border: 'none', cursor: 'pointer',
-                            background: isCurrent ? 'rgba(16,185,129,0.04)' : 'transparent',
-                            borderLeft: isCurrent ? '3px solid #10b981' : '3px solid transparent',
-                            transition: 'background 200ms',
-                          }}
-                        >
-                          {isCurrent && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#10b981', flexShrink: 0, animation: 'pulse 2s infinite' }} />}
-                          <span style={{ fontSize: '0.75rem', fontWeight: isCurrent ? 700 : 500, color: isCurrent ? '#10b981' : '#64748b', minWidth: '55px', textAlign: 'left' }}>
-                            {CRENEAU_LABELS[creneau]}
-                          </span>
-                          {isCurrent && <span style={{ fontSize: '0.6rem', background: '#10b981', color: '#fff', borderRadius: '10px', padding: '0.05rem 0.4rem', fontWeight: 600 }}>EN COURS</span>}
-                          {shifts.length === 0 && <span style={{ fontSize: '0.72rem', color: '#cbd5e1', fontStyle: 'italic', flex: 1, textAlign: 'left' }}>Aucun shift</span>}
-                          {shifts.length > 0 && !isExpanded && (
-                            <span style={{ fontSize: '0.7rem', color: '#94a3b8', flex: 1, textAlign: 'left' }}>
-                              {chatteurCount} chatteur{chatteurCount > 1 ? 's' : ''}
-                            </span>
-                          )}
-                          {shifts.length > 0 && (
-                            <ChevronDown size={14} color="#94a3b8" style={{ transition: 'transform 200ms', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0)', flexShrink: 0 }} />
-                          )}
-                        </button>
-
-                        {/* Expanded content */}
-                        {isExpanded && shifts.length > 0 && (
-                          <div style={{
-                            padding: '0.25rem 1rem 0.6rem',
-                            borderLeft: isCurrent ? '3px solid #10b981' : '3px solid transparent',
-                            background: isCurrent ? 'rgba(16,185,129,0.02)' : 'rgba(0,0,0,0.01)',
-                          }}>
-                            {Object.entries(byChatteur).map(([prenom, models]) => (
-                              <div
-                                key={prenom}
-                                onClick={() => navigate('/admin/shifts')}
-                                style={{
-                                  display: 'flex', alignItems: 'flex-start', gap: '0.5rem',
-                                  padding: '0.35rem 0.5rem', marginBottom: '0.2rem', borderRadius: '8px',
-                                  cursor: 'pointer', transition: 'background 150ms',
-                                }}
-                                className="hover-row"
-                              >
-                                <span style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--navy)', minWidth: '70px', flexShrink: 0 }}>
-                                  {prenom}
-                                </span>
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
-                                  {models.map((model, i) => (
-                                    <span key={i} style={{
-                                      fontSize: '0.68rem', padding: '0.1rem 0.45rem', borderRadius: '6px',
-                                      background: isCurrent ? 'rgba(16,185,129,0.1)' : '#f1f5f9',
-                                      border: `1px solid ${isCurrent ? '#bbf7d0' : '#e2e8f0'}`,
-                                      color: '#475569', whiteSpace: 'nowrap',
-                                    }}>
-                                      {model}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })()}
+          {enLigne && (
+            <ShiftsAujourdhui
+              shifts={enLigne.all_shifts || enLigne.en_ligne || []}
+              currentCreneau={enLigne.creneau_actuel}
+              onClickShift={() => navigate('/admin/shifts')}
+            />
+          )}
 
           <CagnotteWidget classementData={cagnotteData} historiqueData={cagnotteHistorique} />
         </div>
