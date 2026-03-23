@@ -1003,4 +1003,10 @@ runMigration('add_admin_role', () => {
   }
 });
 
+// Store Telegram message_id on ventes for edit detection
+runMigration('add_ventes_telegram_message_id', () => {
+  db.exec("ALTER TABLE ventes ADD COLUMN telegram_message_id TEXT");
+  db.exec("CREATE INDEX idx_ventes_tg_msg ON ventes(telegram_message_id)");
+});
+
 module.exports = compatDb;

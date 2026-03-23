@@ -253,7 +253,24 @@ async function notifyVenteDetected(chatteurId, montant, plateforme, date, option
   if (!modele || !shiftLinked) {
     text += `\n\n\u26A0\uFE0F <i>Certaines infos sont manquantes. Un admin v\u00e9rifiera.</i>`;
   }
+
+  text += `\n\n\u270F\uFE0F <i>Erreur de montant ? Modifie directement ton message dans le groupe, le bot mettra \u00e0 jour automatiquement.</i>`;
   return sendToChatteur(chatteurId, text, withButtons({ _type: 'vente_detected' }, [
+    [BTN.mesVentes, BTN.menu],
+  ]));
+}
+
+/**
+ * Notify chatteur that their vente was updated after editing their Telegram message.
+ */
+async function notifyVenteUpdated(chatteurId, oldMontant, newMontant, plateforme, date) {
+  const text = `✏️ <b>Vente mise à jour !</b>\n\n` +
+    `💰 Ancien : <b>${escapeHTML(String(oldMontant))}€</b>\n` +
+    `💰 Nouveau : <b>${escapeHTML(String(newMontant))}€</b>\n` +
+    `📱 Plateforme : ${escapeHTML(plateforme)}\n` +
+    `📅 Date : ${escapeHTML(date || '?')}\n\n` +
+    `Ta vente a été mise à jour automatiquement suite à la modification de ton feedback.`;
+  return sendToChatteur(chatteurId, text, withButtons({ _type: 'vente_updated' }, [
     [BTN.mesVentes, BTN.menu],
   ]));
 }
@@ -486,6 +503,7 @@ module.exports = {
   logTelegramIncoming,
   // Notification templates
   notifyVenteDetected,
+  notifyVenteUpdated,
   notifyImportIncomplete,
   askChatteurShift,
   askChatteurNoShift,

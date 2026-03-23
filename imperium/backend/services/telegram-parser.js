@@ -280,11 +280,11 @@ function findShiftForVente(chatteur_id, plateforme_id, dateStr) {
  * Insert a vente from Telegram then recalculate paies
  * (recalculatePaies has its own internal transaction)
  */
-function insertVente(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id, modele_id) {
+function insertVente(chatteur_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id, modele_id, telegram_message_id) {
   const result = db.prepare(`
-    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id, source)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?, 'telegram')
-  `).run(chatteur_id, modele_id ?? null, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id ?? null);
+    INSERT INTO ventes (chatteur_id, modele_id, plateforme_id, montant_brut, periode_debut, periode_fin, notes, statut, shift_id, source, telegram_message_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, 'validée', ?, 'telegram', ?)
+  `).run(chatteur_id, modele_id ?? null, plateforme_id, montant_brut, periode_debut, periode_fin, notes, shift_id ?? null, telegram_message_id ?? null);
   try {
     recalculatePaies(periode_debut, periode_fin);
   } catch (err) {
@@ -386,7 +386,9 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id,
 
   // Insert + recalculate paies atomically
   const notes = message.substring(0, 200).trim();
-  const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes, shift?.id, modele_id);
+  // Build a unique telegram_message_id combining group + message_id for cross-group uniqueness
+  const tgMsgId = message_id ? `${group_id}:${message_id}` : null;
+  const result = insertVente(chatteur.id, plateforme_id, parsed.montant_brut, periode_debut, periode_fin, notes, shift?.id, modele_id, tgMsgId);
 
   // Mark as processed for idempotence
   if (message_id) _processedMessages.add(message_id);
@@ -409,6 +411,79 @@ function processMessage({ group_id, sender_name, sender_id, message, message_id,
   };
 }
 
+/**
+ * Process an edited Telegram message — update existing vente if found
+ * Returns { updated, ... } or { skipped, ... }
+ */
+function processEditedMessage({ group_id, sender_name, sender_id, message, message_id, topic_name }) {
+  const tgMsgId = `${group_id}:${message_id}`;
+
+  // Find the original vente by telegram_message_id
+  const vente = db.prepare(
+    "SELECT id, montant_brut, notes, statut, chatteur_id, plateforme_id, periode_debut, periode_fin FROM ventes WHERE telegram_message_id = ?"
+  ).get(tgMsgId);
+
+  if (!vente) {
+    // No matching vente — maybe the original wasn't detected as a report
+    // Try processing as a new message (fallback)
+    return { not_found: true };
+  }
+
+  // Don't update rejected ventes (admin decision)
+  if (vente.statut === 'rejetée') {
+    return { skipped: true, reason: 'vente_rejected' };
+  }
+
+  // Parse the edited message
+  if (!isShiftReport(message)) {
+    return { skipped: true, reason: 'not_a_report' };
+  }
+
+  const parsed = parseReport(message);
+  if (parsed.error) {
+    return { skipped: true, reason: 'parse_error', error: parsed.error };
+  }
+  if (parsed.zero) {
+    return { skipped: true, reason: 'zero_amount' };
+  }
+
+  // Same amount? Skip silently
+  const oldMontant = vente.montant_brut;
+  if (Math.abs(parsed.montant_brut - oldMontant) < 0.01) {
+    return { skipped: true, reason: 'same_amount' };
+  }
+
+  // Update the vente
+  const newNotes = message.substring(0, 200).trim();
+  db.prepare(
+    "UPDATE ventes SET montant_brut = ?, notes = ? WHERE id = ?"
+  ).run(parsed.montant_brut, newNotes, vente.id);
+
+  // Recalculate paies for the period
+  try {
+    recalculatePaies(vente.periode_debut, vente.periode_fin);
+  } catch (err) {
+    logger.error('Recalcul paies échoué après edit Telegram', { error: err.message });
+  }
+
+  logger.info('Telegram edit detected — vente updated', {
+    vente_id: vente.id,
+    old_montant: oldMontant,
+    new_montant: parsed.montant_brut,
+    chatteur_id: vente.chatteur_id,
+  });
+
+  return {
+    updated: true,
+    vente_id: vente.id,
+    chatteur_id: vente.chatteur_id,
+    plateforme_id: vente.plateforme_id,
+    old_montant: oldMontant,
+    new_montant: parsed.montant_brut,
+    date_rapport: parsed.date,
+  };
+}
+
 module.exports = {
   GROUP_PLATFORM,
   findChatteur,
@@ -421,4 +496,5 @@ module.exports = {
   findShiftCandidates,
   insertVente,
   processMessage,
+  processEditedMessage,
 };

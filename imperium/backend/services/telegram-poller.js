@@ -1,10 +1,10 @@
 const fetch = require('node-fetch');
 const db = require('../database');
-const { GROUP_PLATFORM, processMessage, findChatteur, findShiftCandidates } = require('./telegram-parser');
+const { GROUP_PLATFORM, processMessage, processEditedMessage, findChatteur, findShiftCandidates } = require('./telegram-parser');
 const { notifyChatteur, notifyAdminsAndManagers } = require('../utils/notifier');
 const { logActivity } = require('../utils/activityLogger');
 const logger = require('../utils/logger');
-const { notifyVenteDetected, notifyImportIncomplete, askChatteurShift, askChatteurNoShift, askChatteurModele, logTelegramIncoming } = require('../utils/telegramSender');
+const { notifyVenteDetected, notifyVenteUpdated, notifyImportIncomplete, askChatteurShift, askChatteurNoShift, askChatteurModele, logTelegramIncoming } = require('../utils/telegramSender');
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const API_BASE = `https://api.telegram.org/bot${BOT_TOKEN}`;
@@ -709,6 +709,91 @@ async function handlePrivateMessage(msg) {
 }
 
 /**
+ * Handle an edited message — update existing vente if the feedback was modified
+ */
+function handleEditedMessage(msg) {
+  const chatId = String(msg.chat.id);
+  const senderName = msg.from?.first_name || '';
+
+  // Only handle edits in configured groups with text
+  if (!msg.text || !GROUP_PLATFORM[chatId]) return;
+
+  const topicName = resolveTopicName(chatId, msg);
+
+  console.log(`✏️ Telegram EDIT [${msg.chat.title || 'DM'}] from "${senderName}": ${msg.text.substring(0, 60).replace(/\n/g, ' ')}`);
+
+  let result;
+  try {
+    result = processEditedMessage({
+      group_id: chatId,
+      sender_name: senderName,
+      sender_id: msg.from?.id ? String(msg.from.id) : null,
+      message: msg.text,
+      message_id: msg.message_id,
+      topic_name: topicName,
+    });
+  } catch (err) {
+    logger.warn('processEditedMessage exception', { senderName, error: err.message });
+    return;
+  }
+
+  // No matching vente found — try processing as a new message (fallback)
+  if (result.not_found) {
+    console.log(`   ↳ Edit: pas de vente liée — tentative d'import normal`);
+    try {
+      const newResult = processMessage({
+        group_id: chatId,
+        sender_name: senderName,
+        sender_id: msg.from?.id ? String(msg.from.id) : null,
+        message: msg.text,
+        message_id: msg.message_id,
+        topic_name: topicName,
+      });
+      if (newResult.success) {
+        messagesProcessed++;
+        lastMessageAt = new Date();
+        const platName = newResult.plateforme_id === 1 ? 'OnlyFans' : newResult.plateforme_id === 2 ? 'Reveal' : `Plateforme #${newResult.plateforme_id}`;
+        console.log(`✅ Vente importée (depuis edit): ${newResult.chatteur} — ${newResult.montant_brut}€ (${platName})`);
+        if (newResult.chatteur_id) {
+          notifyVenteDetected(newResult.chatteur_id, newResult.montant_brut, platName, newResult.date_rapport, {
+            modele: newResult.modele || null,
+            shiftLinked: !!newResult.shift_id,
+          }).catch(() => {});
+        }
+      }
+    } catch (err) {
+      logger.warn('Fallback processMessage from edit failed', { error: err.message });
+    }
+    return;
+  }
+
+  if (result.skipped) {
+    console.log(`   ↳ Edit ignoré: ${result.reason}`);
+    return;
+  }
+
+  if (result.updated) {
+    const platName = result.plateforme_id === 1 ? 'OnlyFans' : result.plateforme_id === 2 ? 'Reveal' : `Plateforme #${result.plateforme_id}`;
+    console.log(`✏️ Vente mise à jour: ${result.old_montant}€ → ${result.new_montant}€ (${platName})`);
+
+    // Notify chatteur via DM
+    if (result.chatteur_id) {
+      notifyVenteUpdated(result.chatteur_id, result.old_montant, result.new_montant, platName, result.date_rapport).catch(() => {});
+    }
+
+    // Notify admins in-app
+    const chatteur = db.prepare('SELECT prenom FROM chatteurs WHERE id = ?').get(result.chatteur_id);
+    notifyAdminsAndManagers('info',
+      '✏️ Vente modifiée via Telegram',
+      `${chatteur?.prenom || '?'} a modifié son feedback : ${result.old_montant}€ → ${result.new_montant}€ (${platName})`,
+      '/admin/telegram'
+    );
+
+    logTelegramIncoming(chatId, result.chatteur_id, chatteur?.prenom, 'vente_edit', `${result.old_montant}€ → ${result.new_montant}€ (${platName})`);
+  }
+}
+
+/**
  * Process a single update
  */
 function handleUpdate(update) {
@@ -717,6 +802,12 @@ function handleUpdate(update) {
     handleCallbackQuery(update.callback_query).catch(err => {
       logger.error('Erreur callback query Telegram', { error: err.message });
     });
+    return;
+  }
+
+  // Handle edited messages — update existing ventes
+  if (update.edited_message) {
+    handleEditedMessage(update.edited_message);
     return;
   }
 
@@ -894,7 +985,7 @@ async function pollLoop() {
       const updates = await apiCall('getUpdates', {
         offset: currentOffset,
         timeout: POLL_TIMEOUT,
-        allowed_updates: JSON.stringify(['message', 'callback_query']),
+        allowed_updates: JSON.stringify(['message', 'callback_query', 'edited_message']),
       }, pollController.signal);
 
       pollController = null;
