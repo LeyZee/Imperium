@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import api from '../../api/index';
-import { Plus, Edit, Trash2, X, Camera, User } from 'lucide-react';
+import { Plus, Edit, Trash2, X, Camera, User, KeyRound } from 'lucide-react';
 import { useToast } from '../../components/Toast.jsx';
 import ConfirmModal from '../../components/ConfirmModal.jsx';
 import { TableSkeleton } from '../../components/Skeleton.jsx';
 
-const emptyForm = { pseudo: '', part_percent: 0.35, photo: null, couleur_fond: '#F2A7C3', couleur_texte: '#ffffff' };
+const emptyForm = { pseudo: '', part_percent: 0.35, photo: null, couleur_fond: '#F2A7C3', couleur_texte: '#ffffff', access_email: '', new_password: '', confirm_password: '', user_id: null };
 
 const MODELE_PASTEL_COLORS = [
   '#F2A7C3', '#E8829B', '#D4577A', // roses
@@ -66,7 +66,15 @@ export default function Modeles({ embedded = false }) {
   }
 
   function openEdit(m) {
-    setForm({ ...m, couleur_fond: m.couleur_fond || '#F2A7C3', couleur_texte: m.couleur_texte || '#ffffff' });
+    setForm({
+      ...m,
+      couleur_fond: m.couleur_fond || '#F2A7C3',
+      couleur_texte: m.couleur_texte || '#ffffff',
+      access_email: m.access_email || '',
+      new_password: '',
+      confirm_password: '',
+      user_id: m.user_id || null,
+    });
     setEditId(m.id);
     setSelectedPlatforms(modelPlatforms[m.id] || []);
     setPhotoPreview(m.photo || null);
@@ -94,6 +102,17 @@ export default function Modeles({ embedded = false }) {
 
   async function handleSubmit(e) {
     e.preventDefault(); setError('');
+
+    // Validate password fields if filling them
+    if (form.new_password) {
+      if (form.new_password.length < 6) return setError('Le mot de passe doit contenir au moins 6 caractères');
+      if (form.new_password !== form.confirm_password) return setError('Les mots de passe ne correspondent pas');
+    }
+    // Creating a new account requires a password
+    if (form.access_email && !form.user_id && !form.new_password) {
+      return setError('Un mot de passe est requis pour créer un compte');
+    }
+
     try {
       let modeleId = editId;
       if (editId) {
@@ -111,8 +130,31 @@ export default function Modeles({ embedded = false }) {
         ...toRemove.map(pid => api.delete(`/api/modeles/${modeleId}/plateformes/${pid}`)),
       ]);
 
+      // Handle account creation (email + password, no existing account)
+      if (form.access_email && !form.user_id && form.new_password) {
+        await api.post(`/api/modeles/${modeleId}/access`, {
+          email: form.access_email,
+          password: form.new_password,
+        });
+      }
+      // Handle password update for existing account
+      if (form.user_id && form.new_password) {
+        await api.put(`/api/modeles/${modeleId}/access`, {
+          password: form.new_password,
+        });
+      }
+
       setModal(false);
       toast.success(editId ? 'Modèle mis à jour' : 'Modèle créé');
+      fetchAll();
+    } catch (err) { setError(err.response?.data?.error || 'Erreur'); }
+  }
+
+  async function handleDeleteAccess(modeleId) {
+    try {
+      await api.delete(`/api/modeles/${modeleId}/access`);
+      toast.success('Accès supprimé');
+      setForm(f => ({ ...f, user_id: null, access_email: '' }));
       fetchAll();
     } catch (err) { setError(err.response?.data?.error || 'Erreur'); }
   }
@@ -158,6 +200,7 @@ export default function Modeles({ embedded = false }) {
                   <th>Pseudo</th>
                   <th>Plateformes</th>
                   <th>Part agence (%)</th>
+                  <th>Email</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -203,6 +246,7 @@ export default function Modeles({ embedded = false }) {
                         </div>
                       </td>
                       <td style={{ fontWeight: 700, color: '#f5b731' }}>{(m.part_percent * 100).toFixed(0)}%</td>
+                      <td style={{ fontSize: '0.8rem', color: '#64748b' }}>{m.access_email || '—'}</td>
                       <td>
                         <div style={{ display: 'flex', gap: '0.5rem' }}>
                           <button onClick={() => openEdit(m)} className="btn-ghost"><Edit size={16} /></button>
@@ -316,7 +360,91 @@ export default function Modeles({ embedded = false }) {
                 </div>
               </div>
 
-              <button type="submit" className="btn-primary" style={{ width: '100%' }}>{editId ? 'Enregistrer' : 'Créer'}</button>
+              {/* Account section */}
+              <div style={{ marginTop: '1.25rem', paddingTop: '1.25rem', borderTop: '1px solid #e2e8f0' }}>
+                <div style={{
+                  fontSize: '0.8rem', fontWeight: 700, color: 'var(--navy)',
+                  textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem',
+                  display: 'flex', alignItems: 'center', gap: '0.4rem',
+                }}>
+                  <KeyRound size={14} /> Compte utilisateur
+                </div>
+
+                {form.user_id ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '0.65rem 0.85rem', borderRadius: '10px',
+                    background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)',
+                    marginBottom: '0.75rem',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10b981' }} />
+                      <span style={{ fontSize: '0.8rem', color: '#065f46', fontWeight: 600 }}>Compte actif</span>
+                      <span style={{ fontSize: '0.75rem', color: '#64748b' }}>({form.access_email})</span>
+                    </div>
+                    <button type="button" onClick={() => handleDeleteAccess(editId)}
+                      style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}>
+                      Supprimer l'accès
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{
+                    background: 'rgba(245, 183, 49, 0.08)', border: '1px solid rgba(245, 183, 49, 0.2)',
+                    borderRadius: 'var(--radius)', padding: '0.6rem 0.8rem',
+                    fontSize: '0.8rem', color: '#b45309', marginBottom: '0.75rem',
+                  }}>
+                    Aucun compte lié. Remplissez les champs ci-dessous pour créer un accès.
+                  </div>
+                )}
+
+                {!form.user_id && (
+                  <>
+                    <div className="form-group">
+                      <label className="label">Email (identifiant)</label>
+                      <input className="input-field" type="email"
+                        value={form.access_email}
+                        onChange={e => setForm({...form, access_email: e.target.value})}
+                        autoComplete="off"
+                        placeholder="Adresse email du modèle" />
+                    </div>
+                    <div className="form-group">
+                      <label className="label">Mot de passe</label>
+                      <input className="input-field" type="password" value={form.new_password}
+                        onChange={e => setForm({...form, new_password: e.target.value})}
+                        autoComplete="new-password" placeholder="••••••••" />
+                    </div>
+                    {form.new_password && (
+                      <div className="form-group">
+                        <label className="label">Confirmer le mot de passe</label>
+                        <input className="input-field" type="password" value={form.confirm_password}
+                          onChange={e => setForm({...form, confirm_password: e.target.value})}
+                          autoComplete="new-password" placeholder="Retapez le mot de passe" />
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {form.user_id && (
+                  <>
+                    <div className="form-group">
+                      <label className="label">Nouveau mot de passe (laisser vide pour ne pas changer)</label>
+                      <input className="input-field" type="password" value={form.new_password}
+                        onChange={e => setForm({...form, new_password: e.target.value})}
+                        autoComplete="new-password" placeholder="••••••••" />
+                    </div>
+                    {form.new_password && (
+                      <div className="form-group">
+                        <label className="label">Confirmer le mot de passe</label>
+                        <input className="input-field" type="password" value={form.confirm_password}
+                          onChange={e => setForm({...form, confirm_password: e.target.value})}
+                          autoComplete="new-password" placeholder="Retapez le mot de passe" />
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <button type="submit" className="btn-primary" style={{ width: '100%', marginTop: '0.5rem' }}>{editId ? 'Enregistrer' : 'Créer'}</button>
             </form>
           </div>
         </div>
