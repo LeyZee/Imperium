@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l \"modeles_plateformes\\\\|shift\" \"C:\\\\Users\\\\USER\\\\.openclaw\\\\workspace\\\\imperium\\\\backend\\\\routes\"/*.js)"
+    ]
+  }
+}
