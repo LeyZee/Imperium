@@ -3,6 +3,8 @@ const { notifyChatteur } = require('../utils/notifier');
 const { notifyAdminsAndManagers } = require('../utils/notifier');
 const { CRENEAUX } = require('../utils/constants');
 const logger = require('../utils/logger');
+const { getPeriode } = require('../utils/period');
+const { getExchangeRate } = require('../utils/rateCache');
 const {
   notifyShiftReminder,
   notifyMissingReport,
@@ -456,6 +458,29 @@ function checkDailyChatteurSummary() {
  * Shows yesterday's import stats: total, complete, warnings, errors.
  * Should be called around 8h-9h.
  */
+function fmtEur(n) {
+  return n.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '€';
+}
+
+function fmtDevise(n, devise) {
+  if (devise === 'USD') return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return fmtEur(n);
+}
+
+function getPreviousPeriode(debut) {
+  const d = new Date(debut);
+  const day = d.getDate();
+  if (day === 1) {
+    const prevMonth = new Date(d.getFullYear(), d.getMonth() - 1, 15);
+    const py = prevMonth.getFullYear();
+    const pm = String(prevMonth.getMonth() + 1).padStart(2, '0');
+    return { debut: `${py}-${pm}-15`, fin: debut };
+  }
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return { debut: `${y}-${m}-01`, fin: `${y}-${m}-15` };
+}
+
 function checkDailyAdminSummary() {
   try {
     const now = new Date();
@@ -465,80 +490,222 @@ function checkDailyAdminSummary() {
     if (hour < 8 || hour >= 9 || hasDailyTaskRun('daily_admin_summary')) return;
     markDailyTaskRun('daily_admin_summary');
 
-    // Yesterday's date
+    // ── Dates & period ──
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = yesterday.toISOString().slice(0, 10);
+    const periode = getPeriode(now);
+    const prevPeriode = getPreviousPeriode(periode.debut);
+    const taux = getExchangeRate();
 
-    const stats = db.prepare(`
+    // ── 1. VENTES HIER (toutes sources) ──
+    const ventesHier = db.prepare(`
+      SELECT COUNT(*) AS nb, COALESCE(SUM(v.montant_brut), 0) AS brut
+      FROM ventes v
+      WHERE date(v.created_at) = ? AND v.statut != 'rejetée'
+    `).get(yesterdayStr);
+
+    const ventesHierParPlateforme = db.prepare(`
+      SELECT p.nom, p.devise, COUNT(*) AS nb, COALESCE(SUM(v.montant_brut), 0) AS brut
+      FROM ventes v
+      JOIN plateformes p ON v.plateforme_id = p.id
+      WHERE date(v.created_at) = ? AND v.statut != 'rejetée'
+      GROUP BY v.plateforme_id
+      ORDER BY brut DESC
+    `).all(yesterdayStr);
+
+    // ── 2. PÉRIODE EN COURS ──
+    const periodVentes = db.prepare(`
+      SELECT v.montant_brut, p.tva_rate, p.commission_rate, p.devise
+      FROM ventes v
+      JOIN plateformes p ON v.plateforme_id = p.id
+      WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
+    `).all(periode.debut, periode.fin);
+
+    let periodBrutEur = 0, periodNetHt = 0;
+    for (const v of periodVentes) {
+      const ttc = v.devise === 'USD' ? v.montant_brut * taux : v.montant_brut;
+      const ht = ttc / (1 + v.tva_rate);
+      const net = ht * (1 - v.commission_rate);
+      periodBrutEur += ttc;
+      periodNetHt += net;
+    }
+
+    // Previous period for trend
+    const prevVentes = db.prepare(`
+      SELECT v.montant_brut, p.tva_rate, p.commission_rate, p.devise
+      FROM ventes v
+      JOIN plateformes p ON v.plateforme_id = p.id
+      WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
+    `).all(prevPeriode.debut, prevPeriode.fin);
+
+    let prevBrutEur = 0;
+    for (const v of prevVentes) {
+      prevBrutEur += v.devise === 'USD' ? v.montant_brut * taux : v.montant_brut;
+    }
+
+    const trendPct = prevBrutEur > 0
+      ? (((periodBrutEur - prevBrutEur) / prevBrutEur) * 100).toFixed(1)
+      : (periodBrutEur > 0 ? 100 : 0);
+    const trendIcon = trendPct > 0 ? '↗️' : trendPct < 0 ? '↘️' : '➡️';
+
+    const topChatteur = db.prepare(`
+      SELECT c.prenom, SUM(v.montant_brut) AS total
+      FROM ventes v
+      JOIN chatteurs c ON v.chatteur_id = c.id
+      WHERE v.periode_debut >= ? AND v.periode_fin <= ? AND v.statut != 'rejetée'
+      GROUP BY v.chatteur_id
+      ORDER BY total DESC
+      LIMIT 1
+    `).get(periode.debut, periode.fin);
+
+    // ── 3. SHIFTS HIER ──
+    const shiftsHier = db.prepare(`
+      SELECT s.id, s.chatteur_id, s.creneau, c.prenom
+      FROM shifts s
+      JOIN chatteurs c ON s.chatteur_id = c.id
+      WHERE s.date = ? AND c.actif = 1
+    `).all(yesterdayStr);
+
+    const shiftsAvecVente = db.prepare(`
+      SELECT DISTINCT s.id
+      FROM shifts s
+      JOIN ventes v ON v.shift_id = s.id
+      WHERE s.date = ? AND v.statut != 'rejetée'
+    `).all(yesterdayStr);
+    const coveredIds = new Set(shiftsAvecVente.map(r => r.id));
+
+    const shiftsSansRapport = shiftsHier.filter(s => !coveredIds.has(s.id));
+
+    // ── 4. IMPORTS TELEGRAM ──
+    const telegramStats = db.prepare(`
       SELECT
         COUNT(*) AS total,
         SUM(CASE WHEN modele_id IS NOT NULL AND shift_id IS NOT NULL THEN 1 ELSE 0 END) AS complete,
-        SUM(CASE WHEN modele_id IS NULL OR shift_id IS NULL THEN 1 ELSE 0 END) AS warnings,
-        COALESCE(SUM(montant_brut), 0) AS total_montant
+        SUM(CASE WHEN modele_id IS NULL OR shift_id IS NULL THEN 1 ELSE 0 END) AS warnings
       FROM ventes
       WHERE source = 'telegram' AND date(created_at) = ?
     `).get(yesterdayStr);
 
-    const errors = db.prepare(`
+    const telegramErrors = db.prepare(`
       SELECT COUNT(*) AS count FROM telegram_log
-      WHERE direction = 'in' AND success = 0
-      AND date(created_at) = ?
+      WHERE direction = 'in' AND success = 0 AND date(created_at) = ?
     `).get(yesterdayStr);
 
-    if (!stats || stats.total === 0) return;
+    // ── 5. ÉQUIPE ──
+    const equipe = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN telegram_user_id IS NOT NULL AND telegram_dm_ok = 1 THEN 1 ELSE 0 END) AS telegram_ok
+      FROM chatteurs
+      WHERE actif = 1 AND role NOT IN ('directeur')
+    `).get();
 
-    const msg = `Hier : ${stats.total} import(s) Telegram — ` +
-      `${stats.complete} complet(s), ${stats.warnings} warning(s), ` +
-      `${errors?.count || 0} erreur(s). ` +
-      `Total : ${stats.total_montant.toFixed(2)}\u20AC`;
+    // ── Format date header ──
+    const joursSemaine = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+    const moisNoms = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+    const dateLabel = `${joursSemaine[now.getDay()]} ${now.getDate()} ${moisNoms[now.getMonth()]}`;
 
-    const title = stats.warnings > 0 || (errors?.count || 0) > 0
-      ? '\u26A0\uFE0F R\u00e9cap Telegram hier'
-      : '\u2705 R\u00e9cap Telegram hier';
+    // ── Build Telegram DM message ──
+    let dm = `📊 <b>Récap quotidien — ${dateLabel}</b>\n`;
 
-    // In-app notification
-    notifyAdminsAndManagers('telegram', title, msg, '/admin/telegram');
+    // Section 1: Ventes hier
+    dm += `\n━━━ 💰 <b>VENTES HIER</b> ━━━\n`;
+    if (ventesHier.nb > 0) {
+      dm += `CA Brut : <b>${fmtEur(ventesHier.brut)}</b> (${ventesHier.nb} vente${ventesHier.nb > 1 ? 's' : ''})\n`;
+      if (ventesHierParPlateforme.length > 1) {
+        for (const p of ventesHierParPlateforme) {
+          dm += `  • ${p.nom} : <b>${fmtDevise(p.brut, p.devise)}</b> (${p.nb})\n`;
+        }
+      }
+    } else {
+      dm += `Aucune vente enregistrée hier\n`;
+    }
 
-    // Telegram DM to admins/directeurs with telegram linked
+    // Section 2: Période en cours
+    const periodLabel = `${periode.debut.slice(8, 10)}/${periode.debut.slice(5, 7)} – ${periode.fin.slice(8, 10)}/${periode.fin.slice(5, 7)}`;
+    dm += `\n━━━ 📈 <b>PÉRIODE (${periodLabel})</b> ━━━\n`;
+    dm += `CA Brut cumulé : <b>${fmtEur(periodBrutEur)}</b>\n`;
+    dm += `Net HT agence : <b>${fmtEur(periodNetHt)}</b>\n`;
+    dm += `Tendance : ${trendIcon} <b>${trendPct > 0 ? '+' : ''}${trendPct}%</b> vs période préc.\n`;
+    if (topChatteur) {
+      dm += `🏆 Top : <b>${topChatteur.prenom}</b> (${fmtEur(topChatteur.total)})\n`;
+    }
+
+    // Section 3: Shifts hier
+    dm += `\n━━━ 📅 <b>SHIFTS HIER</b> ━━━\n`;
+    if (shiftsHier.length > 0) {
+      dm += `Couverture : <b>${shiftsHier.length - shiftsSansRapport.length}/${shiftsHier.length}</b> shifts couverts\n`;
+      if (shiftsSansRapport.length > 0) {
+        const manquants = shiftsSansRapport.map(s => `${s.prenom} (C${s.creneau})`).join(', ');
+        dm += `Sans rapport : ${manquants}\n`;
+      }
+    } else {
+      dm += `Aucun shift programmé hier\n`;
+    }
+
+    // Section 4: Imports Telegram
+    const tgTotal = telegramStats?.total || 0;
+    const tgComplete = telegramStats?.complete || 0;
+    const tgWarnings = telegramStats?.warnings || 0;
+    const tgErrors = telegramErrors?.count || 0;
+    dm += `\n━━━ 📥 <b>IMPORTS TELEGRAM</b> ━━━\n`;
+    if (tgTotal > 0) {
+      dm += `✅ ${tgComplete} complet${tgComplete > 1 ? 's' : ''}`;
+      if (tgWarnings > 0) dm += ` · ⚠️ ${tgWarnings} warning${tgWarnings > 1 ? 's' : ''}`;
+      if (tgErrors > 0) dm += ` · ❌ ${tgErrors} erreur${tgErrors > 1 ? 's' : ''}`;
+      dm += `\n`;
+    } else {
+      dm += `Aucun import hier\n`;
+    }
+
+    // Section 5: Équipe
+    dm += `\n━━━ 👥 <b>ÉQUIPE</b> ━━━\n`;
+    dm += `Chatteurs actifs : <b>${equipe.total}</b>\n`;
+    dm += `Telegram liés : <b>${equipe.telegram_ok}/${equipe.total}</b>\n`;
+
+    // ── In-app notification (short summary) ──
+    const hasWarnings = tgWarnings > 0 || tgErrors > 0 || shiftsSansRapport.length > 0;
+    const inAppTitle = hasWarnings
+      ? '⚠️ Récap quotidien'
+      : '✅ Récap quotidien';
+    const inAppMsg = `Hier : ${ventesHier.nb} vente(s), ${fmtEur(ventesHier.brut)} brut. ` +
+      `Période : ${fmtEur(periodBrutEur)} cumulé (${trendIcon}${trendPct > 0 ? '+' : ''}${trendPct}%). ` +
+      `Shifts : ${shiftsHier.length - shiftsSansRapport.length}/${shiftsHier.length} couverts.`;
+
+    notifyAdminsAndManagers('info', inAppTitle, inAppMsg, '/admin/dashboard');
+
+    // ── Telegram DM to admins, managers & directeur ──
     try {
-      const admins = db.prepare(`
-        SELECT c.telegram_user_id, c.telegram_dm_ok, c.prenom
+      const recipients = db.prepare(`
+        SELECT c.telegram_user_id, c.prenom
         FROM chatteurs c
         JOIN users u ON u.id = c.user_id
-        WHERE u.role IN ('admin') AND c.actif = 1
+        WHERE u.role IN ('admin', 'manager') AND c.actif = 1
           AND c.telegram_user_id IS NOT NULL AND c.telegram_dm_ok = 1
         UNION
-        SELECT c.telegram_user_id, c.telegram_dm_ok, c.prenom
+        SELECT c.telegram_user_id, c.prenom
         FROM chatteurs c
         WHERE c.role = 'directeur' AND c.actif = 1
           AND c.telegram_user_id IS NOT NULL AND c.telegram_dm_ok = 1
       `).all();
 
-      const errCount = errors?.count || 0;
-      let dmText = `\uD83D\uDCCB <b>${title}</b>\n\n`;
-      dmText += `\uD83D\uDCE5 Imports : <b>${stats.total}</b>\n`;
-      dmText += `\u2705 Complets : <b>${stats.complete}</b>\n`;
-      if (stats.warnings > 0) dmText += `\u26A0\uFE0F Warnings : <b>${stats.warnings}</b>\n`;
-      if (errCount > 0) dmText += `\u274C Erreurs : <b>${errCount}</b>\n`;
-      dmText += `\uD83D\uDCB0 Total : <b>${stats.total_montant.toFixed(2)}\u20AC</b>`;
-
-      for (const admin of admins) {
-        sendTelegramMessage(admin.telegram_user_id, dmText, {
+      for (const r of recipients) {
+        sendTelegramMessage(r.telegram_user_id, dm, {
           _type: 'daily_admin_summary',
-          _chatteurPrenom: admin.prenom,
+          _chatteurPrenom: r.prenom,
           reply_markup: {
             inline_keyboard: [
-              [{ text: '\uD83D\uDCCA Voir les imports', callback_data: 'cmd_aide' }],
+              [{ text: '📊 Dashboard', callback_data: 'cmd_aide' }],
             ],
           },
         }).catch(() => {});
       }
-    } catch (e) {
-      logger.warn('Admin Telegram summary failed', { error: e.message });
-    }
 
-    logger.info(`Daily admin summary sent: ${stats.total} imports yesterday`);
+      logger.info(`Daily admin summary sent to ${recipients.length} recipients: ${ventesHier.nb} sales yesterday, period ${fmtEur(periodBrutEur)}`);
+    } catch (e) {
+      logger.warn('Admin Telegram summary DM failed', { error: e.message });
+    }
   } catch (err) {
     logger.error('Daily admin summary error', { error: err.message });
   }
