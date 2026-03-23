@@ -3,7 +3,7 @@ import api from '../../api/index.js';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
 import { useToast } from '../../components/Toast.jsx';
-import { User, Mail, Percent, AlertTriangle, Lock, Save, Eye, EyeOff, Camera, Globe } from 'lucide-react';
+import { User, Mail, Percent, AlertTriangle, Lock, Save, Eye, EyeOff, Camera, Globe, Pencil, Send, CheckCircle } from 'lucide-react';
 
 function InfoRow({ icon: Icon, label, value, extra }) {
   return (
@@ -47,6 +47,27 @@ export default function ModeleProfil() {
   const [showPwd, setShowPwd] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+
+  // Email change
+  const [showEmailForm, setShowEmailForm] = useState(false);
+  const [newEmail, setNewEmail] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
+  async function handleEmailChange() {
+    if (!newEmail.trim()) return toast.error('Saisis un nouvel email');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newEmail.trim())) return toast.error('Email invalide');
+    setEmailSaving(true);
+    try {
+      await api.post('/api/auth/change-email', { new_email: newEmail.trim() });
+      setEmailSent(true);
+      toast.success('Email de vérification envoyé');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Erreur');
+    } finally {
+      setEmailSaving(false);
+    }
+  }
 
   const fetchProfile = () => {
     const controller = new AbortController();
@@ -201,7 +222,7 @@ export default function ModeleProfil() {
         <span style={{
           fontSize: '0.72rem', fontWeight: 600,
           padding: '0.2rem 0.6rem', borderRadius: '20px',
-          background: 'rgba(245,183,49,0.1)', color: '#f5b731',
+          background: '#fce7f3', color: '#be185d',
           display: 'inline-block', marginTop: '0.5rem',
         }}>
           Modèle
@@ -210,8 +231,46 @@ export default function ModeleProfil() {
 
       {/* Infos */}
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '1.25rem' }}>
-        <InfoRow icon={User} label="Pseudo" value={modele?.pseudo || '\u2014'} />
-        <InfoRow icon={Mail} label="Email" value={modele?.email || user?.email || '\u2014'} />
+        <InfoRow icon={User} label="Pseudo" value={modele?.pseudo || '—'} />
+        <InfoRow icon={Mail} label="Email" value={modele?.email || user?.email || '—'}
+          extra={
+            !showEmailForm && !emailSent && (
+              <button onClick={() => { setShowEmailForm(true); setNewEmail(''); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem', display: 'flex' }}
+                title="Modifier l'email">
+                <Pencil size={13} color="#94a3b8" />
+              </button>
+            )
+          }
+        />
+        {showEmailForm && !emailSent && (
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', padding: '0.5rem 1rem', marginTop: '-0.25rem' }}>
+            <input type="email" className="input-field"
+              value={newEmail} onChange={e => setNewEmail(e.target.value)}
+              placeholder="Nouvel email"
+              style={{ flex: 1, fontSize: '0.82rem', padding: '0.5rem 0.75rem' }}
+              autoFocus
+            />
+            <button onClick={handleEmailChange} disabled={emailSaving}
+              className="btn-primary haptic"
+              style={{ padding: '0.5rem 0.75rem', fontSize: '0.78rem', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+              {emailSaving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <Send size={13} />}
+              Vérifier
+            </button>
+            <button onClick={() => setShowEmailForm(false)}
+              className="btn-secondary" style={{ padding: '0.5rem 0.6rem', fontSize: '0.78rem' }}>
+              Annuler
+            </button>
+          </div>
+        )}
+        {emailSent && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.5rem 1rem', marginTop: '-0.25rem', background: 'rgba(16,185,129,0.06)', borderRadius: '8px' }}>
+            <CheckCircle size={14} color="#10b981" />
+            <span style={{ fontSize: '0.78rem', color: '#065f46' }}>
+              Un email de vérification a été envoyé à <strong>{newEmail}</strong>
+            </span>
+          </div>
+        )}
         <InfoRow
           icon={Globe} label="Plateformes"
           value={
