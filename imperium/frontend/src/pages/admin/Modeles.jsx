@@ -403,7 +403,7 @@ export default function Modeles({ embedded = false }) {
                         value={form.access_email}
                         onChange={e => setForm({...form, access_email: e.target.value})}
                         autoComplete="off"
-                        placeholder="Adresse email du modèle" />
+                        placeholder="Adresse email" />
                     </div>
                     <div className="form-group">
                       <label className="label">Mot de passe</label>

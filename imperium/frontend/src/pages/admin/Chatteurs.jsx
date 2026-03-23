@@ -431,10 +431,11 @@ export default function Chatteurs({ embedded = false }) {
               </div>
               {!editId && (
                 <div className="form-group">
-                  <label className="label">Email</label>
+                  <label className="label">Email (identifiant)</label>
                   <input className="input-field" type="email" value={form.email || ''}
                     onChange={e => setForm({...form, email: e.target.value})}
-                    placeholder="Une invitation sera envoyée automatiquement" />
+                    autoComplete="off"
+                    placeholder="Adresse email" />
                 </div>
               )}
               {!isManager && (
@@ -792,7 +793,7 @@ export default function Chatteurs({ embedded = false }) {
                       value={form.user_email || form.email || ''}
                       onChange={e => setForm({...form, user_email: e.target.value, email: e.target.value})}
                       autoComplete="off"
-                      placeholder={form.user_id ? '' : 'Adresse email comme identifiant'} />
+                      placeholder="Adresse email" />
                   </div>
 
                   {/* Only show password fields if account exists and is NOT pending invitation */}
