@@ -211,6 +211,7 @@ app.use('/api/taux', require('./routes/taux'));
 app.use('/api/malus', require('./routes/malus'));
 app.use('/api/telegram', require('./routes/telegram'));
 app.use('/api/facturation-modeles', require('./routes/facturation-modeles'));
+app.use('/api/modele', require('./routes/modele-self'));
 app.use('/api/activity-logs', require('./routes/activity-logs'));
 app.use('/api/primes', require('./routes/primes'));
 app.use('/api/notes', require('./routes/notes'));

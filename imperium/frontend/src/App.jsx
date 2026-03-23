@@ -40,6 +40,11 @@ const MesFactures = lazy(() => import('./pages/chatteur/MesFactures.jsx'));
 const MaPerformance = lazy(() => import('./pages/chatteur/MaPerformance.jsx'));
 const MonProfil = lazy(() => import('./pages/chatteur/MonProfil.jsx'));
 const MesVentes = lazy(() => import('./pages/chatteur/MesVentes.jsx'));
+const ModeleDashboard = lazy(() => import('./pages/modele/Dashboard.jsx'));
+const ModeleFacturation = lazy(() => import('./pages/modele/Facturation.jsx'));
+const ModeleProfil = lazy(() => import('./pages/modele/Profil.jsx'));
+const ModeleMesVentes = lazy(() => import('./pages/modele/MesVentes.jsx'));
+const ModeleMonPlanning = lazy(() => import('./pages/modele/MonPlanning.jsx'));
 
 function AdminLayout() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -140,6 +145,32 @@ function ManagerLayout() {
   );
 }
 
+function ModeleLayout() {
+  const [mobileOpen, setMobileOpen] = useState(false);
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#f5f3ef' }}>
+      <Sidebar role="modele" mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <Navbar onMenuClick={() => setMobileOpen(true)} />
+        <main id="main-content" role="main" className="main-content" style={{ flex: 1, overflowY: 'auto' }}>
+          <ErrorBoundary>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+                <Route path="dashboard" element={<ModeleDashboard />} />
+                <Route path="planning" element={<ModeleMonPlanning />} />
+                <Route path="mes-ventes" element={<ModeleMesVentes />} />
+                <Route path="facturation" element={<ModeleFacturation />} />
+                <Route path="profil" element={<ModeleProfil />} />
+                <Route path="*" element={<Navigate to="/modele/dashboard" replace />} />
+              </Routes>
+            </Suspense>
+          </ErrorBoundary>
+        </main>
+      </div>
+    </div>
+  );
+}
+
 function NotFound() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh' }}>
@@ -158,6 +189,7 @@ function RootRedirect() {
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
   if (user.role === 'manager') return <Navigate to="/manager/dashboard" replace />;
+  if (user.role === 'modele') return <Navigate to="/modele/dashboard" replace />;
   return <Navigate to="/chatteur/dashboard" replace />;
 }
 
@@ -186,6 +218,14 @@ export default function App() {
             element={
               <ProtectedRoute role="manager">
                 <ManagerLayout />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/modele/*"
+            element={
+              <ProtectedRoute role="modele">
+                <ModeleLayout />
               </ProtectedRoute>
             }
           />

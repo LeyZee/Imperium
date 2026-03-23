@@ -52,9 +52,16 @@ const chatteurItems = [
   { to: '/chatteur/performance', icon: Activity, label: 'Ma Performance' },
 ];
 
+const modeleItems = [
+  { to: '/modele/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
+  { to: '/modele/planning', icon: ClipboardList, label: 'Mon Planning' },
+  { to: '/modele/mes-ventes', icon: TrendingUp, label: 'Mes Ventes' },
+  { to: '/modele/facturation', icon: FileText, label: 'Facturation' },
+];
+
 export default function Sidebar({ role, mobileOpen, onMobileClose }) {
   const [collapsed, setCollapsed] = useState(false);
-  const items = role === 'admin' ? adminItems : role === 'manager' ? managerItems : chatteurItems;
+  const items = role === 'admin' ? adminItems : role === 'manager' ? managerItems : role === 'modele' ? modeleItems : chatteurItems;
   const location = useLocation();
 
   // Close mobile sidebar on navigation

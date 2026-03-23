@@ -15,6 +15,7 @@ export default function ProtectedRoute({ children, role }) {
     // Redirect to correct dashboard based on actual role
     if (user.role === 'admin') return <Navigate to="/admin/dashboard" replace />;
     if (user.role === 'manager') return <Navigate to="/manager/dashboard" replace />;
+    if (user.role === 'modele') return <Navigate to="/modele/dashboard" replace />;
     if (user.role === 'chatteur') return <Navigate to="/chatteur/dashboard" replace />;
     return <Navigate to="/login" replace />;
   }

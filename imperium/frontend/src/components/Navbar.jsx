@@ -62,7 +62,7 @@ export default function Navbar({ onMenuClick }) {
         {user && <NotificationPanel />}
         {user && (
           <button
-            onClick={() => navigate(user.role === 'admin' ? '/admin/settings' : user.role === 'manager' ? '/manager/settings' : '/chatteur/profil')}
+            onClick={() => navigate(user.role === 'modele' ? '/modele/profil' : user.role === 'admin' ? '/admin/settings' : user.role === 'manager' ? '/manager/settings' : '/chatteur/profil')}
             title="Paramètres"
             style={{
               display: 'flex',

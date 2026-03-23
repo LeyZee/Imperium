@@ -1009,4 +1009,26 @@ runMigration('add_ventes_telegram_message_id', () => {
   db.exec("CREATE INDEX idx_ventes_tg_msg ON ventes(telegram_message_id)");
 });
 
+// Add user_id to modeles for model login capability
+runMigration('add_modeles_user_id', () => {
+  db.exec("ALTER TABLE modeles ADD COLUMN user_id INTEGER REFERENCES users(id)");
+  db.exec("CREATE UNIQUE INDEX idx_modeles_user ON modeles(user_id)");
+});
+
+// Extend users.role CHECK constraint to include 'modele'
+runMigration('add_users_role_modele', () => {
+  const schemaRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
+  if (schemaRow && schemaRow.sql && !schemaRow.sql.includes("'modele'")) {
+    db.exec('PRAGMA writable_schema = ON');
+    const newSql = schemaRow.sql.replace(
+      "CHECK(role IN ('admin', 'chatteur', 'manager'))",
+      "CHECK(role IN ('admin', 'chatteur', 'manager', 'modele'))"
+    );
+    db.prepare("UPDATE sqlite_master SET sql = ? WHERE type='table' AND name='users'").run(newSql);
+    db.exec('PRAGMA writable_schema = OFF');
+    db.exec('PRAGMA integrity_check');
+    console.log('  → Added modele to users role CHECK constraint');
+  }
+});
+
 module.exports = compatDb;

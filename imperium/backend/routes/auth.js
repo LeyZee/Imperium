@@ -71,12 +71,16 @@ router.post('/login', asyncHandler((req, res) => {
   // Get chatteur profile if linked
   const chatteur = db.prepare('SELECT * FROM chatteurs WHERE user_id = ?').get(user.id);
 
+  // Get modele profile if linked
+  const modele = db.prepare('SELECT * FROM modeles WHERE user_id = ?').get(user.id);
+
   const token = signToken({
     id: user.id,
     email: user.email,
     role: user.role,
     chatteur_id: chatteur?.id || null,
     chatteur_role: chatteur?.role || null,
+    modele_id: modele?.id || null,
   });
 
   // Set httpOnly cookie
@@ -92,11 +96,12 @@ router.post('/login', asyncHandler((req, res) => {
       id: user.id,
       email: user.email,
       role: user.role,
-      prenom: user.prenom || chatteur?.prenom || null,
+      prenom: user.prenom || chatteur?.prenom || modele?.pseudo || null,
       chatteur_id: chatteur?.id || null,
-      photo: user.photo || null,
+      photo: user.photo || modele?.photo || null,
       couleur: chatteur?.couleur ?? null,
       chatteur_role: chatteur?.role || null,
+      modele_id: modele?.id || null,
     }
   });
 }));
@@ -113,15 +118,17 @@ router.get('/me', authMiddleware, asyncHandler((req, res) => {
   if (!user) throw new ApiError(404, 'Utilisateur introuvable');
 
   const chatteur = db.prepare('SELECT * FROM chatteurs WHERE user_id = ?').get(user.id) || null;
+  const modele = db.prepare('SELECT * FROM modeles WHERE user_id = ?').get(user.id) || null;
 
-  // Refresh JWT cookie if chatteur_role is missing (token issued before migration)
-  if (chatteur && !req.user.chatteur_role) {
+  // Refresh JWT cookie if modele_id or chatteur_role is missing (token issued before migration)
+  if ((chatteur && !req.user.chatteur_role) || (modele && !req.user.modele_id)) {
     const freshToken = signToken({
       id: user.id,
       email: user.email,
       role: user.role,
-      chatteur_id: chatteur.id,
-      chatteur_role: chatteur.role,
+      chatteur_id: chatteur?.id || null,
+      chatteur_role: chatteur?.role || null,
+      modele_id: modele?.id || null,
     });
     res.cookie('token', freshToken, {
       httpOnly: true,
@@ -136,11 +143,12 @@ router.get('/me', authMiddleware, asyncHandler((req, res) => {
       id: user.id,
       email: user.email,
       role: user.role,
-      prenom: user.prenom || chatteur?.prenom || null,
+      prenom: user.prenom || chatteur?.prenom || modele?.pseudo || null,
       chatteur_id: chatteur?.id || null,
-      photo: user.photo || null,
+      photo: user.photo || modele?.photo || null,
       couleur: chatteur?.couleur ?? null,
       chatteur_role: chatteur?.role || null,
+      modele_id: modele?.id || null,
     }
   });
 }));
