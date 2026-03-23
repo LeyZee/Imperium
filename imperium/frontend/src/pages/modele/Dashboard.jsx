@@ -115,7 +115,20 @@ export default function ModeleDashboard() {
           <h1 className="text-navy" style={{ fontWeight: 700, marginBottom: '0.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <LayoutDashboard size={22} color="#f5b731" /> Dashboard
           </h1>
-          <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0 }}>Vue d'ensemble de vos performances</p>
+          <p style={{ color: '#94a3b8', fontSize: '0.85rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            Vue d'ensemble de vos performances
+            {!loading && tendance != null && tendance !== 0 && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: '0.2rem',
+                fontSize: '0.72rem', fontWeight: 600,
+                padding: '0.2rem 0.6rem', borderRadius: '20px',
+                background: tendance > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                color: tendance > 0 ? '#10b981' : '#ef4444',
+              }}>
+                {tendance > 0 ? '↗️' : '↘️'} {tendance > 0 ? '+' : ''}{tendance.toFixed(0)}%
+              </span>
+            )}
+          </p>
         </div>
 
         {/* Period selector */}
@@ -172,32 +185,49 @@ export default function ModeleDashboard() {
         </div>
       ) : (
         <>
-          {/* Tendance badge */}
-          {tendance != null && tendance !== 0 && (
-            <div style={{ marginBottom: '1rem' }}>
-              <span style={{
-                display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
-                fontSize: '0.78rem', fontWeight: 600,
-                padding: '0.3rem 0.75rem', borderRadius: '20px',
-                background: tendance > 0 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                color: tendance > 0 ? '#10b981' : '#ef4444',
-              }}>
-                {tendance > 0 ? '↗️' : '↘️'} {tendance > 0 ? '+' : ''}{tendance.toFixed(0)}% vs. periode prec.
-              </span>
-            </div>
-          )}
-
           {/* StatCards */}
-          <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+          <div className="stagger-children" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
             <StatCard title="CA Brut" value={fmtEur(data?.totalBrutEur || 0)} icon={Euro} color="#f5b731" />
             <StatCard title="Net HT" value={fmtEur(data?.totalNetHt || 0)} icon={TrendingUp} color="#1b2e4b" />
             <StatCard title="Part Agence" value={fmtEur(data?.partAgence || 0)} icon={Wallet} color="#10b981" subtitle={`${((data?.partAgence || 0) / (data?.totalNetHt || 1) * 100).toFixed(0)}% du Net HT`} />
             <StatCard title="Nb Ventes" value={data?.nbVentes ?? 0} icon={ShoppingCart} color="#6366f1" />
           </div>
 
-          {/* Middle row: Donut + Activity + Ticket moyen */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-            {/* Donut chart */}
+          {/* Row 2: Shifts aujourd'hui + Activité */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            {/* Shifts widget */}
+            <ShiftsAujourdhui shifts={data?.shiftsAujourdhui || []} />
+
+            {/* Activité card */}
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1b2e4b', margin: 0 }}>Activité sur la période</h3>
+              </div>
+              <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', borderRadius: '10px', background: 'rgba(245,183,49,0.04)' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '10px', background: 'rgba(27,46,75,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Calendar size={18} color="#1b2e4b" />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 500, marginBottom: '0.1rem' }}>Shifts programmés</p>
+                    <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1b2e4b' }}>{activite.shifts ?? 0}</span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', borderRadius: '10px', background: 'rgba(245,183,49,0.04)' }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '10px', background: 'rgba(27,46,75,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Users size={18} color="#1b2e4b" />
+                  </div>
+                  <div>
+                    <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 500, marginBottom: '0.1rem' }}>Chatteurs actifs</p>
+                    <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1b2e4b' }}>{activite.chatteurs ?? 0}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 3: Donut + Evolution */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1rem' }}>
             <DonutChart
               data={donutData}
               title="Répartition par plateforme"
@@ -205,106 +235,35 @@ export default function ModeleDashboard() {
               emptyText="Aucune vente pour cette période"
             />
 
-            {/* Activity + Ticket moyen card */}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1b2e4b', margin: 0 }}>Activité</h3>
-              </div>
-              <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {/* Shifts */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  padding: '0.75rem', borderRadius: '10px',
-                  background: 'rgba(245,183,49,0.04)',
-                }}>
-                  <div style={{
-                    width: 40, height: 40, borderRadius: '10px',
-                    background: 'rgba(27,46,75,0.06)', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    <Calendar size={18} color="#1b2e4b" />
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 500, marginBottom: '0.1rem' }}>Shifts sur la période</p>
-                    <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1b2e4b' }}>{activite.shiftsCount ?? 0}</span>
-                  </div>
+            {evolution.length > 0 && (
+              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+                  <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1b2e4b', margin: 0 }}>Évolution des ventes</h3>
                 </div>
-                {/* Chatteurs */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  padding: '0.75rem', borderRadius: '10px',
-                  background: 'rgba(245,183,49,0.04)',
-                }}>
-                  <div style={{
-                    width: 40, height: 40, borderRadius: '10px',
-                    background: 'rgba(27,46,75,0.06)', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    <Users size={18} color="#1b2e4b" />
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 500, marginBottom: '0.1rem' }}>Chatteurs actifs</p>
-                    <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#1b2e4b' }}>{activite.chatteursCount ?? 0}</span>
-                  </div>
-                </div>
-                {/* Ticket moyen */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '0.75rem',
-                  padding: '0.75rem', borderRadius: '10px',
-                  background: 'rgba(245,183,49,0.04)',
-                }}>
-                  <div style={{
-                    width: 40, height: 40, borderRadius: '10px',
-                    background: 'rgba(245,183,49,0.08)', display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                  }}>
-                    <BarChart3 size={18} color="#f5b731" />
-                  </div>
-                  <div>
-                    <p style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 500, marginBottom: '0.1rem' }}>Ticket moyen</p>
-                    <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f5b731' }}>{fmtEur(data?.ticketMoyen || 0)}</span>
-                  </div>
+                <div style={{ padding: '1.25rem', display: 'flex', alignItems: 'flex-end', gap: '0.5rem', minHeight: '160px' }}>
+                  {evolution.map((e, i) => {
+                    const pct = ((e.brut_eur || e.value || 0) / maxEvo) * 100;
+                    return (
+                      <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
+                        <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#64748b' }}>
+                          {fmtEur(e.brut_eur || e.value || 0)}
+                        </span>
+                        <div style={{
+                          width: '100%', maxWidth: '48px', borderRadius: '6px 6px 0 0',
+                          height: `${Math.max(pct, 4)}%`, minHeight: '4px',
+                          background: i === evolution.length - 1
+                            ? 'linear-gradient(180deg, #f5b731, #fcd34d)'
+                            : 'linear-gradient(180deg, #1b2e4b, #334155)',
+                          transition: 'height 600ms cubic-bezier(0.34, 1.56, 0.64, 1)',
+                        }} />
+                        <span style={{ fontSize: '0.6rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>{e.label}</span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
-            </div>
+            )}
           </div>
-
-          {/* Evolution chart — simple bars */}
-          {evolution.length > 0 && (
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                <h3 style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1b2e4b', margin: 0 }}>Évolution des ventes</h3>
-              </div>
-              <div style={{ padding: '1.25rem', display: 'flex', alignItems: 'flex-end', gap: '0.5rem', minHeight: '160px' }}>
-                {evolution.map((e, i) => {
-                  const pct = ((e.brut_eur || e.value || 0) / maxEvo) * 100;
-                  return (
-                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.3rem' }}>
-                      <span style={{ fontSize: '0.65rem', fontWeight: 600, color: '#64748b' }}>
-                        {fmtEur(e.brut_eur || e.value || 0)}
-                      </span>
-                      <div style={{
-                        width: '100%', maxWidth: '48px', borderRadius: '6px 6px 0 0',
-                        height: `${Math.max(pct, 4)}%`, minHeight: '4px',
-                        background: i === evolution.length - 1
-                          ? 'linear-gradient(180deg, #f5b731, #fcd34d)'
-                          : 'linear-gradient(180deg, #1b2e4b, #334155)',
-                        transition: 'height 600ms cubic-bezier(0.34, 1.56, 0.64, 1)',
-                      }} />
-                      <span style={{ fontSize: '0.6rem', color: '#94a3b8', whiteSpace: 'nowrap' }}>{e.label}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Shifts aujourd'hui */}
-          {(data?.shiftsAujourdhui || []).length > 0 && (
-            <div style={{ marginTop: '1rem' }}>
-              <ShiftsAujourdhui shifts={data.shiftsAujourdhui} />
-            </div>
-          )}
         </>
       )}
     </div>

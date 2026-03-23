@@ -158,12 +158,11 @@ export default function ModeleMonPlanning() {
                         {s.chatteur_prenom && (() => {
                           const clr = s.chatteur_couleur != null ? CHATTEUR_COLORS[s.chatteur_couleur % CHATTEUR_COLORS.length] : null;
                           return (
-                            <span style={{
+                            <span className="badge" style={{
                               fontSize: '0.72rem', fontWeight: 600,
-                              padding: '0.2rem 0.5rem', borderRadius: '6px',
+                              padding: '0.2rem 0.55rem', borderRadius: '99px',
                               background: clr?.bg || '#f1f5f9',
                               color: clr?.text || '#475569',
-                              border: `1px solid ${clr?.border || '#e2e8f0'}`,
                             }}>
                               {s.chatteur_prenom}
                             </span>
