@@ -230,16 +230,65 @@ router.get('/ventes', asyncHandler((req, res) => {
   const { periode_debut, periode_fin } = req.query;
   if (!periode_debut || !periode_fin) throw new ApiError(400, 'periode_debut et periode_fin requis');
 
+  const taux = getExchangeRate();
+
   const ventes = db.prepare(`
     SELECT v.id, v.montant_brut, v.periode_debut, v.periode_fin, v.notes, v.statut, v.source, v.created_at,
-           p.nom as plateforme, p.devise, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte
+           v.plateforme_id,
+           p.nom as plateforme_nom, p.devise, p.couleur_fond as plateforme_couleur_fond, p.couleur_texte as plateforme_couleur_texte,
+           c.prenom as chatteur_prenom, c.couleur as chatteur_couleur,
+           s.creneau as shift_creneau
     FROM ventes v
     JOIN plateformes p ON v.plateforme_id = p.id
+    LEFT JOIN chatteurs c ON c.id = v.chatteur_id
+    LEFT JOIN shifts s ON s.id = v.shift_id
     WHERE v.modele_id = ? AND v.periode_debut >= ? AND v.periode_fin <= ?
     ORDER BY v.created_at DESC
   `).all(modeleId, periode_debut, periode_fin);
 
-  res.json(ventes);
+  // Summary: total brut in EUR, nb ventes, per-platform breakdown
+  let totalBrut = 0;
+  const platMap = {};
+  for (const v of ventes) {
+    const eur = v.devise === 'USD' ? v.montant_brut * taux : v.montant_brut;
+    totalBrut += eur;
+    if (!platMap[v.plateforme_id]) {
+      platMap[v.plateforme_id] = {
+        plateforme: v.plateforme_nom,
+        devise: v.devise,
+        couleur_fond: v.plateforme_couleur_fond,
+        couleur_texte: v.plateforme_couleur_texte,
+        total: 0,
+        totalEur: 0,
+        nb: 0,
+      };
+    }
+    platMap[v.plateforme_id].total += v.montant_brut;
+    platMap[v.plateforme_id].totalEur += eur;
+    platMap[v.plateforme_id].nb += 1;
+  }
+
+  // Trend: compare with previous period
+  const prev = getPreviousPeriode(periode_debut);
+  const prevTotal = calcModeleTotals(modeleId, prev.debut, prev.fin, taux);
+  const trend = prevTotal.totalBrutEur > 0
+    ? parseFloat((((totalBrut - prevTotal.totalBrutEur) / prevTotal.totalBrutEur) * 100).toFixed(1))
+    : (totalBrut > 0 ? 100 : 0);
+
+  res.json({
+    ventes,
+    taux_change: taux,
+    summary: {
+      totalBrut: parseFloat(totalBrut.toFixed(2)),
+      nbVentes: ventes.length,
+      trend,
+      parPlateforme: Object.values(platMap).map(p => ({
+        ...p,
+        total: parseFloat(p.total.toFixed(2)),
+        totalEur: parseFloat(p.totalEur.toFixed(2)),
+      })),
+    },
+  });
 }));
 
 /* ─── GET /api/modele/shifts ─── */

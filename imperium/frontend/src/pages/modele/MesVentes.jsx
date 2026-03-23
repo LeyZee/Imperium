@@ -4,11 +4,12 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import StatCard from '../../components/StatCard.jsx';
 import { CardSkeleton } from '../../components/Skeleton.jsx';
 import {
-  TrendingUp, ShoppingBag, ChevronDown, Bot, User, Shield,
-  Calendar, Clock, CheckCircle, XCircle, RotateCcw,
+  TrendingUp, TrendingDown, ShoppingBag, ChevronDown, Bot, User, Shield,
+  Calendar, Clock, CheckCircle, XCircle, RotateCcw, BarChart3,
 } from 'lucide-react';
 import Pagination, { ITEMS_PER_PAGE } from '../../components/Pagination.jsx';
 import { useToast } from '../../components/Toast.jsx';
+import { CHATTEUR_COLORS } from '../../constants/colors.js';
 
 /* --- Period helpers --- */
 function getPeriodeCourante() {
@@ -24,7 +25,7 @@ function getPeriodeCourante() {
 function formatPeriodShort(debut, fin) {
   const d = new Date(debut + 'T00:00:00');
   const f = new Date(fin + 'T00:00:00');
-  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} \u2192 ${f.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`;
+  return `${d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })} → ${f.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`;
 }
 
 function formatCreatedAt(dateStr) {
@@ -33,6 +34,8 @@ function formatCreatedAt(dateStr) {
   return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) +
     ` ${String(d.getHours()).padStart(2, '0')}h${String(d.getMinutes()).padStart(2, '0')}`;
 }
+
+const CRENEAUX_LABELS = { 1: '08h-14h', 2: '14h-20h', 3: '20h-02h', 4: '02h-08h' };
 
 const SOURCE_CONFIG = {
   telegram: { label: 'Telegram', icon: Bot, color: '#059669', bg: 'rgba(16,185,129,0.1)' },
@@ -50,6 +53,7 @@ export default function ModeleMesVentes() {
   const { user } = useAuth();
   const toast = useToast();
   const [ventes, setVentes] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
 
   /* Period selection */
@@ -75,7 +79,8 @@ export default function ModeleMesVentes() {
       setFetchError('');
       const params = new URLSearchParams({ periode_debut: per.debut, periode_fin: per.fin });
       const { data } = await api.get(`/api/modele/ventes?${params}`);
-      setVentes(data.ventes || data);
+      setVentes(data.ventes || []);
+      setSummary(data.summary || null);
       if (data.taux_change) setTauxChange(data.taux_change);
     } catch { setFetchError('Impossible de charger les ventes.'); }
   }, [periode]);
@@ -177,10 +182,12 @@ export default function ModeleMesVentes() {
   if (loading) return (
     <div style={{ padding: '2rem' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
-        <CardSkeleton /><CardSkeleton />
+        <CardSkeleton /><CardSkeleton /><CardSkeleton />
       </div>
     </div>
   );
+
+  const trend = summary?.trend ?? 0;
 
   return (
     <div style={{ padding: '1.5rem', maxWidth: 900, margin: '0 auto' }}>
@@ -307,10 +314,56 @@ export default function ModeleMesVentes() {
       )}
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.75rem', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '0.75rem', marginBottom: '0.75rem' }}>
         <StatCard icon={TrendingUp} title="CA brut total" value={`${totalEur.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €`} color="#1b2e4b" />
         <StatCard icon={ShoppingBag} title="Nombre de ventes" value={nbVentes} color="#f5b731" />
+        <StatCard
+          icon={trend >= 0 ? TrendingUp : TrendingDown}
+          title="Tendance"
+          value={
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+              {trend > 0 ? '+' : ''}{trend}%
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                width: 20, height: 20, borderRadius: '50%',
+                background: trend > 0 ? 'rgba(16,185,129,0.15)' : trend < 0 ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)',
+              }}>
+                {trend > 0 ? <TrendingUp size={12} color="#059669" /> : trend < 0 ? <TrendingDown size={12} color="#ef4444" /> : <span style={{ color: '#94a3b8', fontSize: '0.7rem' }}>—</span>}
+              </span>
+            </span>
+          }
+          color={trend > 0 ? '#059669' : trend < 0 ? '#ef4444' : '#94a3b8'}
+        />
       </div>
+
+      {/* Per-platform breakdown */}
+      {summary?.parPlateforme && summary.parPlateforme.length > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap',
+          marginBottom: '1.5rem', padding: '0.5rem 0.75rem',
+          background: '#fff', borderRadius: 10, border: '1px solid #e2e8f0',
+        }}>
+          <BarChart3 size={14} color="#94a3b8" />
+          {summary.parPlateforme.map((p, i) => (
+            <span key={i} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.3rem',
+              fontSize: '0.75rem', fontWeight: 600,
+            }}>
+              <span style={{
+                padding: '0.15rem 0.4rem', borderRadius: 5, fontSize: '0.65rem', fontWeight: 600,
+                background: p.couleur_fond || '#e2e8f0', color: p.couleur_texte || '#475569',
+              }}>
+                {p.plateforme}
+              </span>
+              <span style={{ color: '#1b2e4b' }}>
+                {p.totalEur.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })} €
+              </span>
+              <span style={{ color: '#94a3b8', fontSize: '0.65rem' }}>({p.nb})</span>
+              {i < summary.parPlateforme.length - 1 && <span style={{ color: '#cbd5e1' }}>·</span>}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Ventes list */}
       {filteredVentes.length === 0 ? (
@@ -326,71 +379,132 @@ export default function ModeleMesVentes() {
           </p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-          {paginatedVentes.map(v => {
-            const source = getSource(v);
-            return (
-              <div
-                key={v.id}
-                style={{
-                  background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0',
-                  padding: '0.875rem 1rem', display: 'flex', alignItems: 'center',
-                  gap: '0.75rem', flexWrap: 'wrap',
-                }}
-              >
-                {/* Date */}
-                <div style={{ fontSize: '0.75rem', color: '#64748b', minWidth: 70, fontWeight: 500 }}>
-                  {formatCreatedAt(v.created_at)}
-                </div>
+        <>
+          {/* Table header - hidden on mobile */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 1rem',
+            fontSize: '0.65rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase',
+            letterSpacing: '0.05em', borderBottom: '1px solid #e2e8f0', marginBottom: '0.35rem',
+          }}>
+            <div style={{ minWidth: 70 }}>Date</div>
+            <div style={{ minWidth: 80 }}>Chatteur</div>
+            <div style={{ minWidth: 70 }}>Plateforme</div>
+            <div className="hide-mobile" style={{ minWidth: 60 }}>Créneau</div>
+            <div style={{ flex: 1, textAlign: 'right' }}>Montant</div>
+            <div className="hide-mobile" style={{ minWidth: 70 }}>Source</div>
+            <div style={{ minWidth: 65 }}>Statut</div>
+          </div>
 
-                {/* Platform badge */}
-                <div style={{
-                  padding: '0.2rem 0.5rem', borderRadius: 6, fontSize: '0.65rem', fontWeight: 600,
-                  background: v.plateforme_couleur_fond || '#e2e8f0',
-                  color: v.plateforme_couleur_texte || '#475569',
-                }}>
-                  {v.plateforme_nom}
-                </div>
-
-                {/* Amount */}
-                <div style={{ flex: 1, textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: '#1b2e4b' }}>
-                  {v.montant_brut.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {v.devise === 'USD' ? '$' : '\u20ac'}
-                </div>
-
-                {/* Source badge */}
-                {(() => {
-                  const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.admin;
-                  const Icon = cfg.icon;
-                  return (
-                    <div style={{
-                      display: 'flex', alignItems: 'center', gap: '0.25rem',
-                      padding: '0.15rem 0.5rem', borderRadius: 6, fontSize: '0.6rem', fontWeight: 600,
-                      background: cfg.bg, color: cfg.color,
-                    }}>
-                      <Icon size={10} /> {cfg.label}
-                    </div>
-                  );
-                })()}
-
-                {/* Statut badge */}
-                {v.statut && (
-                  <div style={{
-                    display: 'flex', alignItems: 'center', gap: '0.2rem',
-                    padding: '0.15rem 0.4rem', borderRadius: 6, fontSize: '0.6rem', fontWeight: 600,
-                    background: v.statut === 'validée' ? 'rgba(16,185,129,0.1)' : v.statut === 'en_attente' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
-                    color: v.statut === 'validée' ? '#059669' : v.statut === 'en_attente' ? '#f59e0b' : '#ef4444',
-                  }}>
-                    {v.statut === 'validée' ? <CheckCircle size={10} /> : v.statut === 'en_attente' ? <Clock size={10} /> : <XCircle size={10} />}
-                    {v.statut === 'validée' ? 'Validée' : v.statut === 'en_attente' ? 'En attente' : 'Rejetée'}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {paginatedVentes.map(v => {
+              const source = getSource(v);
+              const chatteurColor = CHATTEUR_COLORS[v.chatteur_couleur] || null;
+              return (
+                <div
+                  key={v.id}
+                  style={{
+                    background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0',
+                    padding: '0.875rem 1rem', display: 'flex', alignItems: 'center',
+                    gap: '0.75rem', flexWrap: 'wrap',
+                  }}
+                >
+                  {/* Date */}
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', minWidth: 70, fontWeight: 500 }}>
+                    {formatCreatedAt(v.created_at)}
                   </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+
+                  {/* Chatteur badge */}
+                  <div style={{ minWidth: 80 }}>
+                    {v.chatteur_prenom ? (
+                      <span style={{
+                        display: 'inline-block', padding: '0.15rem 0.45rem', borderRadius: 6,
+                        fontSize: '0.65rem', fontWeight: 600,
+                        background: chatteurColor?.bg || '#f1f5f9',
+                        color: chatteurColor?.text || '#475569',
+                        border: `1px solid ${chatteurColor?.border || '#e2e8f0'}`,
+                      }}>
+                        {v.chatteur_prenom}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.7rem', color: '#cbd5e1' }}>—</span>
+                    )}
+                  </div>
+
+                  {/* Platform badge */}
+                  <div style={{
+                    padding: '0.2rem 0.5rem', borderRadius: 6, fontSize: '0.65rem', fontWeight: 600,
+                    background: v.plateforme_couleur_fond || '#e2e8f0',
+                    color: v.plateforme_couleur_texte || '#475569',
+                    minWidth: 70,
+                  }}>
+                    {v.plateforme_nom}
+                  </div>
+
+                  {/* Créneau badge - hidden on mobile */}
+                  <div className="hide-mobile" style={{ minWidth: 60 }}>
+                    {v.shift_creneau ? (
+                      <span style={{
+                        display: 'inline-block', padding: '0.1rem 0.35rem', borderRadius: 5,
+                        fontSize: '0.6rem', fontWeight: 600,
+                        background: 'rgba(245,183,49,0.12)', color: '#b45309',
+                      }}>
+                        {CRENEAUX_LABELS[v.shift_creneau] || v.shift_creneau}
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '0.7rem', color: '#cbd5e1' }}>—</span>
+                    )}
+                  </div>
+
+                  {/* Amount */}
+                  <div style={{ flex: 1, textAlign: 'right', fontWeight: 700, fontSize: '0.95rem', color: '#1b2e4b' }}>
+                    {v.montant_brut.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} {v.devise === 'USD' ? '$' : '€'}
+                  </div>
+
+                  {/* Source badge - hidden on mobile */}
+                  <div className="hide-mobile">
+                    {(() => {
+                      const cfg = SOURCE_CONFIG[source] || SOURCE_CONFIG.admin;
+                      const Icon = cfg.icon;
+                      return (
+                        <div style={{
+                          display: 'flex', alignItems: 'center', gap: '0.25rem',
+                          padding: '0.15rem 0.5rem', borderRadius: 6, fontSize: '0.6rem', fontWeight: 600,
+                          background: cfg.bg, color: cfg.color, minWidth: 70,
+                        }}>
+                          <Icon size={10} /> {cfg.label}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Statut badge */}
+                  {v.statut && (
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '0.2rem',
+                      padding: '0.15rem 0.4rem', borderRadius: 6, fontSize: '0.6rem', fontWeight: 600,
+                      background: v.statut === 'validée' ? 'rgba(16,185,129,0.1)' : v.statut === 'en_attente' ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)',
+                      color: v.statut === 'validée' ? '#059669' : v.statut === 'en_attente' ? '#f59e0b' : '#ef4444',
+                      minWidth: 65,
+                    }}>
+                      {v.statut === 'validée' ? <CheckCircle size={10} /> : v.statut === 'en_attente' ? <Clock size={10} /> : <XCircle size={10} />}
+                      {v.statut === 'validée' ? 'Validée' : v.statut === 'en_attente' ? 'En attente' : 'Rejetée'}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       <Pagination page={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
+
+      {/* Responsive: hide columns on mobile */}
+      <style>{`
+        @media (max-width: 640px) {
+          .hide-mobile { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
